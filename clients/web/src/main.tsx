@@ -1,17 +1,17 @@
 import { StrictMode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { FormEvent } from "react";
-import { AdministratorsPanel, createSarmgAdminApplication, errorRequestId, useAdminApplication } from "@sarmg/admin-shell";
-import { Button, Checkbox, ConfirmDangerDialog, Dialog, ErrorState, LoadingState, PageHeader, Select, Table, TextField } from "@sarmg/admin-ui";
-import product from "../package.json";
+import { AdministratorsPanel, createSarmgAdminApplication, errorRequestId, useAdminApplication, HeaderNavigation, InstanceHeaderActions, InstanceWorkspace, InstanceNameField } from "../shell/index.js";
+import { Button, Checkbox, ConfirmDangerDialog, Dialog, ErrorState, LoadingState, Select, Table, TextField } from "@sarmg/admin-ui";
 
 import "@sarmg/design-tokens/tokens.css";
 import "@sarmg/design-tokens/tokens.dark.css";
-import "@sarmg/web-fonts/fonts.css";
+import "../fonts/fonts.css";
 import "@sarmg/admin-ui/styles.css";
 import "@sarmg/design-tokens/reset.css";
 import "@sarmg/design-tokens/accessibility.css";
 import "./styles.css";
+import "../appearance/content-blocks.css";
 
 import {
   administratorApi,
@@ -72,7 +72,7 @@ function Console() {
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [systemFailure, setSystemFailure] = useState<{ requestId?: string } | null>(null);
   const [search, setSearch] = useState("");
-  const [page, setPage] = useState(0);
+  const [selected, setSelected] = useState<string | null>(null);
   const [unacknowledgedOnly, setUnacknowledgedOnly] = useState(false);
   const [cameraDraft, setCameraDraft] = useState<CameraDraft | null>(null);
   const [drawerCamera, setDrawerCamera] = useState<Camera | null>(null);
@@ -124,8 +124,8 @@ function Console() {
     const term = search.trim().toLowerCase();
     return cameras.filter((camera) => `${camera.name} ${camera.location}`.toLowerCase().includes(term));
   }, [cameras, search]);
-  const pages = Math.max(1, Math.ceil(filtered.length / 9));
-  const visible = filtered.slice(Math.min(page, pages - 1) * 9, (Math.min(page, pages - 1) + 1) * 9);
+  const chosen = filtered.find(camera => camera.id === selected) ?? filtered[0];
+  const visible = chosen ? [chosen] : [];
 
   const saveCamera = async (draft: CameraDraft) => {
     const payload: Record<string, unknown> = {
@@ -161,11 +161,15 @@ function Console() {
   };
 
   return <div className="sentinel-business">
-    <PageHeader><div><p className="eyebrow">{viewKicker(view)}</p><h1>{viewTitle(view)}</h1></div><span>{online} / {cameras.length} 在线</span><Clock /></PageHeader>
-    {view === "cameras" && <CameraView cameras={visible} search={search} setSearch={(value) => { setSearch(value); setPage(0); }} page={Math.min(page, pages - 1)} pages={pages} setPage={setPage} edit={(camera) => setCameraDraft(toCameraDraft(camera))} remove={(camera) => { setDeleteFailure(null); setDeleteTarget(camera); }} inspect={setDrawerCamera} add={() => setCameraDraft(emptyCamera())} discover={() => void discover().catch((error) => toast(errorText(error), "error"))} />}
+    <InstanceHeaderActions create={() => setCameraDraft(emptyCamera())} createLabel="新建摄像头" refresh={() => void Promise.all([loadCameras(), loadEvents(), ...(view === "system" ? [loadSystem()] : [])]).catch(error => toast(errorText(error), "error"))} />
+    <InstanceWorkspace instances={filtered} selected={chosen?.id} select={setSelected} label="摄像头实例" showSidebar={view === "cameras"}>
+    <HeaderNavigation label="监控功能">{(["cameras","recordings","events","system"] as const).map(id => <Button key={id} aria-pressed={view === id} onClick={() => { window.location.hash = id; }}>{viewTitle(id)}</Button>)}</HeaderNavigation>
+    <h1 className="sarmg-visually-hidden">{viewTitle(view)}</h1><p>{online} / {cameras.length} 在线</p>
+    {view === "cameras" && <CameraView cameras={visible} search={search} setSearch={setSearch} edit={(camera) => setCameraDraft(toCameraDraft(camera))} remove={(camera) => { setDeleteFailure(null); setDeleteTarget(camera); }} inspect={setDrawerCamera} discover={() => void discover().catch((error) => toast(errorText(error), "error"))} />}
     {view === "recordings" && <RecordingsView cameras={cameras} toast={toast} />}
     {view === "events" && <EventsView events={events} cameras={cameras} unacknowledgedOnly={unacknowledgedOnly} setUnacknowledgedOnly={setUnacknowledgedOnly} refresh={() => void loadEvents().catch((error) => toast(errorText(error), "error"))} acknowledge={(id) => void acknowledge(id).catch((error) => toast(errorText(error), "error"))} />}
     {view === "system" && <SystemView status={status} failure={systemFailure} audit={audit} refresh={() => void loadSystem().catch((error) => toast(errorText(error), "error"))} />}
+    </InstanceWorkspace>
     {cameraDraft !== null && <CameraEditor draft={cameraDraft} setDraft={setCameraDraft} save={saveCamera} />}
     {drawerCamera !== null && <CameraDrawer camera={drawerCamera} close={() => setDrawerCamera(null)} toast={toast} />}
     {deleteTarget && <ConfirmDangerDialog title={"删除摄像头“" + deleteTarget.name + "”？"} description="已有录像文件不会立即删除。" pending={deletePending} onClose={() => { if (!deleteBusy.current) setDeleteTarget(null); }} onConfirm={() => {
@@ -178,13 +182,13 @@ function Console() {
   </div>;
 }
 
-function CameraView({ cameras, search, setSearch, page, pages, setPage, edit, remove, inspect, add, discover }: {
-  cameras: Camera[]; search: string; setSearch(value: string): void; page: number; pages: number; setPage(value: number): void;
-  edit(camera: Camera): void; remove(camera: Camera): void; inspect(camera: Camera): void; add(): void; discover(): void;
+function CameraView({ cameras, search, setSearch, edit, remove, inspect, discover }: {
+  cameras: Camera[]; search: string; setSearch(value: string): void;
+  edit(camera: Camera): void; remove(camera: Camera): void; inspect(camera: Camera): void; discover(): void;
 }) {
-  return <section className="view active"><div className="command-bar"><div className="search-wrap"><span>⌕</span><TextField type="search" aria-label="搜索摄像头" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索名称或位置" /></div><div className="command-actions"><Button className="button button-quiet" onClick={discover}>发现ONVIF设备</Button><Button className="button button-primary" onClick={add}>添加摄像头</Button></div></div>
-    <div className="camera-grid">{cameras.length === 0 ? <div className="empty-state full-span">还没有匹配的摄像头。</div> : cameras.map((camera, index) => <article key={camera.id} className="camera-card reveal" style={{ animationDelay: `${index * 45}ms` }}><LiveVideo camera={camera} profile={camera.has_sub_stream ? "sub" : "main"} /><div className="camera-meta"><div><span className={`status-dot ${camera.status}`} /><strong>{camera.name}</strong><small>{camera.location || "未标注位置"}</small></div><span className="camera-status">{statusLabel(camera.status)}</span></div><div className="camera-actions"><Button onClick={() => inspect(camera)}>主码流</Button><Button onClick={() => edit(camera)}>配置</Button><Button className="danger-link" onClick={() => remove(camera)}>删除</Button></div></article>)}</div>
-    <div className="pager"><Button className="text-button" disabled={page === 0} onClick={() => setPage(Math.max(0, page - 1))}>上一页</Button><span>{page + 1} / {pages}</span><Button className="text-button" disabled={page >= pages - 1} onClick={() => setPage(page + 1)}>下一页</Button></div></section>;
+  return <section className="view active"><div className="command-bar"><div className="search-wrap"><span>⌕</span><TextField type="search" aria-label="搜索摄像头" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索名称或位置" /></div><div className="command-actions"><Button className="button button-quiet" onClick={discover}>发现ONVIF设备</Button></div></div>
+    <div className="camera-grid">{cameras.length === 0 ? <div className="empty-state full-span">还没有匹配的摄像头。</div> : cameras.map((camera, index) => <article key={camera.id} className="camera-card sarmg-content-panel reveal" style={{ animationDelay: `${index * 45}ms` }}><LiveVideo camera={camera} profile={camera.has_sub_stream ? "sub" : "main"} /><div className="camera-meta"><div><span className={`status-dot ${camera.status}`} /><strong>{camera.name}</strong><small>{camera.location || "未标注位置"}</small></div><span className="camera-status">{statusLabel(camera.status)}</span></div><div className="camera-actions"><Button onClick={() => inspect(camera)}>主码流</Button><Button onClick={() => edit(camera)}>配置</Button><Button className="danger-link" onClick={() => remove(camera)}>删除</Button></div></article>)}</div>
+    </section>;
 }
 
 function LiveVideo({ camera, profile, controls = false }: { camera: Camera; profile: string; controls?: boolean }) {
@@ -229,25 +233,24 @@ function RecordingsView({ cameras, toast }: { cameras: Camera[]; toast(message: 
     setSpans(await request(`/recordings?${query}`, isRecordingSpans));
   };
   const playback = playing === null ? "" : apiPath(`/recordings/play?${new URLSearchParams({ camera_id: cameraId, start: playing.start, duration: String(playing.duration), format: "mp4" })}`);
-  return <section className="view active"><div className="filter-panel"><label>摄像头<Select value={cameraId} onChange={(event) => setCameraId(event.target.value)}>{cameras.map((camera) => <option key={camera.id} value={camera.id}>{camera.name}</option>)}</Select></label><label>开始时间<TextField type="datetime-local" value={start} onChange={(event) => setStart(event.target.value)} /></label><label>结束时间<TextField type="datetime-local" value={end} onChange={(event) => setEnd(event.target.value)} /></label><Button className="button button-primary" onClick={() => void search().catch((error) => toast(errorText(error), "error"))}>查询录像</Button></div><div className="recording-layout"><div><div className="section-heading"><h3>录像时间段</h3><span>{spans.length} 条</span></div><div className="record-list">{spans.length === 0 ? <div className="empty-state">所选范围内没有录像</div> : spans.map((span) => <Button key={`${span.start}-${span.duration}`} className="record-item" onClick={() => setPlaying(span)}><span>{formatDate(span.start)}</span><strong>{formatDuration(span.duration)}</strong><i>播放</i></Button>)}</div></div><div className="playback-stage"><video src={playback || undefined} controls playsInline autoPlay /><div>{playing === null ? "尚未选择录像" : `${formatDate(playing.start)} · ${formatDuration(playing.duration)}`}</div></div></div></section>;
+  return <section className="view active"><div className="filter-panel sarmg-content-panel"><label>摄像头<Select value={cameraId} onChange={(event) => setCameraId(event.target.value)}>{cameras.map((camera) => <option key={camera.id} value={camera.id}>{camera.name}</option>)}</Select></label><label>开始时间<TextField type="datetime-local" value={start} onChange={(event) => setStart(event.target.value)} /></label><label>结束时间<TextField type="datetime-local" value={end} onChange={(event) => setEnd(event.target.value)} /></label><Button className="button button-primary" onClick={() => void search().catch((error) => toast(errorText(error), "error"))}>查询录像</Button></div><div className="recording-layout sarmg-content-panel"><div><div className="section-heading"><h3>录像时间段</h3><span>{spans.length} 条</span></div><div className="record-list">{spans.length === 0 ? <div className="empty-state">所选范围内没有录像</div> : spans.map((span) => <Button key={`${span.start}-${span.duration}`} className="record-item" onClick={() => setPlaying(span)}><span>{formatDate(span.start)}</span><strong>{formatDuration(span.duration)}</strong><i>播放</i></Button>)}</div></div><div className="playback-stage"><video src={playback || undefined} controls playsInline autoPlay /><div>{playing === null ? "尚未选择录像" : `${formatDate(playing.start)} · ${formatDuration(playing.duration)}`}</div></div></div></section>;
 }
 
 function EventsView({ events, cameras, unacknowledgedOnly, setUnacknowledgedOnly, refresh, acknowledge }: { events: MonitorEvent[]; cameras: Camera[]; unacknowledgedOnly: boolean; setUnacknowledgedOnly(value: boolean): void; refresh(): void; acknowledge(id: string): void }) {
   const names = new Map(cameras.map((camera) => [camera.id, camera.name]));
-  return <section className="view active"><div className="command-bar"><label className="toggle-line"><TextField type="checkbox" checked={unacknowledgedOnly} onChange={(event) => setUnacknowledgedOnly(event.target.checked)} />仅显示未确认事件</label><Button className="button button-quiet" onClick={refresh}>刷新</Button></div><Table aria-label="监控事件"><thead><tr><th>等级</th><th>事件</th><th>摄像头</th><th>时间</th><th>状态</th></tr></thead><tbody>{events.length === 0 ? <tr><td colSpan={5} className="empty-state">没有事件</td></tr> : events.map((event) => <tr key={event.id}><td><span className={`severity ${event.severity}`}>{severityLabel(event.severity)}</span></td><td><strong>{event.message}</strong><small>{event.kind}</small></td><td>{event.camera_id === null ? "系统" : names.get(event.camera_id) ?? "系统"}</td><td>{formatDate(event.created_at)}</td><td>{event.acknowledged_at === null ? <Button className="text-button" onClick={() => acknowledge(event.id)}>确认</Button> : "已确认"}</td></tr>)}</tbody></Table></section>;
+  return <section className="view active"><div className="command-bar"><label className="toggle-line"><TextField type="checkbox" checked={unacknowledgedOnly} onChange={(event) => setUnacknowledgedOnly(event.target.checked)} />仅显示未确认事件</label></div><Table aria-label="监控事件"><thead><tr><th>等级</th><th>事件</th><th>摄像头</th><th>时间</th><th>状态</th></tr></thead><tbody>{events.length === 0 ? <tr><td colSpan={5} className="empty-state">没有事件</td></tr> : events.map((event) => <tr key={event.id}><td><span className={`severity ${event.severity}`}>{severityLabel(event.severity)}</span></td><td><strong>{event.message}</strong><small>{event.kind}</small></td><td>{event.camera_id === null ? "系统" : names.get(event.camera_id) ?? "系统"}</td><td>{formatDate(event.created_at)}</td><td>{event.acknowledged_at === null ? <Button className="text-button" onClick={() => acknowledge(event.id)}>确认</Button> : "已确认"}</td></tr>)}</tbody></Table></section>;
 }
 
 function SystemView({ status, failure, audit, refresh }: { status: SystemStatus | null; failure: { requestId?: string } | null; audit: AuditRow[]; refresh(): void }) {
   return <section className="view active">
     {failure ? <ErrorState requestId={failure.requestId} onRetry={refresh}>系统状态与业务审计暂不可用。</ErrorState>
       : status === null ? <LoadingState>正在加载系统状态…</LoadingState> : <div className="system-cards">
-      <article><span>媒体服务</span><strong>{status.media_service === "ok" ? "运行正常" : "连接失败"}</strong><small>MediaMTX</small></article>
-      <article><span>在线设备</span><strong>{status.cameras.online} / {status.cameras.total}</strong><small>当前主码流状态</small></article>
-      <article><span>录像任务</span><strong>{status.cameras.recording}</strong><small>主码流持续录制</small></article>
-      <article><span>控制面版本</span><strong>v{status.version}</strong><small>Rust / Axum</small></article>
+      <article className="sarmg-content-card"><div className="sarmg-content-card__inner"><span>媒体服务</span><strong>{status.media_service === "ok" ? "运行正常" : "连接失败"}</strong><small>MediaMTX</small></div></article>
+      <article className="sarmg-content-card"><div className="sarmg-content-card__inner"><span>在线设备</span><strong>{status.cameras.online} / {status.cameras.total}</strong><small>当前主码流状态</small></div></article>
+      <article className="sarmg-content-card"><div className="sarmg-content-card__inner"><span>录像任务</span><strong>{status.cameras.recording}</strong><small>主码流持续录制</small></div></article>
     </div>}
-    <div className="management-block"><AdministratorsPanel /></div>
-    <section className="management-block"><div className="section-heading"><h2>最近业务审计记录</h2><Button onClick={refresh}>刷新</Button></div>
+    <div className="management-block sarmg-content-panel"><AdministratorsPanel /></div>
+    <section className="management-block sarmg-content-panel"><div className="section-heading"><h2>最近业务审计记录</h2></div>
       <div className="audit-list">{audit.length === 0 ? <div className="empty-state">暂无审计记录</div> : audit.map((row) => <div key={row.id}><span>{row.action}</span><small>{formatDate(row.created_at)}</small><code>{row.entity_type}{row.entity_id === null ? "" : " / " + row.entity_id.slice(0, 8)}</code></div>)}</div>
     </section>
   </section>;
@@ -268,7 +271,7 @@ function CameraEditor({ draft, setDraft, save }: { draft: CameraDraft; setDraft(
     <form className="sentinel-business" onSubmit={event => void submit(event)} aria-busy={pending}>
       {failure && <ErrorState requestId={failure.requestId}>设备配置未能保存，请检查输入并重试。</ErrorState>}
       <fieldset disabled={pending}><div className="form-grid">
-        <label>名称<TextField value={draft.name} onChange={field("name")} required /></label>
+        <label>名称<InstanceNameField value={draft.name} onChange={field("name")} required /></label>
         <label>位置<TextField value={draft.location} onChange={field("location")} /></label>
         <label className="wide">主码流 RTSP<TextField value={draft.main_stream_url} onChange={field("main_stream_url")} required={draft.id === ""} /></label>
         <label className="wide">子码流 RTSP<TextField value={draft.sub_stream_url} onChange={field("sub_stream_url")} /></label>
@@ -326,10 +329,8 @@ function CameraDrawer({ camera, close, toast }: { camera: Camera; close(): void;
   </Dialog>;
 }
 
-function Clock() { const [now, setNow] = useState(new Date()); useEffect(() => { const timer = window.setInterval(() => setNow(new Date()), 1_000); return () => window.clearInterval(timer); }, []); return <time>{new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(now)}</time>; }
 
 const viewTitle = (view: View) => ({ cameras: "实时监控", recordings: "录像检索", events: "事件中心", system: "系统管理" })[view];
-const viewKicker = (view: View) => ({ cameras: "LIVE OPERATIONS", recordings: "ARCHIVE SEARCH", events: "INCIDENT DESK", system: "SYSTEM CONTROL" })[view];
 const statusLabel = (status: string) => ({ pending: "等待检测", online: "在线", offline: "离线", disabled: "已停用", error: "配置异常" } as Record<string, string>)[status] ?? status;
 const severityLabel = (severity: string) => ({ info: "信息", warning: "警告", critical: "严重" } as Record<string, string>)[severity] ?? severity;
 const formatDate = (value: string) => new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date(value));
@@ -343,8 +344,8 @@ function currentView(): View {
   return hash === "recordings" || hash === "events" || hash === "system" ? hash : "cameras";
 }
 const Root = createSarmgAdminApplication({
-  product: { name: "哨界 · Sentinel Monitor", version: product.version }, client: administratorApi,
-  navigation: (["cameras", "recordings", "events", "system"] as const).map(view => ({ label: viewTitle(view), href: "#" + view })),
+  product: { name: "Sentinel Monitor" }, client: administratorApi,
+  navigation: [],
   routes: <Console />,
 });
 const root = document.getElementById("root");

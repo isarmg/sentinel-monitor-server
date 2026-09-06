@@ -47,13 +47,13 @@ try {
         throw new Error(`Unexpected API request ${request.method()} ${path}`);
       });
       await page.goto(`http://127.0.0.1:${address.port}/#cameras`);
-      await expect(page.getByText(camera.name, { exact: true })).toBeVisible();
-      await page.getByRole("button", { name: "添加摄像头", exact: true }).click();
+      await expect(page.getByRole("complementary").getByText(camera.name, { exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "新建摄像头", exact: true }).click();
       const editor = page.getByRole("dialog", { name: "添加摄像头", exact: true });
       await expect(editor).toBeVisible();
       for (let i = 0; i < 12; i++) { await page.keyboard.press("Tab"); assert.ok(await editor.evaluate(element => element.contains(document.activeElement))); }
       await page.keyboard.press("Escape");
-      await expect(page.getByRole("button", { name: "添加摄像头", exact: true })).toBeFocused();
+      await expect(page.getByRole("button", { name: "新建摄像头", exact: true })).toBeFocused();
       await page.getByRole("button", { name: "主码流", exact: true }).click();
       const movement = page.getByRole("button", { name: "云台向上", exact: true });
       await movement.focus(); await page.keyboard.down("Space"); await page.keyboard.up("Space");
@@ -63,17 +63,19 @@ try {
       await page.keyboard.up("Enter");
       await expect.poll(() => ptz.slice()).toEqual(["move", "stop", "move", "stop"]);
       await page.keyboard.press("Escape");
-      await page.getByRole("link", { name: "录像检索", exact: true }).click();
+      await page.getByRole("button", { name: "录像检索", exact: true }).click();
       await page.getByRole("button", { name: "查询录像", exact: true }).click();
       await expect(page.getByRole("button", { name: /1分0秒/ })).toBeVisible();
-      await page.getByRole("link", { name: "事件中心", exact: true }).click();
+      await page.getByRole("button", { name: "事件中心", exact: true }).click();
       await page.getByRole("button", { name: "确认", exact: true }).click();
       await expect(page.getByRole("cell", { name: "已确认", exact: true })).toBeVisible();
-      await page.getByRole("link", { name: "系统管理", exact: true }).click();
+      await page.getByRole("button", { name: "系统管理", exact: true }).click();
+      await expect(page.getByRole("complementary")).toHaveCount(0);
+      await expect(page.getByRole("banner").locator('.sarmg-product-identity')).toHaveText("Sentinel Monitor");
       await expect(page.getByText("运行正常", { exact: true })).toBeVisible();
       await expect(page.getByText("camera.updated", { exact: true })).toBeVisible();
       failStatus = true;
-      await page.getByRole("button", { name: "刷新", exact: true }).click();
+      await page.getByRole("group", { name: "全局操作" }).getByRole("button", { name: "刷新", exact: true }).click();
       await expect(page.getByRole("alert")).toContainText("system-failure-123");
       await expect(page.locator("body")).not.toContainText("SECRET");
       await expect(page.getByText("运行正常", { exact: true })).toHaveCount(0);
@@ -85,11 +87,11 @@ try {
       await page.getByRole("button", { name: "Save administrator", exact: true }).click();
       await expect(page.getByRole("rowheader", { name: "secondary", exact: true })).toBeVisible();
       for (const theme of ["light", "dark"]) {
-        await page.getByLabel("Theme").selectOption(theme);
+        if (await page.locator("html").getAttribute("data-theme") !== theme) await page.getByRole("button", { name: /切换到.*模式/ }).click();
         assert.deepEqual((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze()).violations, []);
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       }
-      await page.getByRole("link", { name: "实时监控", exact: true }).click();
+      await page.getByRole("button", { name: "实时监控", exact: true }).click();
       await page.getByRole("button", { name: "删除", exact: true }).click();
       await expect(page.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
       await page.getByRole("button", { name: "Confirm", exact: true }).click();

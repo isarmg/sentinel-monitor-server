@@ -1,3 +1,6 @@
+#[path = "../foundation/platform_router.rs"]
+mod foundation_platform;
+
 use crate::{
     auth::{decode_media_token, issue_media_token, CurrentUser},
     background::camera_path,
@@ -35,7 +38,7 @@ const CAMERA_SELECT: &str = "SELECT id, name, location, main_stream_url_enc, sub
 
 pub fn router(state: AppState, runtime: sarmg_server_runtime::RuntimeHandle) -> Result<Router> {
     let static_dir = state.config.static_dir.clone();
-    let platform = sarmg_server_runtime::platform_router(
+    let platform = foundation_platform::platform_router(
         runtime,
         "sentinel-monitor",
         state.administrator_origin,
@@ -249,8 +252,13 @@ async fn update_camera(
     };
     let enabled = request.enabled.unwrap_or(existing.enabled);
     let record_enabled = request.record_enabled.unwrap_or(existing.record_enabled);
-    if name.trim().is_empty() {
-        return Err(AppError::Validation("摄像头名称不能为空".into()));
+    if name.trim().is_empty()
+        || name.trim().chars().count() > 32
+        || name.chars().any(char::is_control)
+    {
+        return Err(AppError::Validation(
+            "摄像头名称须为 1–32 个字符，不能包含控制字符".into(),
+        ));
     }
 
     let updated_at = Utc::now();
@@ -785,8 +793,13 @@ fn validate_camera_values(
     sub: Option<&str>,
     onvif: Option<&str>,
 ) -> Result<()> {
-    if name.trim().is_empty() {
-        return Err(AppError::Validation("摄像头名称不能为空".into()));
+    if name.trim().is_empty()
+        || name.trim().chars().count() > 32
+        || name.chars().any(char::is_control)
+    {
+        return Err(AppError::Validation(
+            "摄像头名称须为 1–32 个字符，不能包含控制字符".into(),
+        ));
     }
     validate_rtsp(main)?;
     if let Some(sub) = sub.filter(|value| !value.trim().is_empty()) {
@@ -874,6 +887,27 @@ async fn write_audit_in(
 #[cfg(test)]
 mod request_contract_tests {
     use super::*;
+
+    #[test]
+    fn instance_name_policy_counts_unicode_characters() {
+        for character in ["a", "中", "あ", "😀"] {
+            assert!(validate_camera_values(
+                &character.repeat(32),
+                "rtsp://127.0.0.1/live",
+                None,
+                None
+            )
+            .is_ok());
+            assert!(validate_camera_values(
+                &character.repeat(33),
+                "rtsp://127.0.0.1/live",
+                None,
+                None
+            )
+            .is_err());
+        }
+        assert!(validate_camera_values("bad\nname", "rtsp://127.0.0.1/live", None, None).is_err());
+    }
     use serde::de::DeserializeOwned;
 
     fn rejects_unknown<T: DeserializeOwned>(value: Value) {
