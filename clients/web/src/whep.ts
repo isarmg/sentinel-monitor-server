@@ -1,3 +1,4 @@
+import { t } from "../shell/i18n.js";
 function waitForIceGathering(peer: RTCPeerConnection, timeoutMs = 5_000): Promise<void> {
   if (peer.iceGatheringState === "complete") return Promise.resolve();
   return new Promise((resolve) => {
@@ -70,14 +71,14 @@ export class WhepPlayer {
     };
 
     const connected = new Promise<void>((resolve, reject) => {
-      const timeout = window.setTimeout(() => reject(new Error("WebRTC连接超时")), 12_000);
+      const timeout = window.setTimeout(() => reject(new Error(t("WebRTC连接超时", "WebRTC connection timed out"))), 12_000);
       peer.addEventListener("connectionstatechange", () => {
         if (peer.connectionState === "connected") {
           window.clearTimeout(timeout);
           resolve();
         } else if (["failed", "closed"].includes(peer.connectionState)) {
           window.clearTimeout(timeout);
-          reject(new Error("WebRTC连接失败"));
+          reject(new Error(t("WebRTC连接失败", "WebRTC connection failed")));
         }
       });
     });
@@ -86,13 +87,13 @@ export class WhepPlayer {
     await peer.setLocalDescription(offer);
     await waitForIceGathering(peer);
     const localDescription = peer.localDescription;
-    if (localDescription === null) throw new Error("浏览器未生成WHEP SDP");
+    if (localDescription === null) throw new Error(t("浏览器未生成WHEP SDP", "The browser did not generate a WHEP SDP"));
     const response = await fetch(this.url, {
       method: "POST",
       headers: { ...headers, "Content-Type": "application/sdp" },
       body: localDescription.sdp,
     });
-    if (!response.ok) throw new Error(`WHEP信令失败 (${response.status})`);
+    if (!response.ok) throw new Error(t("WHEP信令失败 ({0})", "WHEP signaling failed ({0})", [response.status]));
     this.resource = resourceUrl(response.headers.get("Location"), this.url);
     await peer.setRemoteDescription({ type: "answer", sdp: await response.text() });
     await connected;

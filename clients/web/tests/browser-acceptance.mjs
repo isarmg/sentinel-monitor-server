@@ -1,3 +1,4 @@
+import { checkWebLanguage } from "./language.mjs";
 import assert from "node:assert/strict";
 import { chromium, firefox, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
@@ -14,7 +15,7 @@ try {
   for (const engine of [chromium, firefox]) {
     const browser = await engine.launch();
     try {
-      const context = await browser.newContext({ viewport: { width: 360, height: 740 } });
+      const context = await browser.newContext({ locale: "zh-CN",  viewport: { width: 360, height: 740 } });
       const page = await context.newPage();
       const errors = [], paths = [], ptz = [];
       let cameraDeleted = false, acknowledged = false, adminCreated = false, failStatus = false;
@@ -73,18 +74,18 @@ try {
       await expect(page.getByRole("complementary")).toHaveCount(0);
       await expect(page.getByRole("banner").locator('.sarmg-product-identity')).toHaveText("Sentinel Monitor");
       await expect(page.getByText("运行正常", { exact: true })).toBeVisible();
-      await expect(page.getByText("camera.updated", { exact: true })).toBeVisible();
+      await expect(page.getByText("更新摄像头", { exact: true })).toBeVisible();
       failStatus = true;
       await page.getByRole("group", { name: "全局操作" }).getByRole("button", { name: "刷新", exact: true }).click();
       await expect(page.getByRole("alert")).toContainText("system-failure-123");
       await expect(page.locator("body")).not.toContainText("SECRET");
       await expect(page.getByText("运行正常", { exact: true })).toHaveCount(0);
-      await page.getByRole("alert").getByRole("button", { name: "Try again" }).click();
+      await page.getByRole("alert").getByRole("button", { name: "重试" }).click();
       await expect(page.getByText("运行正常", { exact: true })).toBeVisible();
-      await page.getByRole("button", { name: "Create administrator", exact: true }).click();
-      await page.getByLabel("Username", { exact: true }).fill("secondary");
-      await page.getByLabel("New password", { exact: true }).fill("replacement password");
-      await page.getByRole("button", { name: "Save administrator", exact: true }).click();
+      await page.getByRole("button", { name: "创建管理员", exact: true }).click();
+      await page.getByLabel("用户名", { exact: true }).fill("secondary");
+      await page.getByLabel("新密码", { exact: true }).fill("replacement password");
+      await page.getByRole("button", { name: "保存管理员", exact: true }).click();
       await expect(page.getByRole("rowheader", { name: "secondary", exact: true })).toBeVisible();
       for (const theme of ["light", "dark"]) {
         if (await page.locator("html").getAttribute("data-theme") !== theme) await page.getByRole("button", { name: /切换到.*模式/ }).click();
@@ -93,10 +94,11 @@ try {
       }
       await page.getByRole("button", { name: "实时监控", exact: true }).click();
       await page.getByRole("button", { name: "删除", exact: true }).click();
-      await expect(page.getByRole("button", { name: "Cancel", exact: true })).toBeFocused();
-      await page.getByRole("button", { name: "Confirm", exact: true }).click();
+      await expect(page.getByRole("button", { name: "取消", exact: true })).toBeFocused();
+      await page.getByRole("button", { name: "确认", exact: true }).click();
       await expect(page.getByText("还没有匹配的摄像头。", { exact: true })).toBeVisible();
       assert.ok(!paths.some(path => path.includes("/users")));
+      await checkWebLanguage(page, {"routes":[["cameras","Live monitoring"],["recordings","Recordings"],["events","Events"],["system","System management"]],"names":["验收摄像头","测试现场"]});
       assert.deepEqual(errors, []);
       console.log(`${engine.name()}: current Sentinel system/admin/cameras/recordings/events, PTZ stop, modal focus and mobile WCAG AA passed`);
       await context.close();
