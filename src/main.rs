@@ -26,7 +26,7 @@ use mediamtx::MediaMtxClient;
 use models::EventRecord;
 use sqlx::SqlitePool;
 use std::{path::PathBuf, sync::Arc};
-use tokio::{net::TcpListener, sync::broadcast};
+use tokio::sync::broadcast;
 use tracing_subscriber::EnvFilter;
 
 #[derive(Clone)]
@@ -188,6 +188,9 @@ async fn serve(release_root: Option<&std::path::Path>) -> anyhow::Result<()> {
     }
     static_assets::validate(&config.static_dir, !config.development_mode)
         .map_err(|error| anyhow::anyhow!("static asset contract: {error:#}"))?;
+    let signals = sarmg_server_runtime::ProcessSignals::install()?;
+    let listeners = sarmg_server_runtime::BoundListeners::bind([config.bind_addr])?;
+    let transport = sarmg_server_runtime::HttpServer::new(listeners, signals);
     let application_lock =
         runtime_lock::ApplicationLock::acquire(&config.database_url, &config.runtime_directory)?;
     if config.development_mode {
@@ -252,7 +255,6 @@ async fn serve(release_root: Option<&std::path::Path>) -> anyhow::Result<()> {
             "expired media operation leases were marked unknown for safe reconciliation"
         );
     }
-    let listener = TcpListener::bind(config.bind_addr).await?;
     let health_pool = state.pool.clone();
     let reconcile_state = state.clone();
     let status_state = state.clone();
@@ -263,7 +265,7 @@ async fn serve(release_root: Option<&std::path::Path>) -> anyhow::Result<()> {
         sarmg_server_runtime::ServerRuntime::builder(sarmg_server_runtime::ProductDescriptor {
             id: "sentinel-monitor".into(),
             version: env!("CARGO_PKG_VERSION").into(),
-            foundation_revision: "1e889d08fa69fcf2b5fffe45e8cc42b68218f4f1".into(),
+            foundation_revision: "77e7ad7af8e1bf62432bd6bdd8fa9aff54cb39d1".into(),
             profile: "server-control-plane".into(),
             capabilities: vec![
                 "admin-persistent".into(),
@@ -322,7 +324,7 @@ async fn serve(release_root: Option<&std::path::Path>) -> anyhow::Result<()> {
     let runtime_handle = runtime.handle();
     tracing::info!(address = %config.bind_addr, "sentinel monitor started");
     runtime
-        .serve(listener, routes::router(state, runtime_handle)?)
+        .serve(transport, routes::router(state, runtime_handle)?)
         .await?;
     Ok(())
 }
