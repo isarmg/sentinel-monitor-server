@@ -145,14 +145,14 @@ Administrator Browser Session
 顺序取得排他锁，把 SQLite、MediaMTX config/contract、recordings 和 external key 身份作为组合状态处理。
 当前产品不包含迁移器、不扫描其他代路径、不解析非当前 Schema/密文，也不通过 fallback 修补数据。
 
-## 9. Web 构建与 Foundation 0.3 流程
+## 9. Web 构建与 Foundation 0.7.0 流程
 
 ```text
-package.json + package-lock.json 精确锁定 Foundation 0.3 和工具链
+package.json + package-lock.json 精确锁定 Foundation 0.7.0 和工具链
   -> npm ci
   -> check:foundation
        ├─ 校验 Node/React/TypeScript/Vite 精确版本
-       ├─ 校验四个 Foundation Web 包及 lock 来源
+       ├─ 校验八个 Foundation Web 包及 lock 来源
        ├─ 校验认证 hook、运行时守卫和 data-sarmg-scope
        └─ 校验 token/reset/accessibility 内容摘要和品牌语义映射
   -> TypeScript 5.8.3 strict typecheck
@@ -174,8 +174,8 @@ npm run build
 
 `build` 已把 `check:foundation` 设为硬前置，因此不能通过直接执行 Vite 跳过共享边界。构建产物完全自包含；
 浏览器运行时不解析 npm 包，也不访问 npm registry、Foundation 仓库或远程 CSS。
-构建期四个 Web 包来自 Foundation `v0.3.0` GitHub Release 归档，并由 lockfile integrity 锁定字节；
-Rust crate 由版本 `=0.3.1` 和 revision `7c6a210cd5fc8bf987e0f50fccee69b7c58cbdf0` 双重锁定。两者都不读取
+构建期八个 Web 包来自 Foundation `v0.7.0` GitHub Release 归档，并由 lockfile integrity 锁定字节；
+Rust crate 由版本 `=0.7.0` 和 revision `77e7ad7af8e1bf62432bd6bdd8fa9aff54cb39d1` 双重锁定。两者都不读取
 共同父目录或 sibling checkout，也不提供旧来源 fallback。
 
 ## 10. Foundation 共享层与产品层调用树

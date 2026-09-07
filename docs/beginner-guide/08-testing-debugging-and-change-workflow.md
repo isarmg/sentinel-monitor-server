@@ -47,7 +47,7 @@ browser 排查。每跨一层保留 operation ID 和受限日志证据。
 除渲染外测试 Session 失效、CSRF、operation polling、unknown 展示、播放 Token 过期和错误 redaction。
 UI 不能把网络错误自动解释为“操作失败”。
 
-Web 还必须证明设计边界：`main.tsx` 只从 `@sarmg/design-tokens@0.3.0` 导入 token、scoped reset 和
+Web 还必须证明设计边界：`main.tsx` 只从 `@sarmg/design-tokens@0.7.0` 导入 token、scoped reset 和
 accessibility，`body` 带 `data-sarmg-scope`，而 `styles.css` 保留 Sentinel 品牌 token 并映射 Foundation
 语义。不要在 `vendor/` 复制共享 CSS，也不要添加 CDN 或运行时网络 fallback。
 
