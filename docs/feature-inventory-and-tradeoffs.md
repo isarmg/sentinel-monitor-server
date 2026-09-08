@@ -210,7 +210,7 @@ viewer。摄像头的 RTSP/ONVIF `username`、加密 `password` 和媒体 JWT `a
 | SEN-R-017 | CI 同时门禁 Rust fmt/check/clippy/test、Web、native 生命周期与 Caddy 当前代理合同 | `.github/workflows/ci.yml` | 开发运维 | 高 | 任一语言或交付层可独立漂移进入 main；代理可能重新指向不存在的容器 | clean checkout 全 job；锁文件模式；根级 Caddyfile/容器上游负例；三个 loopback 上游精确一次 |
 | SEN-R-018 | Rust 固定 1.98.0，Cargo.lock 与 npm package-lock 都纳入提交 | `rust-toolchain.toml`、lockfiles | 开发运维 | 中 | 依赖解析随时间变化，构建结果不可复现 | `--locked`、`npm ci`、工具链版本 |
 | SEN-R-019 | 源配置统一为 `config/`，主机部署资产为 `deploy/`，客户端为 `clients/web/`，生命周期为 `native/`；根目录不放散落部署文件 | 仓库目录结构、CI proxy gate | 开发运维 | 低 | 配置、客户端和部署资产散落，开发者难以判断事实源；双份代理模板会漂移 | 目录清单；根级 `Caddyfile` 不存在；脚本/文档不引用已移除位置 |
-| SEN-R-020 | 当前 Schema identity 为 application `sentinel-monitor`、version 0.2.3、revision 1、SHA `f547ddc817d830d23b5305bb1f88b29898d6531568edd6eb194c2b629eb560c0`；`users` 只有 username，没有 email/role | `src/current_schema.sql`、`src/sqlite.rs`、`native/lifecycle-test.sh` | 保障 | 高 | 发行物、运行库和运维文档可能各自接受不同管理身份 DDL | code-owned fingerprint 重算、metadata/现场 schema、列清单、lifecycle identity 一致 |
+| SEN-R-020 | 当前 Schema identity 为 application `sentinel-monitor`、version 0.2.2、revision 3、SHA `18d53d385fda41458b3e614d0f1179409a52137b52c6b69ce5c3c19c5f84506e`；`_sarmg_administrators` 使用 username，不保存 email/role | `src/current_schema.sql`、`src/sqlite.rs`、`native/lifecycle-test.sh` | 保障 | 高 | 发行物、运行库和运维文档可能各自接受不同管理身份 DDL | code-owned fingerprint 重算、metadata/现场 schema、列清单、lifecycle identity 一致 |
 
 ## 11. 可观测性、容量和故障边界
 

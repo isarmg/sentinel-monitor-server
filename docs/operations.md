@@ -107,7 +107,7 @@ sudo systemctl reload caddy
 
 ```text
 application=sentinel-monitor
-application_version=0.2.3
+application_version=0.2.2
 schema_revision=3
 schema_sha256=18d53d385fda41458b3e614d0f1179409a52137b52c6b69ce5c3c19c5f84506e
 ```
