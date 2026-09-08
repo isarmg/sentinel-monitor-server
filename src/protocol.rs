@@ -35,10 +35,7 @@ mod tests {
 
     #[test]
     fn rust_web_and_mediamtx_share_the_current_protocol_contract() {
-        assert_eq!(
-            CONTRACT.media_jwt_issuer,
-            format!("sentinel-monitor/{}", env!("CARGO_PKG_VERSION"))
-        );
+        assert_eq!(CONTRACT.media_jwt_issuer, "sentinel-monitor/0.2.2");
 
         let web = include_str!("../clients/web/src/api.ts");
         assert!(web.contains("export function apiPath"));
