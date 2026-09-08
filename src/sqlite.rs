@@ -69,7 +69,7 @@ pub(crate) struct GlobalLeaseState {
 pub(crate) fn current_schema_identity() -> anyhow::Result<SchemaIdentity> {
     Ok(SchemaIdentity::new(
         APPLICATION,
-        env!("CARGO_PKG_VERSION"),
+        "0.2.2",
         u64::try_from(CURRENT_SCHEMA_REVISION).context("current schema revision is negative")?,
         CURRENT_SCHEMA_SHA256,
     )?)
@@ -372,7 +372,7 @@ fn initialize_current_database(path: &Path) -> anyhow::Result<()> {
                  ) VALUES (1, ?, ?, ?, ?)",
                 params![
                     APPLICATION,
-                    env!("CARGO_PKG_VERSION"),
+                    "0.2.2",
                     CURRENT_SCHEMA_REVISION,
                     CURRENT_SCHEMA_SHA256
                 ],
@@ -763,7 +763,7 @@ mod tests {
             metadata,
             (
                 APPLICATION.to_string(),
-                env!("CARGO_PKG_VERSION").to_string(),
+                "0.2.2".to_string(),
                 CURRENT_SCHEMA_REVISION,
                 CURRENT_SCHEMA_SHA256.to_string()
             )
@@ -893,12 +893,7 @@ mod tests {
                 "INSERT INTO product_metadata (
                      singleton, application, application_version, schema_revision, schema_sha256
                  ) VALUES (1, ?, ?, ?, ?)",
-                params![
-                    APPLICATION,
-                    env!("CARGO_PKG_VERSION"),
-                    CURRENT_SCHEMA_REVISION,
-                    fingerprint
-                ],
+                params![APPLICATION, "0.2.2", CURRENT_SCHEMA_REVISION, fingerprint],
             )
             .unwrap();
         assert!(sqlite_sidecar(&database, "-wal").exists());

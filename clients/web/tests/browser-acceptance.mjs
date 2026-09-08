@@ -36,7 +36,7 @@ try {
         if (path.endsWith("/events")) return route.fulfill({ json: [{ id: "event-1", camera_id: camera.id, kind: "camera.status", severity: "info", message: "验收事件", acknowledged_at: acknowledged ? time : null, created_at: time }] });
         if (path.endsWith("/system/status")) {
           if (failStatus) { failStatus = false; return route.fulfill({ status: 500, json: { code: "platform.internal", message: "SECRET database path", retryable: false, request_id: "system-failure-123" } }); }
-          return route.fulfill({ json: { service: "sentinel-monitor", version: "0.2.2", database: "ok", media_service: "ok", cameras: { total: 1, online: 0, recording: 0 }, server_time: time } });
+          return route.fulfill({ json: { service: "sentinel-monitor", version: "0.2.3", database: "ok", media_service: "ok", cameras: { total: 1, online: 0, recording: 0 }, server_time: time } });
         }
         if (path.endsWith("/audit")) return route.fulfill({ json: [{ id: "audit-1", action: "camera.updated", entity_type: "camera", entity_id: camera.id, created_at: time }] });
         if (path.endsWith("/platform/administrators")) {
@@ -68,6 +68,11 @@ try {
       await page.getByRole("button", { name: "查询录像", exact: true }).click();
       await expect(page.getByRole("button", { name: /1分0秒/ })).toBeVisible();
       await page.getByRole("button", { name: "事件中心", exact: true }).click();
+      const filter = page.getByRole("checkbox", { name: "仅显示未确认事件", exact: true });
+      const filterBox = await filter.boundingBox();
+      assert.ok(filterBox.width <= 24 && filterBox.height <= 24);
+      await filter.check(); await expect(filter).toBeChecked();
+      await filter.uncheck();
       await page.getByRole("button", { name: "确认", exact: true }).click();
       await expect(page.getByRole("cell", { name: "已确认", exact: true })).toBeVisible();
       await page.getByRole("button", { name: "系统管理", exact: true }).click();
@@ -75,6 +80,9 @@ try {
       await expect(page.getByRole("banner").locator('.sarmg-product-identity')).toHaveText("Sentinel Monitor");
       await expect(page.getByText("运行正常", { exact: true })).toBeVisible();
       await expect(page.getByText("更新摄像头", { exact: true })).toBeVisible();
+      const statusTable = page.getByRole("table", { name: "系统状态", exact: true });
+      await expect(statusTable.getByRole("rowheader")).toHaveText(["媒体服务", "在线设备", "录像任务"]);
+      await expect(statusTable.getByRole("columnheader")).toHaveText(["项目", "当前状态", "说明"]);
       failStatus = true;
       await page.getByRole("group", { name: "全局操作" }).getByRole("button", { name: "刷新", exact: true }).click();
       await expect(page.getByRole("alert")).toContainText("system-failure-123");
@@ -82,11 +90,9 @@ try {
       await expect(page.getByText("运行正常", { exact: true })).toHaveCount(0);
       await page.getByRole("alert").getByRole("button", { name: "重试" }).click();
       await expect(page.getByText("运行正常", { exact: true })).toBeVisible();
-      await page.getByRole("button", { name: "创建管理员", exact: true }).click();
-      await page.getByLabel("用户名", { exact: true }).fill("secondary");
-      await page.getByLabel("新密码", { exact: true }).fill("replacement password");
-      await page.getByRole("button", { name: "保存管理员", exact: true }).click();
-      await expect(page.getByRole("rowheader", { name: "secondary", exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "创建管理员", exact: true })).toHaveCount(0);
+      await expect(page.getByRole("table", { name: "管理员账号", exact: true }).getByRole("rowheader")).toHaveText("admin");
+
       for (const theme of ["light", "dark"]) {
         if (await page.locator("html").getAttribute("data-theme") !== theme) await page.getByRole("button", { name: /切换到.*模式/ }).click();
         assert.deepEqual((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze()).violations, []);

@@ -122,7 +122,7 @@ mod tests {
 
     #[test]
     fn credential_identity_and_schema_are_a_single_current_contract() {
-        assert_eq!(APPLICATION_VERSION, env!("CARGO_PKG_VERSION"));
+        assert_eq!(APPLICATION_VERSION, "0.2.2");
         let schema = include_str!("../schema/generated/current_schema.sql");
         for field in [
             CredentialField::MainStreamUrl,

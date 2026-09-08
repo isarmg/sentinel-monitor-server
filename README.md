@@ -1,10 +1,10 @@
 # 哨界 Sentinel Monitor
 
-Sentinel Monitor `0.2.2` 是只支持 `x86_64-unknown-linux-gnu` 物理机原生部署的浏览器摄像头监控系统。Rust/Axum 控制面
+Sentinel Monitor `0.2.3` 是只支持 `x86_64-unknown-linux-gnu` 物理机原生部署的浏览器摄像头监控系统。Rust/Axum 控制面
 负责用户、摄像头、PTZ、审计和期望态；固定版本的 MediaMTX companion 负责 RTSP 接入、WHEP/HLS
 播放和录像；SQLite 保存当前业务状态。
 
-产品只理解当前 `0.2.2` Schema、`/api/v2` 协议、凭据 envelope 和固定发行树，不读取其他代数据库、
+产品只理解当前 `0.2.3` Schema、`/api/v2` 协议、凭据 envelope 和固定发行树，不读取其他代数据库、
 密文、runtime 或配置，也不提供迁移、备份和恢复命令。稳定版本形成后的代际变更才会交给
 `sarmg-upgrade`；当前开发阶段没有历史升级 edge。
 
@@ -46,3 +46,5 @@ JWT/camera identity 与浏览器媒体逻辑仍是原有数据面合同，不能
 - [项目工作流程与流程树](docs/project-workflow.md)
 - [完整功能与取舍清单](docs/feature-inventory-and-tradeoffs.md)
 - [原生部署、安全、诊断与故障运维](docs/operations.md)
+
+账号修改方法见 [账号设置](docs/account-settings.md)。
