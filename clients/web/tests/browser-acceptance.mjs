@@ -18,7 +18,7 @@ try {
       const context = await browser.newContext({ locale: "zh-CN",  viewport: { width: 360, height: 740 } });
       const page = await context.newPage();
       const errors = [], paths = [], ptz = [];
-      let cameraDeleted = false, acknowledged = false, adminCreated = false, failStatus = false;
+      let cameraDeleted = false, acknowledged = false, failStatus = false;
       page.on("pageerror", error => errors.push(error.message));
       await page.route("**/api/v2/**", async route => {
         const request = route.request(), url = new URL(request.url()), path = url.pathname;
@@ -36,14 +36,9 @@ try {
         if (path.endsWith("/events")) return route.fulfill({ json: [{ id: "event-1", camera_id: camera.id, kind: "camera.status", severity: "info", message: "验收事件", acknowledged_at: acknowledged ? time : null, created_at: time }] });
         if (path.endsWith("/system/status")) {
           if (failStatus) { failStatus = false; return route.fulfill({ status: 500, json: { code: "platform.internal", message: "SECRET database path", retryable: false, request_id: "system-failure-123" } }); }
-          return route.fulfill({ json: { service: "sentinel-monitor", version: "0.2.3", database: "ok", media_service: "ok", cameras: { total: 1, online: 0, recording: 0 }, server_time: time } });
+          return route.fulfill({ json: { service: "sentinel-monitor", version: "0.2.4", database: "ok", media_service: "ok", cameras: { total: 1, online: 0, recording: 0 }, server_time: time } });
         }
         if (path.endsWith("/audit")) return route.fulfill({ json: [{ id: "audit-1", action: "camera.updated", entity_type: "camera", entity_id: camera.id, created_at: time }] });
-        if (path.endsWith("/platform/administrators")) {
-          if (request.method() === "POST") { assert.deepEqual(request.postDataJSON(), { username: "secondary", password: "replacement password" }); adminCreated = true; return route.fulfill({ status: 204 }); }
-          const record = { administrator_id: administratorId, username: "admin", active: true, created_at_micros: 1, updated_at_micros: 2, last_login_at_micros: null };
-          return route.fulfill({ json: adminCreated ? [record, { ...record, administrator_id: "B".repeat(43), username: "secondary" }] : [record] });
-        }
         if (path.endsWith("/recordings")) { assert.equal(url.searchParams.get("camera_id"), camera.id); return route.fulfill({ json: [{ start: time, duration: 60 }] }); }
         throw new Error(`Unexpected API request ${request.method()} ${path}`);
       });
@@ -90,8 +85,8 @@ try {
       await expect(page.getByText("运行正常", { exact: true })).toHaveCount(0);
       await page.getByRole("alert").getByRole("button", { name: "重试" }).click();
       await expect(page.getByText("运行正常", { exact: true })).toBeVisible();
-      await expect(page.getByRole("button", { name: "创建管理员", exact: true })).toHaveCount(0);
-      await expect(page.getByRole("table", { name: "管理员账号", exact: true }).getByRole("rowheader")).toHaveText("admin");
+      await expect(page.getByRole("heading", { name: "管理员账号", exact: true })).toHaveCount(0);
+      await expect(page.getByRole("table", { name: "管理员账号", exact: true })).toHaveCount(0);
 
       for (const theme of ["light", "dark"]) {
         if (await page.locator("html").getAttribute("data-theme") !== theme) await page.getByRole("button", { name: /切换到.*模式/ }).click();
@@ -106,7 +101,7 @@ try {
       assert.ok(!paths.some(path => path.includes("/users")));
       await checkWebLanguage(page, {"routes":[["cameras","Live monitoring"],["recordings","Recordings"],["events","Events"],["system","System management"]],"names":["验收摄像头","测试现场"]});
       assert.deepEqual(errors, []);
-      console.log(`${engine.name()}: current Sentinel system/admin/cameras/recordings/events, PTZ stop, modal focus and mobile WCAG AA passed`);
+      console.log(`${engine.name()}: current Sentinel system/cameras/recordings/events, PTZ stop, account settings, modal focus and mobile WCAG AA passed`);
       await context.close();
     } finally { await browser.close(); }
   }

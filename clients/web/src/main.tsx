@@ -3,7 +3,7 @@ import { t, getLocale } from "../shell/i18n.js";
 import { StrictMode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { FormEvent } from "react";
-import { AdministratorsPanel, createSarmgAdminApplication, errorRequestId, useAdminApplication, HeaderNavigation, InstanceHeaderActions, InstanceWorkspace, InstanceNameField } from "../shell/index.js";
+import { createSarmgAdminApplication, errorRequestId, useAdminApplication, HeaderNavigation, InstanceHeaderActions, InstanceWorkspace, InstanceNameField } from "../shell/index.js";
 import { Button, Checkbox, ConfirmDangerDialog, Dialog, ErrorState, LoadingState, Select, Table, TextField } from "@sarmg/admin-ui";
 
 import "@sarmg/design-tokens/tokens.css";
@@ -254,7 +254,6 @@ function SystemView({ status, failure, audit, refresh }: { status: SystemStatus 
         <tr><th scope="row">{t("录像任务", "Recording tasks")}</th><td>{status.cameras.recording}</td><td>{t("主码流持续录制", "Continuous main stream recording")}</td></tr>
       </tbody>
     </Table>}
-    <div className="management-block sarmg-content-panel"><AdministratorsPanel /></div>
     <section className="management-block sarmg-content-panel"><div className="section-heading"><h2>{t("最近业务审计记录", "Recent business audit")}</h2></div>
       <div className="audit-list">{audit.length === 0 ? <div className="empty-state">{t("暂无审计记录", "No audit records yet")}</div> : audit.map((row) => <div key={row.id}><span>{displayLabel(row.action)}</span><small>{formatDate(row.created_at)}</small><code>{displayLabel(row.entity_type)}{row.entity_id === null ? "" : " / " + row.entity_id.slice(0, 8)}</code></div>)}</div>
     </section>

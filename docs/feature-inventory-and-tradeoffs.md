@@ -1,6 +1,6 @@
 # Sentinel Monitor 完整功能与取舍清单
 
-本文按当前 `0.2.3` 工作树逐项盘点 Sentinel Monitor 的真实能力、保证、交付工具和明确边界。代码、
+本文按当前 `0.2.4` 工作树逐项盘点 Sentinel Monitor 的真实能力、保证、交付工具和明确边界。代码、
 `schema/generated/current_schema.sql`、`clients/web/src/protocol-contract.json`、`config/mediamtx.lock` 与发行 manifest 是
 最终事实源；本文不是未来愿望清单，也不把测试中不存在的行为写成已实现功能。
 
@@ -179,7 +179,7 @@ viewer。摄像头的 RTSP/ONVIF `username`、加密 `password` 和媒体 JWT `a
 | SEN-W-005 | 详情使用共享 Dialog，主码流及鼠标/键盘 PTZ；move/stop 串行，松开、取消、失焦及关闭均触发停止 | CameraDrawer | 可选 | 中 | 缺少精细控制或停止竞态 | pointer cancel、Space/Enter、窗口 blur、关闭清理 |
 | SEN-W-006 | Recordings 页面按摄像头和时间范围查询并播放 | `RecordingsView` | 建议保留 | 中 | API 尚在但普通用户难以回放 | 无摄像头、无结果、播放 URL 清理 |
 | SEN-W-007 | Events 页面筛选未确认、手动刷新和确认事件 | `EventsView`、SSE effect | 建议保留 | 中 | 事件 API 无内置操作界面 | SSE resync、确认、camera name 映射 |
-| SEN-W-008 | 系统页组合媒体状态、共享 AdministratorsPanel 与业务审计；不请求 /users、不保留 UserEditor | SystemView、Foundation admin-shell | 建议保留 | 高 | 账号管理或业务状态缺失 | 创建/列表/改密/停用、最后管理员保护、业务审计独立 |
+| SEN-W-008 | 系统页组合媒体状态与业务审计；管理员账号仅由 Foundation Shell 右上角人物图标设置；不请求 /users | SystemView、Foundation AccountSettings | 建议保留 | 中 | 业务状态缺失或账号入口分散 | 系统状态、业务审计、账号设置、无管理员列表 |
 | SEN-W-009 | Foundation design tokens、scoped reset、focus/reduced-motion/forced-colors 基线 | CSS imports、`data-sarmg-scope` | 保障 | 中 | 基础交互和可访问性在项目间漂移 | CSS 摘要、键盘焦点、减弱动态、高对比度 |
 | SEN-W-010 | 产品 CSS 仅维护业务布局，颜色/字体/控件来自 Foundation；视频黑底属于媒体业务 | clients/web/src/styles.css | 建议保留 | 中 | 私有平台样式导致主题和可访问性漂移 | 无 token 覆盖、无私有字体、移动明暗主题 WCAG AA |
 | SEN-W-011 | WHEP player 在 component cleanup、profile/camera 变化时关闭 peer/resource | `LiveVideo` effect、`WhepPlayer.close` | 保障 | 高 | 切页后仍保留媒体连接和资源 | mount/unmount、快速切换、失败重试 |
@@ -203,7 +203,7 @@ viewer。摄像头的 RTSP/ONVIF `username`、加密 `password` 和媒体 JWT `a
 | SEN-R-010 | release identity 绑定产品、版本、source revision、target、API、Schema、Web、credential 与 MediaMTX | `src/release.rs::ReleaseIdentity` | 保障 | 高 | 可把不同提交/协议/companion 拼成同名发行物 | identity JSON 与 manifest header 一致 |
 | SEN-R-011 | 全树 manifest 精确验证 path/type/mode/size/SHA，拒绝额外条目 | `verify_release`、`static_assets.rs` | 保障 | 高 | 攻击者或误部署可插入/替换资产而仍启动 | missing/extra/tamper/mode/symlink/hardlink |
 | SEN-R-012 | release root 必须是规范物理版本路径，正式父目录 root-owned | `validate_release_root`、`PRODUCTION_RELEASE_ROOT` | 保障 | 高 | 可通过 alias 或可写父目录替换已验证内容 | symlink parent、相对路径、错误 suffix、ownership |
-| SEN-R-013 | `native/build.sh` 要求 clean checkout、annotated `v0.2.3` 指向 HEAD 和 Linux AMD64 | `native/build.sh` | 开发运维 | 中 | 无法把制品稳定追溯到源码与版本 | dirty tree、lightweight/wrong tag、wrong host |
+| SEN-R-013 | `native/build.sh` 要求 clean checkout、annotated `v0.2.4` 指向 HEAD 和 Linux AMD64 | `native/build.sh` | 开发运维 | 中 | 无法把制品稳定追溯到源码与版本 | dirty tree、lightweight/wrong tag、wrong host |
 | SEN-R-014 | build 在同一文件系统 stage，验证后 no-clobber 安装固定发行目录 | `native/build.sh` | 保障 | 高 | 半写 release 或同版本覆盖会让重启内容不可预测 | 中途失败、并发 build、第二次 build |
 | SEN-R-015 | lifecycle test 使用临时根覆盖 no-clobber、Secret、锁、失败回滚和链接防御 | `native/lifecycle-test.sh` | 开发运维 | 高 | 脚本安全语义容易在普通单元测试外回归 | 临时根运行；不得访问真实 `/var/lib` |
 | SEN-R-016 | relocated smoke 使用真实 Rust/Vite/SQLite/MediaMTX 制品验证重定位和篡改拒绝 | `native/relocated-smoke-test.sh` | 开发运维 | 高 | 静态脚本检查无法证明真实发行闭包 | 真实启动、hashed assets、字节篡改、source-bound binary |

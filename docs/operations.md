@@ -18,7 +18,7 @@ Node `26.7.0`。
 ## 1. 唯一生产布局
 
 ```text
-/opt/isarmg/sentinel-monitor/releases/0.2.3/
+/opt/isarmg/sentinel-monitor/releases/0.2.4/
 ├─ RELEASE-MANIFEST
 ├─ bin/{sentinel-monitor,mediamtx}
 ├─ web/{index.html,assets/...}
@@ -43,11 +43,11 @@ Node `26.7.0`。
 export SENTINEL_MEDIAMTX_SOURCE=/absolute/path/to/mediamtx
 ./native/build.sh
 
-/opt/isarmg/sentinel-monitor/releases/0.2.3/native/bootstrap.sh
+/opt/isarmg/sentinel-monitor/releases/0.2.4/native/bootstrap.sh
 sudoedit /etc/isarmg/sentinel-monitor.env
-/opt/isarmg/sentinel-monitor/releases/0.2.3/native/bootstrap.sh --confirm-config
-/opt/isarmg/sentinel-monitor/releases/0.2.3/native/start.sh
-/opt/isarmg/sentinel-monitor/releases/0.2.3/native/status.sh
+/opt/isarmg/sentinel-monitor/releases/0.2.4/native/bootstrap.sh --confirm-config
+/opt/isarmg/sentinel-monitor/releases/0.2.4/native/start.sh
+/opt/isarmg/sentinel-monitor/releases/0.2.4/native/status.sh
 ```
 
 构建机必须是 Linux x86_64，并安装 Rust `1.98.0` 的 `rustfmt`、`clippy` 组件及
@@ -57,7 +57,7 @@ sudoedit /etc/isarmg/sentinel-monitor.env
 停止：
 
 ```bash
-/opt/isarmg/sentinel-monitor/releases/0.2.3/native/stop.sh
+/opt/isarmg/sentinel-monitor/releases/0.2.4/native/stop.sh
 ```
 
 同版本第二次 build/bootstrap 不覆盖既有 release 或环境文件。bootstrap 不启动服务，只读取固定的平面
@@ -131,9 +131,9 @@ set -a
 source /etc/isarmg/sentinel-monitor.env
 set +a
 
-"/opt/isarmg/sentinel-monitor/releases/0.2.3/bin/sentinel-monitor" doctor --offline
-/opt/isarmg/sentinel-monitor/releases/0.2.3/native/start.sh
-"/opt/isarmg/sentinel-monitor/releases/0.2.3/bin/sentinel-monitor" doctor
+"/opt/isarmg/sentinel-monitor/releases/0.2.4/bin/sentinel-monitor" doctor --offline
+/opt/isarmg/sentinel-monitor/releases/0.2.4/native/start.sh
+"/opt/isarmg/sentinel-monitor/releases/0.2.4/bin/sentinel-monitor" doctor
 ```
 
 offline 检查 Schema、SQLite integrity/foreign keys、回滚写探针、录像目录、全量凭据解密、MediaMTX
@@ -234,8 +234,8 @@ Foundation 512 KiB 硬限制且不发布 source map。浏览器验收使用真�
 当前 Foundation 来源/lockfile，重新生成整个 Web dist 和不可变 release。Foundation 版本切换属于直接
 替换当前合同，不保留并行 CSS 或媒体查询式版本 fallback。
 
-系统页的管理员管理只请求 Foundation `/api/v2/platform/administrators`，支持列表、创建、改密和停用；
-不再有 `/users` 请求或产品用户编辑器。停用不物理删除账户，不会破坏业务外键；最后一个活动管理员不能停用。
+系统页不再展示管理员列表，也不请求 Foundation `/api/v2/platform/administrators`；管理员账号名称和密码只从 Shell 右上角人物图标进入自助设置。
+业务页面不再有 `/users` 请求或产品用户编辑器。平台管理员 API 仍由 Foundation 提供给需要它的后端集成。
 改密/停用撤销全部会话，安全审计与写入同事务。系统页展示的“业务审计”仍来自产品 `/audit`，与平台安全审计分工明确。
 
 ### 11.1 Foundation 包的运维边界

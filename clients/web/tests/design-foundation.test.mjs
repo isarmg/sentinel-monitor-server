@@ -21,20 +21,20 @@ assert.match(nodeVersion, /^26\.7\.0\n?$/);
 assertSarmgWebToolchain(manifest, nodeVersion);
 for (const name of foundationPackages) {
   const dependency = `@sarmg/${name}`;
-  const expected = `https://github.com/isarmg/sarmg-foundation-server/releases/download/v0.7.2/sarmg-${name}-0.7.2.tgz`;
+  const expected = `https://github.com/isarmg/sarmg-foundation-server/releases/download/v0.7.3/sarmg-${name}-0.7.3.tgz`;
   assert.equal(manifest.dependencies?.[dependency], expected);
   assert.equal(lock.packages?.[""]?.dependencies?.[dependency], expected);
 
   const locked = lock.packages?.[`node_modules/${dependency}`];
   assert.equal(locked?.link, undefined);
   assert.equal(locked?.resolved, expected);
-  assert.equal(locked?.version, "0.7.2");
+  assert.equal(locked?.version, "0.7.3");
   assert.match(locked?.integrity ?? "", /^sha512-[A-Za-z0-9+/]+={0,2}$/);
 }
 
 const main = readFileSync(new URL("../src/main.tsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
 assert.match(main, /createSarmgAdminApplication/);
-assert.match(main, /AdministratorsPanel/);
+assert.doesNotMatch(main, /AdministratorsPanel|管理员账号|Administrator account/);
 assert.doesNotMatch(main, /useAdministratorSession|LoginScreen|UserEditor|ManagedUser|window\.confirm|["']\/users/);
 assert.doesNotMatch(styles, /--sarmg-[a-z-]+\s*:|font-family|login-screen|side-rail|toast-stack/);
