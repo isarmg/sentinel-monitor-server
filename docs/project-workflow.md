@@ -3,7 +3,7 @@
 ## 1. 总流程树
 
 ```text
-Sentinel Monitor 0.2.4
+Sentinel Monitor 0.2.5
 ├─ 构建
 │  ├─ Node 26.7.0 -> check:foundation -> TypeScript strict -> Vite 7
 │  ├─ Rust 1.98.0 -> x86_64-unknown-linux-gnu binary
@@ -35,7 +35,7 @@ Sentinel Monitor 0.2.4
 
 ## 2. 原生发布与首次启动
 
-`native/build.sh` 只接受干净且 annotated `v0.2.4` 指向 HEAD 的 checkout、Linux x86_64 builder，以及与
+`native/build.sh` 只接受干净且 annotated `v0.2.5` 指向 HEAD 的 checkout、Linux x86_64 builder，以及与
 `config/mediamtx.lock` 匹配的 `linux_amd64` MediaMTX `v1.20.0`。Rust target 固定为
 `x86_64-unknown-linux-gnu`，没有其他架构、OS 或 libc 的正式构建分支。脚本构建 Web 和 source-bound
 Rust binary，生成完整 manifest，在同一文件系统暂存并验证后，以 no-clobber 语义发布固定版本目录。
@@ -145,10 +145,10 @@ Administrator Browser Session
 顺序取得排他锁，把 SQLite、MediaMTX config/contract、recordings 和 external key 身份作为组合状态处理。
 当前产品不包含迁移器、不扫描其他代路径、不解析非当前 Schema/密文，也不通过 fallback 修补数据。
 
-## 9. Web 构建与 Foundation 0.7.0 流程
+## 9. Web 构建与 Foundation 0.7.5 流程
 
 ```text
-package.json + package-lock.json 精确锁定 Foundation 0.7.0 和工具链
+package.json + package-lock.json 精确锁定 Foundation 0.7.5 和工具链
   -> npm ci
   -> check:foundation
        ├─ 校验 Node/React/TypeScript/Vite 精确版本
@@ -174,7 +174,7 @@ npm run build
 
 `build` 已把 `check:foundation` 设为硬前置，因此不能通过直接执行 Vite 跳过共享边界。构建产物完全自包含；
 浏览器运行时不解析 npm 包，也不访问 npm registry、Foundation 仓库或远程 CSS。
-构建期八个 Web 包来自 Foundation `v0.7.0` GitHub Release 归档，并由 lockfile integrity 锁定字节；
+构建期八个 Web 包来自 Foundation `v0.7.5` GitHub Release 归档，并由 lockfile integrity 锁定字节；
 Rust crate 由版本 `=0.7.0` 和 revision `77e7ad7af8e1bf62432bd6bdd8fa9aff54cb39d1` 双重锁定。两者都不读取
 共同父目录或 sibling checkout，也不提供旧来源 fallback。
 

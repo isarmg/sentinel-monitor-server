@@ -1917,8 +1917,8 @@ checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
 name = "sarmg-admin-auth"
-version = "0.7.3"
-source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=45006e4b981666529f4e5003bbf6a76cb60578ff#45006e4b981666529f4e5003bbf6a76cb60578ff"
+version = "0.7.5"
+source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=80c49f2f811d8d47dbbcdb6c9521924de7d3184e#80c49f2f811d8d47dbbcdb6c9521924de7d3184e"
 dependencies = [
  "argon2",
  "base64",
@@ -1930,8 +1930,8 @@ dependencies = [
 
 [[package]]
 name = "sarmg-admin-axum"
-version = "0.7.3"
-source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=45006e4b981666529f4e5003bbf6a76cb60578ff#45006e4b981666529f4e5003bbf6a76cb60578ff"
+version = "0.7.5"
+source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=80c49f2f811d8d47dbbcdb6c9521924de7d3184e#80c49f2f811d8d47dbbcdb6c9521924de7d3184e"
 dependencies = [
  "axum",
  "bytes",
@@ -1947,8 +1947,8 @@ dependencies = [
 
 [[package]]
 name = "sarmg-admin-core"
-version = "0.7.3"
-source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=45006e4b981666529f4e5003bbf6a76cb60578ff#45006e4b981666529f4e5003bbf6a76cb60578ff"
+version = "0.7.5"
+source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=80c49f2f811d8d47dbbcdb6c9521924de7d3184e#80c49f2f811d8d47dbbcdb6c9521924de7d3184e"
 dependencies = [
  "async-trait",
  "sarmg-admin-auth",
@@ -1960,8 +1960,8 @@ dependencies = [
 
 [[package]]
 name = "sarmg-admin-sqlite"
-version = "0.7.3"
-source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=45006e4b981666529f4e5003bbf6a76cb60578ff#45006e4b981666529f4e5003bbf6a76cb60578ff"
+version = "0.7.5"
+source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=80c49f2f811d8d47dbbcdb6c9521924de7d3184e#80c49f2f811d8d47dbbcdb6c9521924de7d3184e"
 dependencies = [
  "async-trait",
  "sarmg-admin-auth",
@@ -1972,8 +1972,8 @@ dependencies = [
 
 [[package]]
 name = "sarmg-contracts"
-version = "0.7.3"
-source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=45006e4b981666529f4e5003bbf6a76cb60578ff#45006e4b981666529f4e5003bbf6a76cb60578ff"
+version = "0.7.5"
+source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=80c49f2f811d8d47dbbcdb6c9521924de7d3184e#80c49f2f811d8d47dbbcdb6c9521924de7d3184e"
 dependencies = [
  "sarmg-admin-auth",
  "sarmg-error",
@@ -1985,8 +1985,8 @@ dependencies = [
 
 [[package]]
 name = "sarmg-error"
-version = "0.7.3"
-source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=45006e4b981666529f4e5003bbf6a76cb60578ff#45006e4b981666529f4e5003bbf6a76cb60578ff"
+version = "0.7.5"
+source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=80c49f2f811d8d47dbbcdb6c9521924de7d3184e#80c49f2f811d8d47dbbcdb6c9521924de7d3184e"
 dependencies = [
  "serde",
  "serde_json",
@@ -1995,8 +1995,8 @@ dependencies = [
 
 [[package]]
 name = "sarmg-operations"
-version = "0.7.3"
-source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=45006e4b981666529f4e5003bbf6a76cb60578ff#45006e4b981666529f4e5003bbf6a76cb60578ff"
+version = "0.7.5"
+source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=80c49f2f811d8d47dbbcdb6c9521924de7d3184e#80c49f2f811d8d47dbbcdb6c9521924de7d3184e"
 dependencies = [
  "async-trait",
  "serde",
@@ -2008,8 +2008,8 @@ dependencies = [
 
 [[package]]
 name = "sarmg-schema-identity"
-version = "0.7.3"
-source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=45006e4b981666529f4e5003bbf6a76cb60578ff#45006e4b981666529f4e5003bbf6a76cb60578ff"
+version = "0.7.5"
+source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=80c49f2f811d8d47dbbcdb6c9521924de7d3184e#80c49f2f811d8d47dbbcdb6c9521924de7d3184e"
 dependencies = [
  "serde",
  "sha2",
@@ -2018,16 +2018,16 @@ dependencies = [
 
 [[package]]
 name = "sarmg-secret"
-version = "0.7.3"
-source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=45006e4b981666529f4e5003bbf6a76cb60578ff#45006e4b981666529f4e5003bbf6a76cb60578ff"
+version = "0.7.5"
+source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=80c49f2f811d8d47dbbcdb6c9521924de7d3184e#80c49f2f811d8d47dbbcdb6c9521924de7d3184e"
 dependencies = [
  "zeroize",
 ]
 
 [[package]]
 name = "sarmg-secret-envelope"
-version = "0.7.3"
-source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=45006e4b981666529f4e5003bbf6a76cb60578ff#45006e4b981666529f4e5003bbf6a76cb60578ff"
+version = "0.7.5"
+source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=80c49f2f811d8d47dbbcdb6c9521924de7d3184e#80c49f2f811d8d47dbbcdb6c9521924de7d3184e"
 dependencies = [
  "aes-gcm",
  "getrandom 0.4.3",
@@ -2040,8 +2040,8 @@ dependencies = [
 
 [[package]]
 name = "sarmg-secure-http"
-version = "0.7.3"
-source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=45006e4b981666529f4e5003bbf6a76cb60578ff#45006e4b981666529f4e5003bbf6a76cb60578ff"
+version = "0.7.5"
+source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=80c49f2f811d8d47dbbcdb6c9521924de7d3184e#80c49f2f811d8d47dbbcdb6c9521924de7d3184e"
 dependencies = [
  "ipnet",
  "reqwest",
@@ -2052,8 +2052,8 @@ dependencies = [
 
 [[package]]
 name = "sarmg-secure-xml"
-version = "0.7.3"
-source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=45006e4b981666529f4e5003bbf6a76cb60578ff#45006e4b981666529f4e5003bbf6a76cb60578ff"
+version = "0.7.5"
+source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=80c49f2f811d8d47dbbcdb6c9521924de7d3184e#80c49f2f811d8d47dbbcdb6c9521924de7d3184e"
 dependencies = [
  "roxmltree",
  "thiserror",
@@ -2061,8 +2061,8 @@ dependencies = [
 
 [[package]]
 name = "sarmg-server-runtime"
-version = "0.7.3"
-source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=45006e4b981666529f4e5003bbf6a76cb60578ff#45006e4b981666529f4e5003bbf6a76cb60578ff"
+version = "0.7.5"
+source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=80c49f2f811d8d47dbbcdb6c9521924de7d3184e#80c49f2f811d8d47dbbcdb6c9521924de7d3184e"
 dependencies = [
  "async-trait",
  "axum",
@@ -2088,13 +2088,13 @@ dependencies = [
 
 [[package]]
 name = "sarmg-server-target"
-version = "0.7.3"
-source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=45006e4b981666529f4e5003bbf6a76cb60578ff#45006e4b981666529f4e5003bbf6a76cb60578ff"
+version = "0.7.5"
+source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=80c49f2f811d8d47dbbcdb6c9521924de7d3184e#80c49f2f811d8d47dbbcdb6c9521924de7d3184e"
 
 [[package]]
 name = "sarmg-sqlite"
-version = "0.7.3"
-source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=45006e4b981666529f4e5003bbf6a76cb60578ff#45006e4b981666529f4e5003bbf6a76cb60578ff"
+version = "0.7.5"
+source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=80c49f2f811d8d47dbbcdb6c9521924de7d3184e#80c49f2f811d8d47dbbcdb6c9521924de7d3184e"
 dependencies = [
  "sarmg-schema-identity",
  "sqlx",
@@ -2109,7 +2109,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "sentinel-monitor"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "anyhow",
  "async-stream",
