@@ -1,24 +1,90 @@
+CREATE TABLE sentinel_clients (
+    id TEXT PRIMARY KEY,
+    installation_id TEXT UNIQUE,
+    name TEXT NOT NULL,
+    client_version TEXT,
+    token_hash BLOB UNIQUE CHECK (token_hash IS NULL OR length(token_hash) = 32),
+    authorization_code_enc BLOB NOT NULL CHECK (length(authorization_code_enc) BETWEEN 64 AND 1024),
+    authorization_code_hash BLOB NOT NULL UNIQUE CHECK (length(authorization_code_hash) = 32),
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'online', 'offline', 'revoked')),
+    last_seen_at TEXT,
+    created_by TEXT REFERENCES _sarmg_administrators(administrator_id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    revoked_at TEXT
+);
+
+CREATE INDEX sentinel_clients_status_idx ON sentinel_clients (status);
+
 CREATE TABLE cameras (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     location TEXT NOT NULL DEFAULT '',
-    main_stream_url_enc BLOB NOT NULL,
+    source_kind TEXT NOT NULL DEFAULT 'direct' CHECK (source_kind IN ('direct', 'client')),
+    client_id TEXT REFERENCES sentinel_clients(id) ON DELETE RESTRICT,
+    client_camera_id TEXT,
+    adapter_kind TEXT NOT NULL DEFAULT 'server_direct'
+        CHECK (length(adapter_kind) BETWEEN 1 AND 64 AND adapter_kind NOT GLOB '*[^a-z0-9._-]*'),
+    manufacturer TEXT CHECK (manufacturer IS NULL OR length(manufacturer) BETWEEN 1 AND 128),
+    model TEXT CHECK (model IS NULL OR length(model) BETWEEN 1 AND 128),
+    firmware_version TEXT CHECK (firmware_version IS NULL OR length(firmware_version) BETWEEN 1 AND 128),
+    serial_number TEXT CHECK (serial_number IS NULL OR length(serial_number) BETWEEN 1 AND 256),
+    capabilities_json TEXT NOT NULL DEFAULT '{}'
+        CHECK (json_valid(capabilities_json) AND json_type(capabilities_json) = 'object'),
+    streams_json TEXT NOT NULL DEFAULT '[]'
+        CHECK (json_valid(streams_json) AND json_type(streams_json) = 'array'),
+    health_message TEXT CHECK (health_message IS NULL OR length(health_message) BETWEEN 1 AND 512),
+    device_status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (device_status IN ('pending', 'online', 'offline', 'disabled', 'error')),
+    main_stream_url_enc BLOB,
     sub_stream_url_enc BLOB,
+    has_sub_stream INTEGER NOT NULL DEFAULT 0 CHECK (has_sub_stream IN (0, 1)),
     onvif_url TEXT,
     username_enc BLOB,
     password_enc BLOB,
     enabled INTEGER NOT NULL DEFAULT 1,
     record_enabled INTEGER NOT NULL DEFAULT 1,
+    storage_mode TEXT NOT NULL DEFAULT 'server' CHECK (storage_mode IN ('client', 'server')),
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'online', 'offline', 'disabled', 'error')),
     last_seen_at TEXT,
     created_by TEXT REFERENCES _sarmg_administrators(administrator_id) ON DELETE SET NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    deleted_at TEXT
+    deleted_at TEXT,
+    UNIQUE (client_id, client_camera_id),
+    CHECK (
+        (source_kind = 'direct' AND client_id IS NULL AND client_camera_id IS NULL
+            AND main_stream_url_enc IS NOT NULL AND storage_mode = 'server')
+        OR
+        (source_kind = 'client' AND client_id IS NOT NULL AND client_camera_id IS NOT NULL
+            AND main_stream_url_enc IS NULL AND sub_stream_url_enc IS NULL
+            AND onvif_url IS NULL AND username_enc IS NULL AND password_enc IS NULL)
+    )
 );
 
 CREATE INDEX cameras_status_idx ON cameras (status);
 CREATE INDEX cameras_enabled_idx ON cameras (enabled);
+CREATE INDEX cameras_client_idx ON cameras (client_id, deleted_at);
+
+CREATE TABLE device_commands (
+    id TEXT PRIMARY KEY,
+    camera_id TEXT NOT NULL REFERENCES cameras(id) ON DELETE CASCADE,
+    client_id TEXT NOT NULL REFERENCES sentinel_clients(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('ptz')),
+    payload TEXT NOT NULL CHECK (json_valid(payload) AND json_type(payload) = 'object'),
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'succeeded', 'failed', 'expired')),
+    error TEXT CHECK (error IS NULL OR length(error) BETWEEN 1 AND 512),
+    created_at TEXT NOT NULL,
+    delivered_at TEXT,
+    finished_at TEXT,
+    expires_at TEXT NOT NULL
+);
+
+CREATE INDEX device_commands_delivery_idx
+    ON device_commands (client_id, status, delivered_at, expires_at);
+CREATE INDEX device_commands_camera_idx
+    ON device_commands (camera_id, created_at DESC);
 
 CREATE TABLE events (
     id TEXT PRIMARY KEY,

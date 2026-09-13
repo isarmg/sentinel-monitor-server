@@ -21,12 +21,45 @@ export type Camera = {
   has_sub_stream: boolean;
   onvif_configured: boolean;
   username: string | null;
+  source_kind: "direct" | "client";
+  client_id: string | null;
+  adapter_kind: string;
+  manufacturer: string | null;
+  model: string | null;
+  firmware_version: string | null;
+  serial_number: string | null;
+  capabilities: CameraCapabilities;
+  streams: CameraStream[];
+  health_message: string | null;
+  device_status: string;
+  storage_mode: "client" | "server";
   enabled: boolean;
   record_enabled: boolean;
   status: string;
   last_seen_at: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type CameraCapabilities = {
+  video: boolean;
+  main_stream: boolean;
+  sub_stream: boolean;
+  local_recording: boolean;
+  server_recording: boolean;
+  ptz: boolean;
+  events: boolean;
+  audio_input: boolean;
+  audio_output: boolean;
+};
+
+export type CameraStream = {
+  profile: "main" | "sub";
+  video_codec: string | null;
+  audio_codec: string | null;
+  width: number | null;
+  height: number | null;
+  frame_rate: number | null;
 };
 
 export type CameraMutation = {
@@ -94,6 +127,18 @@ export type SystemStatus = {
 
 export type DiscoveredDevice = { xaddrs: string[] };
 
+export type SentinelClient = {
+  id: string;
+  installation_id: string | null;
+  name: string;
+  client_version: string | null;
+  authorization_code: string;
+  status: "pending" | "online" | "offline" | "revoked";
+  last_seen_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export function apiPath(path: string): string {
   if (!path.startsWith("/") || path.startsWith("//")) {
     throw new TypeError("业务 API 路径必须是单斜杠开头的绝对应用路径");
@@ -117,22 +162,48 @@ const isNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
 const isNullableString = (value: unknown): value is string | null =>
   value === null || isString(value);
+const isNullableNumber = (value: unknown): value is number | null =>
+  value === null || isNumber(value);
 const arrayOf = <T>(guard: JsonGuard<T>): JsonGuard<T[]> =>
   (value): value is T[] => Array.isArray(value) && value.every(guard);
+
+const isCameraCapabilities: JsonGuard<CameraCapabilities> = (value): value is CameraCapabilities =>
+  isRecord(value) &&
+  ["video", "main_stream", "sub_stream", "local_recording", "server_recording", "ptz", "events", "audio_input", "audio_output"].every((key) => isBoolean(value[key]));
+
+const isCameraStream: JsonGuard<CameraStream> = (value): value is CameraStream =>
+  isRecord(value) &&
+  ["main", "sub"].includes(value.profile as string) &&
+  isNullableString(value.video_codec) &&
+  isNullableString(value.audio_codec) &&
+  isNullableNumber(value.width) &&
+  isNullableNumber(value.height) &&
+  isNullableNumber(value.frame_rate);
 
 export const isUndefined = (value: unknown): value is undefined => value === undefined;
 
 export const isCamera: JsonGuard<Camera> = (value): value is Camera =>
   isRecord(value) &&
-  ["id", "name", "location", "status", "created_at", "updated_at"].every((key) =>
+  ["id", "name", "location", "status", "device_status", "adapter_kind", "created_at", "updated_at"].every((key) =>
     isString(value[key]),
   ) &&
   isNullableString(value.username) &&
+  isNullableString(value.client_id) &&
+  isNullableString(value.manufacturer) &&
+  isNullableString(value.model) &&
+  isNullableString(value.firmware_version) &&
+  isNullableString(value.serial_number) &&
+  isNullableString(value.health_message) &&
+  ["direct", "client"].includes(value.source_kind as string) &&
+  ["client", "server"].includes(value.storage_mode as string) &&
   isNullableString(value.last_seen_at) &&
   isBoolean(value.has_sub_stream) &&
   isBoolean(value.onvif_configured) &&
   isBoolean(value.enabled) &&
-  isBoolean(value.record_enabled);
+  isBoolean(value.record_enabled) &&
+  isCameraCapabilities(value.capabilities) &&
+  Array.isArray(value.streams) &&
+  value.streams.every(isCameraStream);
 
 export const isCameras = arrayOf(isCamera);
 
@@ -212,3 +283,10 @@ const isDiscoveredDevice: JsonGuard<DiscoveredDevice> = (
 ): value is DiscoveredDevice =>
   isRecord(value) && Array.isArray(value.xaddrs) && value.xaddrs.every(isString);
 export const isDiscoveredDevices = arrayOf(isDiscoveredDevice);
+
+export const isSentinelClient: JsonGuard<SentinelClient> = (value): value is SentinelClient =>
+  isRecord(value) &&
+  ["id", "name", "authorization_code", "status", "created_at", "updated_at"].every((key) => isString(value[key])) &&
+  isNullableString(value.installation_id) && isNullableString(value.client_version) &&
+  isNullableString(value.last_seen_at) && ["pending", "online", "offline", "revoked"].includes(value.status as string);
+export const isSentinelClients = arrayOf(isSentinelClient);

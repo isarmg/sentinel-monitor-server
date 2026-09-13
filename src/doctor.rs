@@ -174,12 +174,12 @@ fn verify_credentials(path: &Path, key: &[u8; 32]) -> anyhow::Result<()> {
     while let Some(row) = rows.next()? {
         let camera_id = Uuid::parse_str(&row.get::<_, String>(0)?)
             .map_err(|_| anyhow::anyhow!("camera credential identity is invalid"))?;
-        let main: Vec<u8> = row.get(1)?;
+        let main: Option<Vec<u8>> = row.get(1)?;
         let sub: Option<Vec<u8>> = row.get(2)?;
         let username: Option<Vec<u8>> = row.get(3)?;
         let password: Option<Vec<u8>> = row.get(4)?;
         for (field, value) in [
-            (CredentialField::MainStreamUrl, Some(main)),
+            (CredentialField::MainStreamUrl, main),
             (CredentialField::SubStreamUrl, sub),
             (CredentialField::Username, username),
             (CredentialField::Password, password),

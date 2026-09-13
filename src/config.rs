@@ -20,6 +20,7 @@ pub struct Config {
     pub mediamtx_playback_url: String,
     pub public_webrtc_base_url: String,
     pub public_hls_base_url: String,
+    pub public_rtsp_publish_base_url: String,
     pub status_interval: Duration,
     pub reconcile_interval: Duration,
     pub request_timeout: Duration,
@@ -84,6 +85,10 @@ impl Config {
             )),
             public_webrtc_base_url: trim_slash(value("PUBLIC_WEBRTC_BASE_URL", "/media-webrtc")),
             public_hls_base_url: trim_slash(value("PUBLIC_HLS_BASE_URL", "/media-hls")),
+            public_rtsp_publish_base_url: validate_public_rtsp_base(&value(
+                "PUBLIC_RTSP_PUBLISH_BASE_URL",
+                "rtsp://127.0.0.1:8554",
+            ))?,
             status_interval: Duration::from_secs(parse_u64("STATUS_INTERVAL_SECS", 10)?),
             reconcile_interval: Duration::from_secs(parse_u64("RECONCILE_INTERVAL_SECS", 60)?),
             request_timeout: Duration::from_secs(bounded_u64("REQUEST_TIMEOUT_SECS", 20, 1, 300)?),
@@ -95,6 +100,23 @@ impl Config {
             static_dir: absolute_path("STATIC_DIR", required("STATIC_DIR")?)?,
         })
     }
+}
+
+fn validate_public_rtsp_base(value: &str) -> Result<String, String> {
+    let value = trim_slash(value.to_owned());
+    let parsed = url::Url::parse(&value)
+        .map_err(|_| "PUBLIC_RTSP_PUBLISH_BASE_URL must be a valid RTSP URL".to_owned())?;
+    if !matches!(parsed.scheme(), "rtsp" | "rtsps")
+        || parsed.host_str().is_none()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        return Err(
+            "PUBLIC_RTSP_PUBLISH_BASE_URL must be an rtsp(s) origin without query or fragment"
+                .to_owned(),
+        );
+    }
+    Ok(value)
 }
 
 fn absolute_path(name: &str, value: String) -> Result<PathBuf, String> {

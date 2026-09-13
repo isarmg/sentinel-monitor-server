@@ -20,6 +20,13 @@ impl EnvelopeDomain for CameraCredentialEnvelope {
     const REVISION: u16 = CREDENTIAL_ENVELOPE_REVISION as u16;
 }
 
+struct ClientAuthorizationEnvelope;
+
+impl EnvelopeDomain for ClientAuthorizationEnvelope {
+    const DOMAIN: &'static [u8] = b"sentinel-monitor/client-authorization";
+    const REVISION: u16 = 1;
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CredentialField {
     MainStreamUrl,
@@ -87,6 +94,40 @@ impl SecretBox {
         .map_err(|_| malformed_envelope())?;
         String::from_utf8(plaintext.expose().to_vec()).map_err(|_| malformed_envelope())
     }
+
+    pub fn encrypt_client_authorization(
+        &self,
+        client_id: &str,
+        plaintext: &str,
+    ) -> Result<Vec<u8>> {
+        sarmg_secret_envelope::seal::<ClientAuthorizationEnvelope>(
+            &self.master,
+            &authorization_binding(client_id),
+            &SecretBytes::new(plaintext.as_bytes().to_vec()),
+        )
+        .map_err(|_| AppError::Internal("client authorization encryption failed".into()))
+    }
+
+    pub fn decrypt_client_authorization(&self, client_id: &str, encoded: &[u8]) -> Result<String> {
+        if !(64..=1024).contains(&encoded.len()) {
+            return Err(malformed_envelope());
+        }
+        let plaintext = sarmg_secret_envelope::open::<ClientAuthorizationEnvelope>(
+            &self.master,
+            &authorization_binding(client_id),
+            encoded,
+        )
+        .map_err(|_| malformed_envelope())?;
+        String::from_utf8(plaintext.expose().to_vec()).map_err(|_| malformed_envelope())
+    }
+}
+
+fn authorization_binding(client_id: &str) -> Vec<u8> {
+    let value = client_id.as_bytes();
+    let mut binding = Vec::with_capacity(value.len() + 8);
+    binding.extend_from_slice(&(value.len() as u64).to_be_bytes());
+    binding.extend_from_slice(value);
+    binding
 }
 
 fn credential_binding(camera_id: Uuid, field: CredentialField) -> Vec<u8> {
@@ -196,5 +237,26 @@ mod tests {
             assert!(!error.contains(&camera_id.to_string()));
             assert!(!error.contains("operator"));
         }
+    }
+
+    #[test]
+    fn client_authorization_is_encrypted_and_bound_to_one_instance() {
+        let secrets = box_under_test();
+        let first = Uuid::new_v4().to_string();
+        let second = Uuid::new_v4().to_string();
+        let code = "a".repeat(64);
+        let encrypted = secrets.encrypt_client_authorization(&first, &code).unwrap();
+        assert!(!encrypted
+            .windows(code.len())
+            .any(|value| value == code.as_bytes()));
+        assert_eq!(
+            secrets
+                .decrypt_client_authorization(&first, &encrypted)
+                .unwrap(),
+            code
+        );
+        assert!(secrets
+            .decrypt_client_authorization(&second, &encrypted)
+            .is_err());
     }
 }

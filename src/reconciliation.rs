@@ -23,9 +23,12 @@ const OPERATION_LEASE_REQUEST_BUDGET: u64 = 4;
 const LEASE_SAFETY_MARGIN_SECONDS: u64 = 30;
 const OPERATION_NAMESPACE: &str = "sentinel.media-reconciliation";
 
-const CAMERA_SELECT_INTERNAL: &str = "SELECT id, name, location, main_stream_url_enc, \
-    sub_stream_url_enc, onvif_url, username_enc, password_enc, enabled, record_enabled, status, \
-    last_seen_at, created_at, updated_at FROM cameras";
+const CAMERA_SELECT_INTERNAL: &str = "SELECT id, name, location, source_kind, client_id, \
+    adapter_kind, manufacturer, model, firmware_version, serial_number, capabilities_json, \
+    streams_json, health_message, device_status, \
+    main_stream_url_enc, sub_stream_url_enc, has_sub_stream, onvif_url, \
+    username_enc, password_enc, enabled, record_enabled, storage_mode, status, last_seen_at, \
+    created_at, updated_at FROM cameras";
 #[derive(Clone, Debug, Serialize)]
 pub struct MediaOperationView {
     pub id: String,
@@ -98,10 +101,7 @@ pub async fn queue_camera_change(
     let generation = current_generation + 1;
     let now = Utc::now();
     let main_path = camera_path(camera.id, "main");
-    let sub_path = camera
-        .sub_stream_url_enc
-        .as_ref()
-        .map(|_| camera_path(camera.id, "sub"));
+    let sub_path = camera.has_sub_stream.then(|| camera_path(camera.id, "sub"));
 
     sqlx::query(
         "INSERT INTO media_desired_states (camera_id, generation, desired_present, main_path, \
@@ -176,6 +176,27 @@ pub async fn validate_stored_camera_credentials(state: &AppState) -> Result<()> 
         .await?;
     for camera in cameras {
         camera.decrypt_credentials(&state.secrets)?;
+    }
+    let clients = sqlx::query_as::<_, (Uuid, Vec<u8>, Vec<u8>)>(
+        "SELECT id,authorization_code_enc,authorization_code_hash \
+         FROM sentinel_clients ORDER BY id",
+    )
+    .fetch_all(&state.pool)
+    .await?;
+    for (id, encrypted, stored_hash) in clients {
+        let code = state
+            .secrets
+            .decrypt_client_authorization(&id.to_string(), &encrypted)?;
+        if code.len() != 64
+            || !code
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+            || Sha256::digest(code.as_bytes()).as_slice() != stored_hash
+        {
+            return Err(AppError::Internal(
+                "client authorization is not exactly current or authenticated".into(),
+            ));
+        }
     }
     Ok(())
 }
@@ -707,32 +728,29 @@ async fn apply_desired(
         });
     }
 
-    let main_source = source_with_credentials(
-        &credentials.main_stream_url,
-        credentials.username.as_deref(),
-        credentials.password.as_deref(),
-    )?;
+    let main_source = camera_source(camera, credentials.main_stream_url.as_deref(), &credentials)?;
+    let publisher = camera.source_kind == "client";
     state
         .media
         .upsert_path(
             &desired.main_path,
             &main_source,
-            !desired.record_enabled,
+            if publisher {
+                false
+            } else {
+                !desired.record_enabled
+            },
             desired.record_enabled,
         )
         .await?;
 
     let mut sub_digest = None;
     match (&desired.sub_path, &credentials.sub_stream_url) {
-        (Some(sub_path), Some(sub_url)) => {
-            let sub_source = source_with_credentials(
-                sub_url,
-                credentials.username.as_deref(),
-                credentials.password.as_deref(),
-            )?;
+        (Some(sub_path), sub_url) if publisher || sub_url.is_some() => {
+            let sub_source = camera_source(camera, sub_url.as_deref(), &credentials)?;
             state
                 .media
-                .upsert_path(sub_path, &sub_source, true, false)
+                .upsert_path(sub_path, &sub_source, !publisher, false)
                 .await?;
             sub_digest = Some(source_digest(&sub_source));
         }
@@ -1038,32 +1056,46 @@ fn expected_configs(
             sub: None,
         });
     }
-    let main_source = source_with_credentials(
-        &credentials.main_stream_url,
-        credentials.username.as_deref(),
-        credentials.password.as_deref(),
-    )?;
+    let main_source = camera_source(camera, credentials.main_stream_url.as_deref(), &credentials)?;
+    let publisher = camera.source_kind == "client";
     let main = Some(PathConfigSnapshot {
         source_digest: Some(source_digest(&main_source)),
-        source_on_demand: !desired.record_enabled,
+        source_on_demand: if publisher {
+            false
+        } else {
+            !desired.record_enabled
+        },
         record: desired.record_enabled,
     });
     let sub = match (&desired.sub_path, &credentials.sub_stream_url) {
-        (Some(_), Some(sub_url)) => {
-            let source = source_with_credentials(
-                sub_url,
-                credentials.username.as_deref(),
-                credentials.password.as_deref(),
-            )?;
+        (Some(_), sub_url) if publisher || sub_url.is_some() => {
+            let source = camera_source(camera, sub_url.as_deref(), &credentials)?;
             Some(PathConfigSnapshot {
                 source_digest: Some(source_digest(&source)),
-                source_on_demand: true,
+                source_on_demand: !publisher,
                 record: false,
             })
         }
         _ => None,
     };
     Ok(ExpectedConfigs { main, sub })
+}
+
+fn camera_source(
+    camera: &CameraRecord,
+    stream_url: Option<&str>,
+    credentials: &crate::models::CameraCredentials,
+) -> Result<String> {
+    if camera.source_kind == "client" {
+        return Ok("publisher".into());
+    }
+    let stream_url = stream_url
+        .ok_or_else(|| AppError::Internal("direct camera stream credential is missing".into()))?;
+    source_with_credentials(
+        stream_url,
+        credentials.username.as_deref(),
+        credentials.password.as_deref(),
+    )
 }
 
 fn config_matches(

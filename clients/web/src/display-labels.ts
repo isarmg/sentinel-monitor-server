@@ -6,6 +6,7 @@ const labels: Record<string, readonly [string, string]> = {
   "camera.delete": ["删除摄像头", "Delete camera"], "camera.ptz": ["控制云台", "Control PTZ"],
   "event.acknowledge": ["确认事件", "Acknowledge event"], "event.ack": ["确认事件", "Acknowledge event"],
   "media.operation.resolve": ["核对媒体操作", "Reconcile media operation"],
+  pending: ["待配对", "Awaiting pairing"], online: ["在线", "Online"], offline: ["离线", "Offline"], revoked: ["已撤销", "Revoked"],
   camera: ["摄像头", "Camera"], event: ["事件", "Event"], operation: ["操作", "Operation"],
 };
 export function displayLabel(value: string): string {

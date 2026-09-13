@@ -26,9 +26,9 @@ use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 const MAX_CONNECTIONS: u32 = 10;
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 const APPLICATION: &str = "sentinel-monitor";
-pub const CURRENT_SCHEMA_REVISION: i64 = 3;
+pub const CURRENT_SCHEMA_REVISION: i64 = 5;
 pub const CURRENT_SCHEMA_SHA256: &str =
-    "18d53d385fda41458b3e614d0f1179409a52137b52c6b69ce5c3c19c5f84506e";
+    "86726841ebe3316fe5bf409e260464c870cf61c7a0f7d2c70d4c5faa499926dc";
 const CURRENT_SCHEMA: &str = include_str!("../schema/generated/current_schema.sql");
 const GLOBAL_LEASE_SQL: &str = "CREATE TABLE media_reconciler_leases (
     singleton INTEGER PRIMARY KEY NOT NULL CHECK (singleton = 1),
@@ -920,7 +920,7 @@ mod tests {
             ),
             (
                 "wrong-revision",
-                "UPDATE product_metadata SET schema_revision = 4",
+                "UPDATE product_metadata SET schema_revision = 6",
             ),
             (
                 "negative-revision",

@@ -108,8 +108,8 @@ sudo systemctl reload caddy
 ```text
 application=sentinel-monitor
 application_version=0.2.2
-schema_revision=3
-schema_sha256=18d53d385fda41458b3e614d0f1179409a52137b52c6b69ce5c3c19c5f84506e
+schema_revision=5
+schema_sha256=86726841ebe3316fe5bf409e260464c870cf61c7a0f7d2c70d4c5faa499926dc
 ```
 
 Foundation `_sarmg_administrators` 表保存不透明 TEXT `administrator_id`、canonical `username`、密码摘要、启停状态、Session version 和微秒整数时间

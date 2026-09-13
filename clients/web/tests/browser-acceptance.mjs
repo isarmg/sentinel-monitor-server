@@ -7,7 +7,8 @@ import { preview } from "vite";
 const time = "2026-09-04T00:00:00Z";
 const administratorId = "A".repeat(43);
 const session = { authenticated: true, user_id: administratorId, username: "admin", role: "admin", csrf_token: "A".repeat(43) };
-const camera = { id: "018f1f4b-7a5d-7b5f-8d31-123456789abc", name: "验收摄像头", location: "测试现场", has_sub_stream: false, onvif_configured: true, username: null, enabled: false, record_enabled: false, status: "disabled", last_seen_at: null, created_at: time, updated_at: time };
+const camera = { id: "018f1f4b-7a5d-7b5f-8d31-123456789abc", name: "验收摄像头", location: "测试现场", has_sub_stream: false, onvif_configured: true, username: null, source_kind: "direct", client_id: null, adapter_kind: "server_direct", manufacturer: null, model: null, firmware_version: null, serial_number: null, capabilities: { video: true, main_stream: true, sub_stream: false, local_recording: false, server_recording: true, ptz: true, events: false, audio_input: false, audio_output: false }, streams: [{ profile: "main", video_codec: null, audio_codec: null, width: null, height: null, frame_rate: null }], health_message: null, device_status: "disabled", storage_mode: "server", enabled: false, record_enabled: false, status: "disabled", last_seen_at: null, created_at: time, updated_at: time };
+const clientInstance = { id: "018f1f4b-7a5d-7b5f-8d31-123456789abd", installation_id: null, name: "验收客户端", client_version: null, authorization_code: "s".repeat(64), status: "pending", last_seen_at: null, created_at: time, updated_at: time };
 const server = await preview({ preview: { host: "127.0.0.1", port: 0, strictPort: true } });
 const address = server.httpServer.address();
 assert.ok(address && typeof address === "object");
@@ -18,7 +19,7 @@ try {
       const context = await browser.newContext({ locale: "zh-CN",  viewport: { width: 360, height: 740 } });
       const page = await context.newPage();
       const errors = [], paths = [], ptz = [];
-      let cameraDeleted = false, acknowledged = false, failStatus = false;
+      let cameraDeleted = false, acknowledged = false, failStatus = false, clients = [{ ...clientInstance }];
       page.on("pageerror", error => errors.push(error.message));
       await page.route("**/api/v2/**", async route => {
         const request = route.request(), url = new URL(request.url()), path = url.pathname;
@@ -26,6 +27,11 @@ try {
         if (path.endsWith("/auth/session")) return route.fulfill({ json: session });
         if (path.endsWith("/events/stream")) return route.fulfill({ status: 200, contentType: "text/event-stream", body: ": acceptance\n\n" });
         if (request.method() !== "GET") assert.equal(request.headers()["x-csrf-token"], session.csrf_token);
+        if (path.endsWith("/clients") && request.method() === "GET") return route.fulfill({ json: clients });
+        if (path.endsWith(`/clients/${clientInstance.id}`) && request.method() === "DELETE") {
+          if (clients[0]?.status === "revoked") clients = []; else clients[0].status = "revoked";
+          return route.fulfill({ status: 204 });
+        }
         if (path.endsWith("/ptz")) { ptz.push(request.postDataJSON().action); return route.fulfill({ status: 204 }); }
         if (path.endsWith("/cameras") && request.method() === "GET") return route.fulfill({ json: cameraDeleted ? [] : [camera] });
         if (path.endsWith(`/cameras/${camera.id}`) && request.method() === "DELETE") {
@@ -42,8 +48,9 @@ try {
         if (path.endsWith("/recordings")) { assert.equal(url.searchParams.get("camera_id"), camera.id); return route.fulfill({ json: [{ start: time, duration: 60 }] }); }
         throw new Error(`Unexpected API request ${request.method()} ${path}`);
       });
-      await page.goto(`http://127.0.0.1:${address.port}/#cameras`);
-      await expect(page.getByRole("complementary").getByText(camera.name, { exact: true })).toBeVisible();
+      await page.goto(`http://127.0.0.1:${address.port}/#instances`);
+      await expect(page.getByRole("table", { name: "摄像头实例列表" }).getByRole("button", { name: camera.name, exact: true })).toBeVisible();
+      await expect(page.getByRole("complementary")).toHaveCount(0);
       const menuToFirst = await page.evaluate(() => {
         const header = document.querySelector(".sarmg-page-header");
         const first = document.querySelector(".sarmg-instance-workspace");
@@ -51,12 +58,20 @@ try {
         return first.getBoundingClientRect().top - header.getBoundingClientRect().bottom;
       });
       assert.ok(Math.abs(menuToFirst - 16) < 2, String(menuToFirst));
-      await page.getByRole("button", { name: "新建摄像头", exact: true }).click();
+      await page.getByRole("button", { name: "取消配对", exact: true }).click();
+      await page.getByRole("button", { name: "确认", exact: true }).click();
+      await expect(page.getByRole("cell", { name: "已撤销", exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "删除实例", exact: true }).click();
+      await page.getByRole("button", { name: "确认", exact: true }).click();
+      await expect(page.getByText("尚无客户端实例", { exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "新建直连摄像头", exact: true }).click();
       const editor = page.getByRole("dialog", { name: "添加摄像头", exact: true });
       await expect(editor).toBeVisible();
       for (let i = 0; i < 12; i++) { await page.keyboard.press("Tab"); assert.ok(await editor.evaluate(element => element.contains(document.activeElement))); }
       await page.keyboard.press("Escape");
-      await expect(page.getByRole("button", { name: "新建摄像头", exact: true })).toBeFocused();
+      await expect(page.getByRole("button", { name: "新建直连摄像头", exact: true })).toBeFocused();
+      await page.getByRole("table", { name: "摄像头实例列表" }).getByRole("button", { name: camera.name, exact: true }).click();
+      await expect(page.getByRole("button", { name: "详细信息", exact: true })).toHaveAttribute("aria-pressed", "true");
       await page.getByRole("button", { name: "主码流", exact: true }).click();
       const movement = page.getByRole("button", { name: "云台向上", exact: true });
       await movement.focus(); await page.keyboard.down("Space"); await page.keyboard.up("Space");
@@ -66,10 +81,9 @@ try {
       await page.keyboard.up("Enter");
       await expect.poll(() => ptz.slice()).toEqual(["move", "stop", "move", "stop"]);
       await page.keyboard.press("Escape");
-      await page.getByRole("button", { name: "录像检索", exact: true }).click();
+      await page.getByRole("button", { name: "日志", exact: true }).click();
       await page.getByRole("button", { name: "查询录像", exact: true }).click();
       await expect(page.getByRole("button", { name: /1分0秒/ })).toBeVisible();
-      await page.getByRole("button", { name: "事件中心", exact: true }).click();
       const filter = page.getByRole("checkbox", { name: "仅显示未确认事件", exact: true });
       const filterBox = await filter.boundingBox();
       assert.ok(filterBox.width <= 24 && filterBox.height <= 24);
@@ -77,7 +91,6 @@ try {
       await filter.uncheck();
       await page.getByRole("button", { name: "确认", exact: true }).click();
       await expect(page.getByRole("cell", { name: "已确认", exact: true })).toBeVisible();
-      await page.getByRole("button", { name: "系统管理", exact: true }).click();
       await expect(page.getByRole("complementary")).toHaveCount(0);
       await expect(page.getByRole("banner").locator('.sarmg-product-identity')).toHaveText("Sentinel Monitor");
       await expect(page.getByText("运行正常", { exact: true })).toBeVisible();
@@ -107,13 +120,13 @@ try {
         assert.deepEqual((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze()).violations, []);
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       }
-      await page.getByRole("button", { name: "实时监控", exact: true }).click();
+      await page.getByRole("button", { name: "详细信息", exact: true }).click();
       await page.getByRole("button", { name: "删除", exact: true }).click();
       await expect(page.getByRole("button", { name: "取消", exact: true })).toBeFocused();
       await page.getByRole("button", { name: "确认", exact: true }).click();
       await expect(page.getByText("还没有匹配的摄像头。", { exact: true })).toBeVisible();
       assert.ok(!paths.some(path => path.includes("/users")));
-      await checkWebLanguage(page, {"routes":[["cameras","Live monitoring"],["recordings","Recordings"],["events","Events"],["system","System management"]],"names":["验收摄像头","测试现场"]});
+      await checkWebLanguage(page, {"routes":[["instances","Instance list"],["logs","Logs"]],"names":["验收摄像头","测试现场"]});
       assert.deepEqual(errors, []);
       console.log(`${engine.name()}: current Sentinel system/cameras/recordings/events, PTZ stop, account settings, modal focus and mobile WCAG AA passed`);
       await context.close();
