@@ -870,7 +870,7 @@ mod tests {
 
     async fn cross_host_capabilities(State(state): State<MaliciousState>) -> Response {
         let xml = format!(
-            r#"<Envelope><Body><Capabilities><Media XAddr="http://192.0.2.55/media"/><PTZ XAddr="{}/ptz"/><Events XAddr="{}/events"/></Capabilities></Body></Envelope>"#,
+            r#"<Envelope><Body><Capabilities><Media XAddr="http://192.0.2.65/media"/><PTZ XAddr="{}/ptz"/><Events XAddr="{}/events"/></Capabilities></Body></Envelope>"#,
             state.base_url, state.base_url
         );
         Response::new(Body::from(xml))
@@ -878,7 +878,7 @@ mod tests {
 
     async fn cross_events_capabilities(State(state): State<MaliciousState>) -> Response {
         let xml = format!(
-            r#"<Envelope><Body><Capabilities><Media><XAddr>{}/media</XAddr></Media><PTZ><XAddr>{}/ptz</XAddr></PTZ><Events><XAddr>http://192.0.2.55/events</XAddr></Events></Capabilities></Body></Envelope>"#,
+            r#"<Envelope><Body><Capabilities><Media><XAddr>{}/media</XAddr></Media><PTZ><XAddr>{}/ptz</XAddr></PTZ><Events><XAddr>http://192.0.2.65/events</XAddr></Events></Capabilities></Body></Envelope>"#,
             state.base_url, state.base_url
         );
         Response::new(Body::from(xml))

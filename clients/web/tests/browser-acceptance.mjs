@@ -36,7 +36,7 @@ try {
         if (path.endsWith("/events")) return route.fulfill({ json: [{ id: "event-1", camera_id: camera.id, kind: "camera.status", severity: "info", message: "验收事件", acknowledged_at: acknowledged ? time : null, created_at: time }] });
         if (path.endsWith("/system/status")) {
           if (failStatus) { failStatus = false; return route.fulfill({ status: 500, json: { code: "platform.internal", message: "SECRET database path", retryable: false, request_id: "system-failure-123" } }); }
-          return route.fulfill({ json: { service: "sentinel-monitor", version: "0.2.5", database: "ok", media_service: "ok", cameras: { total: 1, online: 0, recording: 0 }, server_time: time } });
+          return route.fulfill({ json: { service: "sentinel-monitor", version: "0.2.6", database: "ok", media_service: "ok", cameras: { total: 1, online: 0, recording: 0 }, server_time: time } });
         }
         if (path.endsWith("/audit")) return route.fulfill({ json: [{ id: "audit-1", action: "camera.updated", entity_type: "camera", entity_id: camera.id, created_at: time }] });
         if (path.endsWith("/recordings")) { assert.equal(url.searchParams.get("camera_id"), camera.id); return route.fulfill({ json: [{ start: time, duration: 60 }] }); }
@@ -44,6 +44,13 @@ try {
       });
       await page.goto(`http://127.0.0.1:${address.port}/#cameras`);
       await expect(page.getByRole("complementary").getByText(camera.name, { exact: true })).toBeVisible();
+      const menuToFirst = await page.evaluate(() => {
+        const header = document.querySelector(".sarmg-page-header");
+        const first = document.querySelector(".sarmg-instance-workspace");
+        if (!header || !first) throw new Error("Sentinel spacing fixture is incomplete");
+        return first.getBoundingClientRect().top - header.getBoundingClientRect().bottom;
+      });
+      assert.ok(Math.abs(menuToFirst - 16) < 2, String(menuToFirst));
       await page.getByRole("button", { name: "新建摄像头", exact: true }).click();
       const editor = page.getByRole("dialog", { name: "添加摄像头", exact: true });
       await expect(editor).toBeVisible();
@@ -78,6 +85,13 @@ try {
       const statusTable = page.getByRole("table", { name: "系统状态", exact: true });
       await expect(statusTable.getByRole("rowheader")).toHaveText(["媒体服务", "在线设备", "录像任务"]);
       await expect(statusTable.getByRole("columnheader")).toHaveText(["项目", "当前状态", "说明"]);
+      const sectionGap = await page.evaluate(() => {
+        const table = document.querySelector('table[aria-label="系统状态"]')?.closest(".sarmg-table-scroll");
+        const section = document.querySelector(".management-block");
+        if (!table || !section) throw new Error("Sentinel section spacing fixture is incomplete");
+        return section.getBoundingClientRect().top - table.getBoundingClientRect().bottom;
+      });
+      assert.ok(Math.abs(sectionGap - 16) < 2, String(sectionGap));
       failStatus = true;
       await page.getByRole("group", { name: "全局操作" }).getByRole("button", { name: "刷新", exact: true }).click();
       await expect(page.getByRole("alert")).toContainText("system-failure-123");
