@@ -39,6 +39,23 @@ use url::Url;
 use uuid::Uuid;
 
 const CAMERA_SELECT: &str = "SELECT id, name, location, source_kind, client_id, adapter_kind, manufacturer, model, firmware_version, serial_number, capabilities_json, streams_json, health_message, device_status, main_stream_url_enc, sub_stream_url_enc, has_sub_stream, onvif_url, username_enc, password_enc, enabled, record_enabled, storage_mode, status, last_seen_at, created_at, updated_at FROM cameras";
+const CLIENT_CAMERA_UPSERT: &str =
+    "INSERT INTO cameras (id, name, location, source_kind, client_id, client_camera_id, \
+     adapter_kind, manufacturer, model, firmware_version, serial_number, capabilities_json, \
+     streams_json, health_message, device_status, has_sub_stream, enabled, record_enabled, storage_mode, \
+     status, last_seen_at, created_at, updated_at) \
+     VALUES (?1, ?2, ?3, 'client', ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, 'pending', ?19, ?20, ?21) \
+     ON CONFLICT(id) DO UPDATE SET name = excluded.name, location = excluded.location, \
+     adapter_kind = excluded.adapter_kind, manufacturer = excluded.manufacturer, \
+     model = excluded.model, firmware_version = excluded.firmware_version, \
+     serial_number = excluded.serial_number, capabilities_json = excluded.capabilities_json, \
+     streams_json = excluded.streams_json, health_message = excluded.health_message, \
+     device_status = excluded.device_status, \
+     has_sub_stream = excluded.has_sub_stream, enabled = excluded.enabled, \
+     record_enabled = excluded.record_enabled, storage_mode = excluded.storage_mode, \
+     status = CASE WHEN excluded.enabled THEN cameras.status ELSE 'disabled' END, \
+     last_seen_at = excluded.last_seen_at, updated_at = excluded.updated_at, deleted_at = NULL \
+     WHERE cameras.source_kind = 'client' AND cameras.client_id = excluded.client_id";
 
 pub fn router(state: AppState, runtime: sarmg_server_runtime::RuntimeHandle) -> Result<Router> {
     let static_dir = state.config.static_dir.clone();
@@ -761,7 +778,7 @@ async fn client_snapshot(
             "客户端快照协议或摄像头数量无效".into(),
         ));
     }
-    let (client_id, access_token) = authenticate_client(&state, &headers).await?;
+    let client_id = authenticate_client(&state, &headers).await?;
     let mut ids = HashSet::with_capacity(request.cameras.len());
     for camera in &request.cameras {
         validate_client_camera(camera)?;
@@ -817,12 +834,13 @@ async fn client_snapshot(
     .await?;
 
     for camera in &request.cameras {
-        let existing = sqlx::query_as::<_, CameraRecord>(&format!(
-            "{CAMERA_SELECT} WHERE id = ? AND deleted_at IS NULL"
-        ))
-        .bind(camera.id)
-        .fetch_optional(&mut *transaction)
-        .await?;
+        // Ownership is immutable even while a camera is soft-deleted. Excluding
+        // tombstones here would let another client revive and mutate an ID that
+        // it does not own through the UPSERT below.
+        let existing = sqlx::query_as::<_, CameraRecord>(&format!("{CAMERA_SELECT} WHERE id = ?"))
+            .bind(camera.id)
+            .fetch_optional(&mut *transaction)
+            .await?;
         if existing
             .as_ref()
             .is_some_and(|value| value.client_id != Some(client_id))
@@ -850,46 +868,33 @@ async fn client_snapshot(
                 || value.storage_mode != camera.storage_mode
                 || value.device_status != camera.status
         });
-        sqlx::query(
-            "INSERT INTO cameras (id, name, location, source_kind, client_id, client_camera_id, \
-             adapter_kind, manufacturer, model, firmware_version, serial_number, capabilities_json, \
-             streams_json, health_message, device_status, has_sub_stream, enabled, record_enabled, storage_mode, \
-             status, last_seen_at, created_at, updated_at) \
-             VALUES (?, ?, ?, 'client', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?) \
-             ON CONFLICT(id) DO UPDATE SET name = excluded.name, location = excluded.location, \
-             adapter_kind = excluded.adapter_kind, manufacturer = excluded.manufacturer, \
-             model = excluded.model, firmware_version = excluded.firmware_version, \
-             serial_number = excluded.serial_number, capabilities_json = excluded.capabilities_json, \
-             streams_json = excluded.streams_json, health_message = excluded.health_message, \
-             device_status = excluded.device_status, \
-             has_sub_stream = excluded.has_sub_stream, enabled = excluded.enabled, \
-             record_enabled = excluded.record_enabled, storage_mode = excluded.storage_mode, \
-             status = CASE WHEN excluded.enabled THEN cameras.status ELSE 'disabled' END, \
-             last_seen_at = excluded.last_seen_at, updated_at = excluded.updated_at, deleted_at = NULL",
-        )
-        .bind(camera.id)
-        .bind(camera.name.trim())
-        .bind(camera.location.trim())
-        .bind(client_id)
-        .bind(camera.id)
-        .bind(&camera.adapter_kind)
-        .bind(camera.identity.manufacturer.as_deref())
-        .bind(camera.identity.model.as_deref())
-        .bind(camera.identity.firmware_version.as_deref())
-        .bind(camera.identity.serial_number.as_deref())
-        .bind(capabilities_json)
-        .bind(streams_json)
-        .bind(camera.health_message.as_deref())
-        .bind(&camera.status)
-        .bind(camera.has_sub_stream)
-        .bind(camera.enabled)
-        .bind(record_enabled)
-        .bind(&camera.storage_mode)
-        .bind(now)
-        .bind(now)
-        .bind(now)
-        .execute(&mut *transaction)
-        .await?;
+        let written = sqlx::query(CLIENT_CAMERA_UPSERT)
+            .bind(camera.id)
+            .bind(camera.name.trim())
+            .bind(camera.location.trim())
+            .bind(client_id)
+            .bind(camera.id)
+            .bind(&camera.adapter_kind)
+            .bind(camera.identity.manufacturer.as_deref())
+            .bind(camera.identity.model.as_deref())
+            .bind(camera.identity.firmware_version.as_deref())
+            .bind(camera.identity.serial_number.as_deref())
+            .bind(capabilities_json)
+            .bind(streams_json)
+            .bind(camera.health_message.as_deref())
+            .bind(&camera.status)
+            .bind(camera.has_sub_stream)
+            .bind(camera.enabled)
+            .bind(record_enabled)
+            .bind(&camera.storage_mode)
+            .bind(now)
+            .bind(now)
+            .bind(now)
+            .execute(&mut *transaction)
+            .await?;
+        if written.rows_affected() != 1 {
+            return Err(AppError::Conflict("摄像头身份已由另一个来源使用".into()));
+        }
         if changed {
             let current =
                 sqlx::query_as::<_, CameraRecord>(&format!("{CAMERA_SELECT} WHERE id = ?"))
@@ -943,13 +948,13 @@ async fn client_snapshot(
         publish.push(CameraPublishGrant {
             camera_id: camera.id,
             profile: "main".into(),
-            publish_url: client_publish_url(&state, camera.id, "main", &access_token)?,
+            publish_url: client_publish_url(&state, client_id, camera.id, "main")?,
         });
         if camera.has_sub_stream {
             publish.push(CameraPublishGrant {
                 camera_id: camera.id,
                 profile: "sub".into(),
-                publish_url: client_publish_url(&state, camera.id, "sub", &access_token)?,
+                publish_url: client_publish_url(&state, client_id, camera.id, "sub")?,
             });
         }
     }
@@ -992,7 +997,7 @@ async fn client_snapshot(
         .into_response())
 }
 
-async fn authenticate_client(state: &AppState, headers: &HeaderMap) -> Result<(Uuid, String)> {
+async fn authenticate_client(state: &AppState, headers: &HeaderMap) -> Result<Uuid> {
     let header = headers
         .get(AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
@@ -1006,7 +1011,7 @@ async fn authenticate_client(state: &AppState, headers: &HeaderMap) -> Result<(U
     .fetch_optional(&state.pool)
     .await?
     .ok_or(AppError::Unauthorized)?;
-    Ok((id, header.to_owned()))
+    Ok(id)
 }
 
 fn validate_client_name(value: &str) -> Result<String> {
@@ -1102,9 +1107,9 @@ fn valid_optional_device_text(value: Option<&str>, max: usize) -> bool {
 
 fn client_publish_url(
     state: &AppState,
+    client_id: Uuid,
     camera_id: Uuid,
     profile: &str,
-    access_token: &str,
 ) -> Result<String> {
     let mut url = Url::parse(&format!(
         "{}/{}",
@@ -1112,7 +1117,14 @@ fn client_publish_url(
         camera_path(camera_id, profile)
     ))
     .map_err(|_| AppError::Internal("public RTSP publish URL is invalid".into()))?;
-    url.query_pairs_mut().append_pair("jwt", access_token);
+    let (token, _) = issue_media_token(
+        &client_id.to_string(),
+        camera_id,
+        camera_path(camera_id, profile),
+        vec!["publish".into()],
+        &state.config,
+    )?;
+    url.query_pairs_mut().append_pair("jwt", &token);
     Ok(url.into())
 }
 
@@ -1554,26 +1566,7 @@ async fn media_auth(
         }
         return StatusCode::OK;
     }
-    if request.action != "publish" || request.token.len() != 43 {
-        return StatusCode::UNAUTHORIZED;
-    }
-    let authorized = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM sentinel_clients c JOIN cameras k ON k.client_id = c.id \
-         WHERE c.token_hash = ? AND c.revoked_at IS NULL AND k.deleted_at IS NULL \
-         AND k.enabled = 1 AND (? = 'cam_' || replace(k.id, '-', '') || '_main' \
-              OR (k.has_sub_stream = 1 AND ? = 'cam_' || replace(k.id, '-', '') || '_sub'))",
-    )
-    .bind(hash_secret(&request.token).to_vec())
-    .bind(&request.path)
-    .bind(&request.path)
-    .fetch_one(&state.pool)
-    .await
-    .unwrap_or(0);
-    if authorized == 1 {
-        StatusCode::OK
-    } else {
-        StatusCode::UNAUTHORIZED
-    }
+    StatusCode::UNAUTHORIZED
 }
 
 async fn load_camera(state: &AppState, id: Uuid) -> Result<CameraRecord> {
@@ -1707,6 +1700,110 @@ async fn write_audit_in(
 #[cfg(test)]
 mod request_contract_tests {
     use super::*;
+
+    async fn insert_test_client(pool: &sqlx::SqlitePool, id: Uuid, name: &str) {
+        let now = Utc::now();
+        sqlx::query(
+            "INSERT INTO sentinel_clients (id, name, authorization_code_enc, \
+             authorization_code_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .bind(id)
+        .bind(name)
+        .bind(vec![7_u8; 64])
+        .bind(hash_secret(name).to_vec())
+        .bind(now)
+        .bind(now)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    async fn upsert_test_camera(
+        pool: &sqlx::SqlitePool,
+        client_id: Uuid,
+        camera_id: Uuid,
+        name: &str,
+    ) -> u64 {
+        let now = Utc::now();
+        sqlx::query(CLIENT_CAMERA_UPSERT)
+            .bind(camera_id)
+            .bind(name)
+            .bind("entrance")
+            .bind(client_id)
+            .bind(camera_id)
+            .bind("rtsp")
+            .bind("vendor")
+            .bind("model")
+            .bind("firmware")
+            .bind("serial")
+            .bind("{}")
+            .bind("[]")
+            .bind(Option::<&str>::None)
+            .bind("online")
+            .bind(false)
+            .bind(true)
+            .bind(true)
+            .bind("server")
+            .bind(now)
+            .bind(now)
+            .bind(now)
+            .execute(pool)
+            .await
+            .unwrap()
+            .rows_affected()
+    }
+
+    #[tokio::test]
+    async fn client_camera_snapshot_upsert_is_exact_and_preserves_soft_deleted_ownership() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = directory.path().join("snapshot.sqlite3");
+        let pool = crate::sqlite::open_pool(&format!("sqlite://{}", database.display()))
+            .await
+            .unwrap();
+        let owner = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        let camera = Uuid::new_v4();
+        insert_test_client(&pool, owner, "owner").await;
+        insert_test_client(&pool, other, "other").await;
+
+        assert_eq!(upsert_test_camera(&pool, owner, camera, "first").await, 1);
+        assert_eq!(upsert_test_camera(&pool, owner, camera, "updated").await, 1);
+        let stored: (String, Uuid, String, String, bool) = sqlx::query_as(
+            "SELECT name, client_id, storage_mode, device_status, record_enabled \
+             FROM cameras WHERE id = ?",
+        )
+        .bind(camera)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            stored,
+            (
+                "updated".into(),
+                owner,
+                "server".into(),
+                "online".into(),
+                true
+            )
+        );
+
+        sqlx::query("UPDATE cameras SET deleted_at = ?, name = 'tombstone' WHERE id = ?")
+            .bind(Utc::now())
+            .bind(camera)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(upsert_test_camera(&pool, other, camera, "stolen").await, 0);
+        let preserved: (String, Uuid, bool) = sqlx::query_as(
+            "SELECT name, client_id, deleted_at IS NOT NULL FROM cameras WHERE id = ?",
+        )
+        .bind(camera)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(preserved, ("tombstone".into(), owner, true));
+        pool.close().await;
+    }
 
     #[test]
     fn instance_name_policy_counts_unicode_characters() {

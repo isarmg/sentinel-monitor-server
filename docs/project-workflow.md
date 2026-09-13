@@ -13,15 +13,16 @@ Sentinel Monitor 0.2.8
 │  ├─ 解析当前配置与 Secret
 │  ├─ 取得 database/runtime/MediaMTX 锁
 │  ├─ 验证当前 SQLite、Schema 与全部摄像头凭据
-│  ├─ 启动只监听 loopback 的 MediaMTX、Rust API 和 reconciler
-│  └─ Caddy 将 TLS 同源入口转发到三个明确的 127.0.0.1 上游
+│  ├─ 启动 Rust API、reconciler 与 MediaMTX
+│  ├─ 控制/API/playback 保持 loopback；生产 RTSPS/HLS/WebRTC 媒体 listener 按合同绑定主机网卡
+│  └─ Caddy 将浏览器 TLS 同源入口转发到三个明确的 127.0.0.1 上游
 ├─ Administrator 控制面
 │  ├─ login/session/logout -> Session + CSRF
 │  ├─ 摄像头期望态 -> durable operation
 │  ├─ reconciler -> MediaMTX actual state
 │  └─ 用户、事件、审计与 operation status
 ├─ 媒体面
-│  ├─ 浏览器申请资源限定的短时 JWT
+│  ├─ 浏览器读取与 Client 发布分别申请资源/动作限定的短时 JWT
 │  ├─ MediaMTX internal auth 回调
 │  └─ WHEP 实时预览 / HLS 回放
 └─ 运维
@@ -42,8 +43,8 @@ Rust binary，生成完整 manifest，在同一文件系统暂存并验证后，
 
 `bootstrap.sh` 创建目录、0600 环境文件和初始 Administrator 配置材料，但账户行要到应用首次打开全新
 数据库时才创建。它不启动服务、不覆盖配置、不回显随机 Secret。操作者
-编辑密码并运行 `--confirm-config` 后，`start.sh` 才按锁顺序启动 companion 和应用；运行机同样必须是
-Linux x86_64。
+编辑密码、配置 Client 可达且证书受信的 `rtsps://` 发布 origin 与证书/私钥并运行
+`--confirm-config` 后，`start.sh` 才按锁顺序启动 companion 和应用；运行机同样必须是 Linux x86_64。
 
 主机代理源资产固定为 `deploy/Caddyfile`，不进入应用生命周期脚本。它只允许
 `127.0.0.1:8080/8888/8889` 三个原生进程上游；根目录不存在第二份 Caddyfile，仓库也没有容器 DNS

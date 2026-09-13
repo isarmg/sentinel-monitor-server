@@ -278,6 +278,8 @@ run_operation "$INSTALL_ROOT/releases/0.2.8/native/bootstrap.sh" >"$BOOTSTRAP_OU
 ENV_FILE="$CONFIG_ROOT/sentinel-monitor.env"
 [[ "$(stat -c '%a' "$ENV_FILE")" == "600" ]] || fail "environment file is not mode 0600"
 grep -q '^STATIC_DIR=.*/releases/0.2.8/web$' "$ENV_FILE" || fail "STATIC_DIR is not release-pinned"
+grep -q '^PUBLIC_RTSP_PUBLISH_BASE_URL=REPLACE_WITH_PUBLIC_RTSPS_ORIGIN$' "$ENV_FILE" ||
+  fail "bootstrap did not require an explicit public RTSPS publish origin"
 JWT_VALUE="$(sed -n 's/^APP_JWT_SECRET=//p' "$ENV_FILE")"
 KEY_VALUE="$(sed -n 's/^CREDENTIALS_KEY=//p' "$ENV_FILE")"
 PASSWORD_VALUE="$(sed -n 's/^BOOTSTRAP_ADMIN_PASSWORD=//p' "$ENV_FILE")"
@@ -296,6 +298,11 @@ if run_operation "$INSTALL_ROOT/releases/0.2.8/native/start.sh" >"$TEST_ROOT/unc
 fi
 
 sed -i 's/^BOOTSTRAP_ADMIN_PASSWORD=.*/BOOTSTRAP_ADMIN_PASSWORD=operator-reviewed-password-0.2.8/' "$ENV_FILE"
+sed -i 's|^PUBLIC_RTSP_PUBLISH_BASE_URL=.*|PUBLIC_RTSP_PUBLISH_BASE_URL=rtsps://sentinel.example:8322|' "$ENV_FILE"
+printf '%s\n' 'test certificate' >"$CONFIG_ROOT/sentinel-rtsp.crt"
+printf '%s\n' 'test private key' >"$CONFIG_ROOT/sentinel-rtsp.key"
+chmod 0644 -- "$CONFIG_ROOT/sentinel-rtsp.crt"
+chmod 0600 -- "$CONFIG_ROOT/sentinel-rtsp.key"
 chmod 0600 -- "$ENV_FILE"
 run_operation "$INSTALL_ROOT/releases/0.2.8/native/bootstrap.sh" --confirm-config >/dev/null
 [[ ! -e "$CONFIG_ROOT/sentinel-monitor.REVIEW-SECRETS-BEFORE-START" ]] || fail "review marker was not cleared"

@@ -142,7 +142,7 @@ viewer。摄像头的 RTSP/ONVIF `username`、加密 `password` 和媒体 JWT `a
 |---|---|---|---|---|---|---|
 | SEN-M-001 | stream ticket 只为已启用摄像头的 main/sub profile 签发 | `/cameras/{id}/stream-ticket` | 核心 | 高 | 浏览器无法获得受限媒体入口；放宽则可读不存在/停用资源 | main/sub、无子流、disabled、未知 camera |
 | SEN-M-002 | 媒体 JWT 使用 HS256 key，经 HKDF 从 `APP_JWT_SECRET` 派生 | `issue_media_token`、`media_signing_key` | 保障 | 高 | 直接复用根 Secret 或弱 key 会扩大泄漏影响 | key 派生确定性、错 Secret、算法固定 |
-| SEN-M-003 | JWT 严格绑定 protocol、issuer、audience、kind、subject、camera、path、actions、jti、iat/nbf/exp | `MediaClaims`、`decode_media_token` | 保障 | 高 | Token 可跨产品、跨摄像头、跨用途重放 | 每字段篡改、未知字段、时间窗、jti |
+| SEN-M-003 | 浏览器读取与 Client 发布都使用短时 JWT；严格绑定 protocol、issuer、audience、kind、subject、camera、path、actions、jti、iat/nbf/exp，长期 Client API Token 不进入媒体 URL | `client_publish_url`、`MediaClaims`、`decode_media_token` | 保障 | 高 | Token 可跨产品、跨摄像头、跨用途重放，或媒体链路泄漏扩大到控制面 | 每字段篡改、未知字段、read/publish 隔离、时间窗、jti |
 | SEN-M-004 | MediaMTX HTTP auth callback 有 4 KiB/字段上限并核对 path 与 action | `/internal/v2/media/auth`、`MediaAuthRequest` | 保障 | 高 | callback 可被超大字段耗尽，或 Token 越权到其他 path | 超限、错 path/action、过期、额外字段 |
 | SEN-M-005 | WHEP 浏览器播放器生成 recvonly offer、等待 ICE、设置 answer 并 DELETE resource | `clients/web/src/whep.ts` | 核心 | 高 | 失去低延迟直播或遗留服务端 WHEP Session | 成功连接、12 秒 timeout、close、unmount |
 | SEN-M-006 | WHEP OPTIONS/POST 与资源 DELETE 携带短时 Bearer；ticket runtime guard 当前只验证 URL 是字符串 | `WhepPlayer`、`isStreamTicket` | 保障 | 高 | 媒体入口可能未授权或把 Token 发往意外 origin | 生产 `PUBLIC_WEBRTC_BASE_URL` 必须保持同源相对路径；当前播放器接受绝对 ticket/Location 且会携带 Bearer，尚无 same-origin 强制 |
@@ -152,7 +152,7 @@ viewer。摄像头的 RTSP/ONVIF `username`、加密 `password` 和媒体 JWT `a
 | SEN-M-010 | MediaMTX 录制 fMP4、15 分钟 segment、默认保留 168 小时 | `config/mediamtx.yml` | 建议保留 | 中 | 删除 record 失去历史回放；改保留期直接改变容量需求 | config lock、record path、过期清理实测 |
 | SEN-M-011 | start 通过环境把录像根固定到 `/var/lib/isarmg/sentinel-monitor/recordings` | `MTX_PATHDEFAULTS_RECORDPATH`、`native/start.sh` | 保障 | 中 | inert 样例路径或 cwd 可能成为真实写入位置 | 进程环境、路径权限、release relocation |
 | SEN-M-012 | Caddy 将 `/media-webrtc/*`、`/media-hls/*` 与应用汇聚到一个浏览器 origin；三个上游精确为本机 `127.0.0.1:8889/8888/8080`，不支持容器 DNS 别名 | `deploy/Caddyfile`、CI proxy gate | 保障 | 中 | 跨 origin 会复杂化 Cookie、CORS 和媒体授权；容器名在当前原生部署中无法解析 | 根级副本缺失；WHEP/HLS/API 同源；管理端口不公网暴露；拒绝 `app:`/`mediamtx:`；生产设置真实 `SITE_ADDRESS` |
-| SEN-M-013 | MediaMTX API、metrics、playback 默认绑定 loopback；摄像头网络另行隔离 | `config/mediamtx.yml` | 保障 | 高 | 管理 API 公网暴露可让攻击者改 path 或读取内部状态 | 监听地址、防火墙、代理路由扫描 |
+| SEN-M-013 | MediaMTX API、metrics、playback 固定 loopback；生产启动器强制受信证书的 RTSPS 8322，HLS 8888、WebRTC HTTP 8889 与 UDP 8189 绑定主机网卡。防火墙分别限制 Client 发布、Caddy 上游和浏览器 UDP | `src/config.rs`、`native/start.sh`、`native/bootstrap.sh` | 保障 | 高 | 明文发布可能暴露媒体 Token；错把媒体 listener 当成 loopback 会令远程 Client 无法发布 | rtsps-only、证书/私钥检查、loopback 拒绝、listener 与 NAT 验收 |
 
 ## 8. 事件、状态与审计
 

@@ -120,7 +120,7 @@ pub fn decode_media_token(token: &str, config: &Config) -> Result<MediaClaims> {
         || claims
             .actions
             .iter()
-            .any(|action| !matches!(action.as_str(), "read" | "playback"))
+            .any(|action| !matches!(action.as_str(), "read" | "playback" | "publish"))
         || claims.nbf != claims.iat
         || claims.iat > now
         || claims.exp.checked_sub(claims.iat) != Some(config.media_token_ttl.as_secs())

@@ -77,7 +77,12 @@ impl Config {
             .map_err(|error| format!("BOOTSTRAP_ADMIN_USERNAME is invalid: {error}"))?,
             bootstrap_admin_password,
             development_mode,
-            media_token_ttl: Duration::from_secs(parse_u64("MEDIA_TOKEN_TTL_SECS", 120)?),
+            media_token_ttl: Duration::from_secs(bounded_u64(
+                "MEDIA_TOKEN_TTL_SECS",
+                120,
+                30,
+                300,
+            )?),
             mediamtx_api_url: trim_slash(value("MEDIAMTX_API_URL", "http://127.0.0.1:9997")),
             mediamtx_playback_url: trim_slash(value(
                 "MEDIAMTX_PLAYBACK_URL",
@@ -85,10 +90,10 @@ impl Config {
             )),
             public_webrtc_base_url: trim_slash(value("PUBLIC_WEBRTC_BASE_URL", "/media-webrtc")),
             public_hls_base_url: trim_slash(value("PUBLIC_HLS_BASE_URL", "/media-hls")),
-            public_rtsp_publish_base_url: validate_public_rtsp_base(&value(
-                "PUBLIC_RTSP_PUBLISH_BASE_URL",
-                "rtsp://127.0.0.1:8554",
-            ))?,
+            public_rtsp_publish_base_url: validate_public_rtsp_base(
+                &value("PUBLIC_RTSP_PUBLISH_BASE_URL", "rtsp://127.0.0.1:8554"),
+                development_mode,
+            )?,
             status_interval: Duration::from_secs(parse_u64("STATUS_INTERVAL_SECS", 10)?),
             reconcile_interval: Duration::from_secs(parse_u64("RECONCILE_INTERVAL_SECS", 60)?),
             request_timeout: Duration::from_secs(bounded_u64("REQUEST_TIMEOUT_SECS", 20, 1, 300)?),
@@ -102,12 +107,15 @@ impl Config {
     }
 }
 
-fn validate_public_rtsp_base(value: &str) -> Result<String, String> {
+fn validate_public_rtsp_base(value: &str, development_mode: bool) -> Result<String, String> {
     let value = trim_slash(value.to_owned());
     let parsed = url::Url::parse(&value)
         .map_err(|_| "PUBLIC_RTSP_PUBLISH_BASE_URL must be a valid RTSP URL".to_owned())?;
     if !matches!(parsed.scheme(), "rtsp" | "rtsps")
         || parsed.host_str().is_none()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || !matches!(parsed.path(), "" | "/")
         || parsed.query().is_some()
         || parsed.fragment().is_some()
     {
@@ -115,6 +123,21 @@ fn validate_public_rtsp_base(value: &str) -> Result<String, String> {
             "PUBLIC_RTSP_PUBLISH_BASE_URL must be an rtsp(s) origin without query or fragment"
                 .to_owned(),
         );
+    }
+    let local_only = parsed.host_str().is_none_or(|host| {
+        host.eq_ignore_ascii_case("localhost")
+            || host
+                .parse::<std::net::IpAddr>()
+                .is_ok_and(|address| address.is_loopback() || address.is_unspecified())
+    });
+    if !development_mode && local_only {
+        return Err(
+            "PUBLIC_RTSP_PUBLISH_BASE_URL must be reachable by paired clients in production"
+                .to_owned(),
+        );
+    }
+    if !development_mode && parsed.scheme() != "rtsps" {
+        return Err("PUBLIC_RTSP_PUBLISH_BASE_URL must use rtsps in production".to_owned());
     }
     Ok(value)
 }
@@ -210,5 +233,19 @@ mod tests {
             absolute_path("STATIC_DIR", "web/dist".into()).unwrap_err(),
             "STATIC_DIR must be an absolute path"
         );
+    }
+
+    #[test]
+    fn production_rtsp_publish_origin_must_be_client_reachable() {
+        assert!(validate_public_rtsp_base("rtsps://sentinel.example:8322", false).is_ok());
+        assert!(validate_public_rtsp_base("rtsps://192.168.1.20:8322", false).is_ok());
+        assert!(validate_public_rtsp_base("rtsp://sentinel.example:8554", false).is_err());
+        assert!(validate_public_rtsp_base("rtsp://127.0.0.1:8554", false).is_err());
+        assert!(validate_public_rtsp_base("rtsp://localhost:8554", false).is_err());
+        assert!(
+            validate_public_rtsp_base("rtsp://user:secret@sentinel.example:8554", false).is_err()
+        );
+        assert!(validate_public_rtsp_base("rtsp://sentinel.example:8554/path", false).is_err());
+        assert!(validate_public_rtsp_base("rtsp://127.0.0.1:8554", true).is_ok());
     }
 }

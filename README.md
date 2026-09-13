@@ -19,9 +19,11 @@ Client 使用可扩展设备适配器统一不同品牌：当前 `rtsp` 适配�
 `/etc/isarmg/sentinel-monitor.env`。本仓库刻意不提供 systemd unit；正式生命周期由不可变发行树内的
 `native/bootstrap.sh|start.sh|status.sh|stop.sh` 管理。
 
-Sentinel 和 MediaMTX 的控制/媒体上游默认都只监听 loopback。生产唯一公网入口是按
-`deploy/Caddyfile` 安装并配置真实 TLS 站点的可信网关；模板只代理本机 `127.0.0.1` 端口，不存在 Docker
-Compose，也不识别 `app`、`mediamtx` 等容器 DNS 名称。
+Sentinel Rust 控制面以及 MediaMTX 的 API、metrics、playback 管理端口只监听 loopback。媒体监听不同：
+生产启动器强制 RTSPS `:8322`，HLS `:8888`、WebRTC HTTP `:8889` 和 WebRTC UDP `:8189` 按 MediaMTX 合同监听主机网卡。
+生产应由 `deploy/Caddyfile` 把浏览器 HLS/WebRTC HTTP 与控制面汇聚到同一 TLS origin，同时用防火墙仅向
+配对 Client 开放 RTSPS 发布入口，并按网络拓扑开放 WebRTC UDP；不得公开 9996/9997/9998。配置中的
+`PUBLIC_RTSP_PUBLISH_BASE_URL` 必须是 Client 实际可达、证书受信且名称匹配的 `rtsps://` origin，生产不能使用明文 RTSP 或 loopback。发布 URL 只携带 120 秒、单摄像头/单 profile/publish 限定的媒体 Token，不复用长期 Client API 凭据。
 
 ## 快速验证
 

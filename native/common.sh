@@ -311,6 +311,21 @@ require_runtime_contract() {
     die "APP_JWT_SECRET must contain at least 32 characters"
   [[ -n "${CREDENTIALS_KEY:-}" ]] || die "CREDENTIALS_KEY is required"
   [[ -n "${BOOTSTRAP_ADMIN_PASSWORD:-}" ]] || die "BOOTSTRAP_ADMIN_PASSWORD is required"
+  [[ "${PUBLIC_RTSP_PUBLISH_BASE_URL:-}" =~ ^rtsps://[^/[:space:]]+/?$ ]] ||
+    die "PUBLIC_RTSP_PUBLISH_BASE_URL must be an rtsps origin reachable by paired clients"
+  [[ "$PUBLIC_RTSP_PUBLISH_BASE_URL" != *'@'* ]] ||
+    die "PUBLIC_RTSP_PUBLISH_BASE_URL must not contain credentials"
+  local rtsp_authority="${PUBLIC_RTSP_PUBLISH_BASE_URL#*://}"
+  rtsp_authority="${rtsp_authority%/}"
+  case "$rtsp_authority" in
+    127.*|0.0.0.0|0.0.0.0:*|localhost|localhost:*|\[::1\]|\[::1\]:*|\[::\]|\[::\]:*)
+      die "PUBLIC_RTSP_PUBLISH_BASE_URL must not use a loopback host in production"
+      ;;
+  esac
+  validate_absolute_path "${MEDIAMTX_RTSP_CERT:-}" "MEDIAMTX_RTSP_CERT"
+  validate_absolute_path "${MEDIAMTX_RTSP_KEY:-}" "MEDIAMTX_RTSP_KEY"
+  assert_regular_file "$MEDIAMTX_RTSP_CERT" "MediaMTX RTSPS certificate"
+  assert_private_file "$MEDIAMTX_RTSP_KEY" "MediaMTX RTSPS private key"
 }
 
 ensure_lock_file() {

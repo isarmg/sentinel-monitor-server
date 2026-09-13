@@ -59,6 +59,7 @@ APP_LOG="$TEST_ROOT/app.log"
     STATIC_DIR="$WEB_ROOT" \
     MEDIAMTX_API_URL="http://127.0.0.1:9" \
     MEDIAMTX_PLAYBACK_URL="http://127.0.0.1:9" \
+    PUBLIC_RTSP_PUBLISH_BASE_URL="rtsps://sentinel.example:8322" \
     STATUS_INTERVAL_SECS=60 \
     RECONCILE_INTERVAL_SECS=60 \
     REQUEST_TIMEOUT_SECS=1 \
@@ -110,6 +111,7 @@ if env \
   APP_ENV=production \
   SENTINEL_RUNTIME_DIR="$RUNTIME_ROOT" \
   STATIC_DIR="$WEB_ROOT" \
+  PUBLIC_RTSP_PUBLISH_BASE_URL="rtsps://sentinel.example:8322" \
   "$APP_ROOT/sentinel-monitor" serve >"$TEST_ROOT/tamper.log" 2>&1; then
   echo "Tampered static assets were accepted" >&2
   exit 1
