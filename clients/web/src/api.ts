@@ -19,9 +19,7 @@ export type Camera = {
   name: string;
   location: string;
   has_sub_stream: boolean;
-  onvif_configured: boolean;
-  username: string | null;
-  source_kind: "direct" | "client";
+  source_kind: "client";
   client_id: string | null;
   adapter_kind: string;
   manufacturer: string | null;
@@ -60,14 +58,6 @@ export type CameraStream = {
   width: number | null;
   height: number | null;
   frame_rate: number | null;
-};
-
-export type CameraMutation = {
-  camera: Camera;
-  media_synced: boolean;
-  warning: string | null;
-  operation_id: string;
-  operation_state: string;
 };
 
 export type MediaOperation = {
@@ -124,8 +114,6 @@ export type SystemStatus = {
   cameras: { total: number; online: number; recording: number };
   server_time: string;
 };
-
-export type DiscoveredDevice = { xaddrs: string[] };
 
 export type SentinelClient = {
   id: string;
@@ -187,18 +175,16 @@ export const isCamera: JsonGuard<Camera> = (value): value is Camera =>
   ["id", "name", "location", "status", "device_status", "adapter_kind", "created_at", "updated_at"].every((key) =>
     isString(value[key]),
   ) &&
-  isNullableString(value.username) &&
   isNullableString(value.client_id) &&
   isNullableString(value.manufacturer) &&
   isNullableString(value.model) &&
   isNullableString(value.firmware_version) &&
   isNullableString(value.serial_number) &&
   isNullableString(value.health_message) &&
-  ["direct", "client"].includes(value.source_kind as string) &&
+  value.source_kind === "client" &&
   ["client", "server"].includes(value.storage_mode as string) &&
   isNullableString(value.last_seen_at) &&
   isBoolean(value.has_sub_stream) &&
-  isBoolean(value.onvif_configured) &&
   isBoolean(value.enabled) &&
   isBoolean(value.record_enabled) &&
   isCameraCapabilities(value.capabilities) &&
@@ -206,16 +192,6 @@ export const isCamera: JsonGuard<Camera> = (value): value is Camera =>
   value.streams.every(isCameraStream);
 
 export const isCameras = arrayOf(isCamera);
-
-export const isCameraMutation: JsonGuard<CameraMutation> = (
-  value,
-): value is CameraMutation =>
-  isRecord(value) &&
-  isCamera(value.camera) &&
-  isBoolean(value.media_synced) &&
-  isNullableString(value.warning) &&
-  isString(value.operation_id) &&
-  isString(value.operation_state);
 
 export const isOperation: JsonGuard<MediaOperation> = (
   value,
@@ -278,11 +254,6 @@ export const isSystemStatus: JsonGuard<SystemStatus> = (
   isNumber(value.cameras.online) &&
   isNumber(value.cameras.recording);
 
-const isDiscoveredDevice: JsonGuard<DiscoveredDevice> = (
-  value,
-): value is DiscoveredDevice =>
-  isRecord(value) && Array.isArray(value.xaddrs) && value.xaddrs.every(isString);
-export const isDiscoveredDevices = arrayOf(isDiscoveredDevice);
 
 export const isSentinelClient: JsonGuard<SentinelClient> = (value): value is SentinelClient =>
   isRecord(value) &&

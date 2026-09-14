@@ -6,7 +6,6 @@ mod doctor;
 mod error;
 mod mediamtx;
 mod models;
-mod onvif;
 mod protocol;
 mod reconciliation;
 mod release;
@@ -14,9 +13,6 @@ mod routes;
 mod runtime_lock;
 mod sqlite;
 mod static_assets;
-
-#[cfg(test)]
-static NETWORK_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use clap::{Args, Parser, Subcommand};
@@ -273,7 +269,6 @@ async fn serve(release_root: Option<&std::path::Path>) -> anyhow::Result<()> {
                 "server-health".into(),
                 "durable-operations".into(),
                 "secure-http".into(),
-                "secure-xml".into(),
                 "secret-envelope".into(),
             ],
         })

@@ -34,10 +34,11 @@ cargo +1.98.0 run -- serve
 使用 `native/sentinelctl start` 让统一命令验证 binary SHA、版本、配置、目录权限和锁，再启动 MediaMTX；不要绕过
 脚本直接后台运行。随后启动 Sentinel，并分别检查应用与 companion 的 loopback readiness。
 
-## 2.5 第一条摄像头练习
+## 2.5 第一个摄像机实例练习
 
-只使用实验摄像头或本地测试源：管理员登录，创建摄像头，观察 operation 从 pending/running 到终态，
-确认 MediaMTX path，再通过可信代理测试播放。密码不应出现在浏览器状态、审计或日志中。
+只使用实验摄像头或本地测试源：管理员在菜单中创建实例，把授权码配置到 Client，
+由 Client 选择一台摄像机并上报，确认 MediaMTX publisher/path，再通过可信代理测试播放。
+设备密码不应离开 Client，也不应出现在浏览器状态、审计或日志中。
 
 ## 2.6 成功标准
 

@@ -2,15 +2,17 @@
 
 ## 1.1 产品定位
 
-Sentinel Monitor 是自托管摄像头控制面：管理摄像头凭据和配置，协调 MediaMTX 拉流/发布，提供浏览器
-播放、录像与审计。它不自己实现 RTSP/WHEP/HLS 媒体服务器，也不把摄像头密码暴露给浏览器。
+Sentinel Monitor 是自托管摄像头控制面：管理摄像机授权实例，协调 Client 向 MediaMTX 发布视频，提供浏览器
+播放、录像与审计。摄像机发现、厂商适配和设备凭据只在 Client；Server 不直连摄像机。
 
 ## 1.2 四层结构
 
 ```text
-Browser -> Sentinel API -> SQLite + operation reconciler -> MediaMTX API
-   \----------- WHEP/HLS media through trusted proxy --------/
-Camera -------------------- RTSP --------------------> MediaMTX
+Camera -> Sentinel Client -> MediaMTX publish
+                 |                |
+                 v                v
+Browser -> Sentinel API -> SQLite + operation reconciler
+   \---------------- WHEP/HLS through trusted proxy --------/
 ```
 
 | 层 | 权威事实 |
@@ -22,7 +24,7 @@ Camera -------------------- RTSP --------------------> MediaMTX
 
 ## 1.3 当前版本整体
 
-`0.2.9` binary、API、Schema revision 1、固定 Schema SHA、credential envelope、MediaMTX binary/config
+`0.2.9` binary、API、Schema revision 7、固定 Schema SHA、credential envelope、MediaMTX binary/config
 合同和发行 manifest 必须精确匹配。不读取其他代数据库或密文，不注册旧 API，也不在运行时迁移。
 
 ## 1.4 期望与实际

@@ -118,8 +118,8 @@ sudo systemctl reload caddy
 ```text
 application=sentinel-monitor
 application_version=0.2.2
-schema_revision=5
-schema_sha256=86726841ebe3316fe5bf409e260464c870cf61c7a0f7d2c70d4c5faa499926dc
+schema_revision=7
+schema_sha256=bb64805d1434fa953b5a215c636c086d98bce467825f7e9b6d3a5c1c0bd359c4
 ```
 
 Foundation `_sarmg_administrators` 表保存不透明 TEXT `administrator_id`、canonical `username`、密码摘要、启停状态、Session version 和微秒整数时间
@@ -208,12 +208,12 @@ lifecycle test 仅使用临时根，覆盖 no-clobber、合同外环境拒绝、
 login/session 成功响应必须严格是
 `{authenticated:true,user_id,username,role:"admin",csrf_token}`，登录请求必须严格为
 `{username,password}`；额外字段、已删除的 email 字段、其他 `role` 值和合同外路径都视为
-合同错误。wire 中固定的 `role:"admin"` 仅用于跨产品响应一致性，不对应数据库列。摄像头 RTSP/ONVIF
-用户名和密码是加密设备凭据，与 Administrator 身份无关。
+合同错误。wire 中固定的 `role:"admin"` 仅用于跨产品响应一致性，不对应数据库列。实例授权码与
+Client token 是独立的设备数据面凭据，与 Administrator 身份无关。
 
-`BOOTSTRAP_ADMIN_USERNAME`、管理 API 和内置 Web 是 Server 范围。摄像头 username、MediaMTX internal
+`BOOTSTRAP_ADMIN_USERNAME`、管理 API 和内置 Web 是 Server 范围。Client 保管的设备账号、MediaMTX internal
 auth body、媒体 JWT、WHEP/HLS 播放与录像状态不使用 Administrator username；运维轮换管理 username/
-密码时不能同步改摄像头凭据或媒体 key，反之亦然。
+密码时不能同步改实例授权码或媒体 key，反之亦然。
 
 ## 11. Web 设计依赖与发布证明
 

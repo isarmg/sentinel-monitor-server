@@ -1,9 +1,4 @@
-use crate::{
-    crypto::{CredentialField, SecretBox},
-    protocol::CONTRACT,
-    runtime_lock::DatabaseMaintenanceLock,
-    sqlite,
-};
+use crate::{crypto::SecretBox, protocol::CONTRACT, runtime_lock::DatabaseMaintenanceLock, sqlite};
 use anyhow::{ensure, Context};
 use chrono::Utc;
 use rusqlite::{Connection, OpenFlags};
@@ -166,30 +161,21 @@ fn verify_credentials(path: &Path, key: &[u8; 32]) -> anyhow::Result<()> {
     )?;
     connection.busy_timeout(Duration::from_secs(5))?;
     let secret_box = SecretBox::new(key);
-    let mut statement = connection.prepare(
-        "SELECT id, main_stream_url_enc, sub_stream_url_enc, username_enc, password_enc \
-         FROM cameras",
-    )?;
+    let mut statement =
+        connection.prepare("SELECT id, authorization_code_enc FROM sentinel_clients")?;
     let mut rows = statement.query([])?;
     while let Some(row) = rows.next()? {
-        let camera_id = Uuid::parse_str(&row.get::<_, String>(0)?)
-            .map_err(|_| anyhow::anyhow!("camera credential identity is invalid"))?;
-        let main: Option<Vec<u8>> = row.get(1)?;
-        let sub: Option<Vec<u8>> = row.get(2)?;
-        let username: Option<Vec<u8>> = row.get(3)?;
-        let password: Option<Vec<u8>> = row.get(4)?;
-        for (field, value) in [
-            (CredentialField::MainStreamUrl, main),
-            (CredentialField::SubStreamUrl, sub),
-            (CredentialField::Username, username),
-            (CredentialField::Password, password),
-        ] {
-            if let Some(value) = value {
-                secret_box.decrypt(camera_id, field, &value).map_err(|_| {
-                    anyhow::anyhow!("CREDENTIALS_KEY cannot authenticate current camera envelopes")
-                })?;
-            }
-        }
+        let instance_id = row.get::<_, String>(0)?;
+        Uuid::parse_str(&instance_id)
+            .map_err(|_| anyhow::anyhow!("camera instance identity is invalid"))?;
+        let authorization_code: Vec<u8> = row.get(1)?;
+        secret_box
+            .decrypt_client_authorization(&instance_id, &authorization_code)
+            .map_err(|_| {
+                anyhow::anyhow!(
+                    "CREDENTIALS_KEY cannot authenticate current camera authorization envelopes"
+                )
+            })?;
     }
     Ok(())
 }
@@ -488,22 +474,9 @@ mod tests {
         let user = Uuid::new_v4().to_string();
         let camera_id = Uuid::new_v4();
         let secret_box = SecretBox::new(&key);
+        let authorization_code = "a".repeat(64);
         let encrypted = secret_box
-            .encrypt(
-                camera_id,
-                CredentialField::MainStreamUrl,
-                "rtsp://camera.invalid/main",
-            )
-            .unwrap();
-        let username = secret_box
-            .encrypt(camera_id, CredentialField::Username, "doctor-camera-user")
-            .unwrap();
-        let password = secret_box
-            .encrypt(
-                camera_id,
-                CredentialField::Password,
-                "doctor-camera-password",
-            )
+            .encrypt_client_authorization(&camera_id.to_string(), &authorization_code)
             .unwrap();
         sqlx::query(
             "INSERT INTO _sarmg_administrators(
@@ -518,13 +491,25 @@ mod tests {
         .await
         .unwrap();
         sqlx::query(
-            "INSERT INTO cameras (id, name, main_stream_url_enc, username_enc, password_enc, \
-             created_by, created_at, updated_at) VALUES (?, 'Doctor', ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO sentinel_clients (id, name, authorization_code_enc, authorization_code_hash, \
+             created_by, created_at, updated_at) VALUES (?, 'Doctor', ?, ?, ?, ?, ?)",
         )
         .bind(camera_id.to_string())
         .bind(encrypted)
-        .bind(username)
-        .bind(password)
+        .bind(vec![0x22_u8; 32])
+        .bind(&user)
+        .bind(&now)
+        .bind(&now)
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO cameras (id, name, client_id, client_camera_id, adapter_kind, \
+             created_by, created_at, updated_at) VALUES (?, 'Doctor', ?, ?, 'onvif', ?, ?, ?)",
+        )
+        .bind(camera_id.to_string())
+        .bind(camera_id.to_string())
+        .bind(camera_id.to_string())
         .bind(&user)
         .bind(&now)
         .bind(&now)
@@ -597,18 +582,23 @@ mod tests {
             ..options.clone()
         };
         let wrong_key_error = run(&wrong_key).await.unwrap_err().to_string();
-        assert!(!wrong_key_error.contains("doctor-camera-user"));
-        assert!(!wrong_key_error.contains("doctor-camera-password"));
-        assert!(!wrong_key_error.contains("rtsp://"));
+        assert!(!wrong_key_error.contains(&authorization_code));
         assert!(!companion_marker.exists());
 
         let connection = Connection::open(&database).unwrap();
         connection.busy_timeout(Duration::from_secs(5)).unwrap();
+        let mut tampered: Vec<u8> = connection
+            .query_row(
+                "SELECT authorization_code_enc FROM sentinel_clients WHERE id = ?",
+                [camera_id.to_string()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        *tampered.last_mut().unwrap() ^= 1;
         connection
             .execute(
-                "UPDATE cameras SET username_enc = password_enc, password_enc = username_enc \
-                 WHERE id = ?",
-                [camera_id.to_string()],
+                "UPDATE sentinel_clients SET authorization_code_enc = ? WHERE id = ?",
+                rusqlite::params![tampered, camera_id.to_string()],
             )
             .unwrap();
         connection
@@ -618,9 +608,7 @@ mod tests {
         let before = sha256_file(&database).unwrap();
         let tampered_error = run(&options).await.unwrap_err().to_string();
         assert_eq!(sha256_file(&database).unwrap(), before);
-        assert!(!tampered_error.contains("doctor-camera-user"));
-        assert!(!tampered_error.contains("doctor-camera-password"));
-        assert!(!tampered_error.contains("rtsp://"));
+        assert!(!tampered_error.contains(&authorization_code));
         assert!(!companion_marker.exists());
         assert!(
             live_probe("http://example.com/readyz", ReadinessKind::Application)

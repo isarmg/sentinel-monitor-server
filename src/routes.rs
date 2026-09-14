@@ -1,10 +1,8 @@
 use crate::{
     auth::{decode_media_token, issue_media_token, CurrentUser},
     background::camera_path,
-    crypto::CredentialField,
     error::{AppError, Result},
     models::*,
-    onvif,
     protocol::CONTRACT,
     reconciliation, AppState,
 };
@@ -35,7 +33,7 @@ use tower_http::{compression::CompressionLayer, services::ServeDir, trace::Trace
 use url::Url;
 use uuid::Uuid;
 
-const CAMERA_SELECT: &str = "SELECT id, name, location, source_kind, client_id, adapter_kind, manufacturer, model, firmware_version, serial_number, capabilities_json, streams_json, health_message, device_status, main_stream_url_enc, sub_stream_url_enc, has_sub_stream, onvif_url, username_enc, password_enc, enabled, record_enabled, storage_mode, status, last_seen_at, created_at, updated_at FROM cameras";
+const CAMERA_SELECT: &str = "SELECT id, name, location, source_kind, client_id, adapter_kind, manufacturer, model, firmware_version, serial_number, capabilities_json, streams_json, health_message, device_status, has_sub_stream, enabled, record_enabled, storage_mode, status, last_seen_at, created_at, updated_at FROM cameras";
 const CLIENT_CAMERA_UPSERT: &str =
     "INSERT INTO cameras (id, name, location, source_kind, client_id, client_camera_id, \
      adapter_kind, manufacturer, model, firmware_version, serial_number, capabilities_json, \
@@ -64,8 +62,7 @@ pub fn router(state: AppState, runtime: sarmg_server_runtime::RuntimeHandle) -> 
     )
     .map_err(|error| AppError::Internal(error.to_string()))?;
     let api = Router::new()
-        .route("/cameras", get(list_cameras).post(create_camera))
-        .route("/cameras/{id}", put(update_camera).delete(delete_camera))
+        .route("/cameras", get(list_cameras))
         .route("/media/operations/{id}", get(media_operation))
         .route(
             "/media/operations/{id}/resolve",
@@ -81,7 +78,6 @@ pub fn router(state: AppState, runtime: sarmg_server_runtime::RuntimeHandle) -> 
         .route("/clients/{id}", axum::routing::delete(revoke_client))
         .route("/client/pair", post(pair_client))
         .route("/client/snapshot", put(client_snapshot))
-        .route("/discovery/onvif", post(discover_onvif))
         .route("/recordings", get(list_recordings))
         .route("/recordings/play", get(play_recording))
         .route("/events", get(list_events))
@@ -109,285 +105,8 @@ async fn list_cameras(
     ))
     .fetch_all(&state.pool)
     .await?;
-    let views = cameras
-        .iter()
-        .map(|camera| {
-            let credentials = camera.decrypt_credentials(&state.secrets)?;
-            Ok(CameraView::from_record(camera, &credentials))
-        })
-        .collect::<Result<Vec<_>>>()?;
+    let views = cameras.iter().map(CameraView::from_record).collect();
     Ok(Json(views))
-}
-
-async fn create_camera(
-    user: CurrentUser,
-    State(state): State<AppState>,
-    Json(request): Json<CreateCameraRequest>,
-) -> Result<(StatusCode, Json<CameraMutationResponse>)> {
-    validate_camera_values(
-        &request.name,
-        &request.main_stream_url,
-        request.sub_stream_url.as_deref(),
-        request.onvif_url.as_deref(),
-    )?;
-    let camera_id = Uuid::new_v4();
-    let main_stream_url_enc = encrypt_camera_credential(
-        &state,
-        camera_id,
-        CredentialField::MainStreamUrl,
-        request.main_stream_url.trim(),
-    )?;
-    let sub_stream_url_enc = request
-        .sub_stream_url
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-        .map(|value| {
-            encrypt_camera_credential(
-                &state,
-                camera_id,
-                CredentialField::SubStreamUrl,
-                value.trim(),
-            )
-        })
-        .transpose()?;
-    let username_enc = clean_optional(request.username)
-        .as_deref()
-        .map(|value| encrypt_camera_credential(&state, camera_id, CredentialField::Username, value))
-        .transpose()?;
-    let password_enc = request
-        .password
-        .as_deref()
-        .filter(|value| !value.is_empty())
-        .map(|value| encrypt_camera_credential(&state, camera_id, CredentialField::Password, value))
-        .transpose()?;
-    let now = Utc::now();
-    let mut transaction = state.pool.begin().await?;
-    let record = sqlx::query_as::<_, CameraRecord>(
-        "INSERT INTO cameras (id, name, location, main_stream_url_enc, sub_stream_url_enc, has_sub_stream, onvif_url, username_enc, password_enc, enabled, record_enabled, created_by, created_at, updated_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
-         RETURNING id, name, location, source_kind, client_id, adapter_kind, manufacturer, model, firmware_version, serial_number, capabilities_json, streams_json, health_message, device_status, main_stream_url_enc, sub_stream_url_enc, has_sub_stream, onvif_url, username_enc, password_enc, enabled, record_enabled, storage_mode, status, last_seen_at, created_at, updated_at",
-    )
-    .bind(camera_id)
-    .bind(request.name.trim())
-    .bind(request.location.trim())
-    .bind(main_stream_url_enc)
-    .bind(sub_stream_url_enc)
-    .bind(request.sub_stream_url.as_deref().is_some_and(|value| !value.trim().is_empty()))
-    .bind(clean_optional(request.onvif_url))
-    .bind(username_enc)
-    .bind(password_enc)
-    .bind(request.enabled)
-    .bind(request.record_enabled)
-    .bind(user.id.to_string())
-    .bind(now)
-    .bind(now)
-    .fetch_one(&mut *transaction)
-    .await?;
-    let credentials = record.decrypt_credentials(&state.secrets)?;
-    let operation = reconciliation::queue_camera_change(
-        &mut transaction,
-        &record,
-        record.enabled,
-        &user.id,
-        "camera_created",
-    )
-    .await?;
-    write_audit_in(
-        &mut transaction,
-        Some(&user.id),
-        "camera.create",
-        "camera",
-        Some(record.id),
-        json!({ "name": &record.name }),
-    )
-    .await?;
-    transaction.commit().await?;
-    Ok((
-        StatusCode::CREATED,
-        Json(CameraMutationResponse {
-            camera: CameraView::from_record(&record, &credentials),
-            media_synced: false,
-            warning: None,
-            operation_id: operation.id,
-            operation_state: operation.state,
-        }),
-    ))
-}
-
-async fn update_camera(
-    user: CurrentUser,
-    State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-    Json(request): Json<UpdateCameraRequest>,
-) -> Result<Json<CameraMutationResponse>> {
-    let existing = load_camera(&state, id).await?;
-    if existing.source_kind != "direct" {
-        return Err(AppError::Conflict(
-            "客户端摄像头只能在配对的 Sentinel Client 上修改".into(),
-        ));
-    }
-    let name = request.name.unwrap_or(existing.name.clone());
-    let location = request.location.unwrap_or(existing.location.clone());
-
-    let main_stream_url_enc = match request.main_stream_url {
-        Some(value) if !value.trim().is_empty() => {
-            validate_rtsp(&value)?;
-            Some(encrypt_camera_credential(
-                &state,
-                id,
-                CredentialField::MainStreamUrl,
-                value.trim(),
-            )?)
-        }
-        _ => existing.main_stream_url_enc,
-    };
-    let sub_stream_url_enc = if request.clear_sub_stream {
-        None
-    } else if let Some(value) = request
-        .sub_stream_url
-        .filter(|value| !value.trim().is_empty())
-    {
-        validate_rtsp(&value)?;
-        Some(encrypt_camera_credential(
-            &state,
-            id,
-            CredentialField::SubStreamUrl,
-            value.trim(),
-        )?)
-    } else {
-        existing.sub_stream_url_enc
-    };
-    let onvif_url = if request.clear_onvif {
-        None
-    } else {
-        request
-            .onvif_url
-            .and_then(|value| clean_optional(Some(value)))
-            .or(existing.onvif_url)
-    };
-    if let Some(url) = &onvif_url {
-        validate_http(url)?;
-    }
-    let username_enc = request
-        .username
-        .and_then(|value| clean_optional(Some(value)))
-        .as_deref()
-        .map(|value| encrypt_camera_credential(&state, id, CredentialField::Username, value))
-        .transpose()?
-        .or(existing.username_enc);
-    let password_enc = if request.clear_password {
-        None
-    } else if let Some(password) = request.password.filter(|value| !value.is_empty()) {
-        Some(encrypt_camera_credential(
-            &state,
-            id,
-            CredentialField::Password,
-            &password,
-        )?)
-    } else {
-        existing.password_enc
-    };
-    let enabled = request.enabled.unwrap_or(existing.enabled);
-    let record_enabled = request.record_enabled.unwrap_or(existing.record_enabled);
-    let has_sub_stream = sub_stream_url_enc.is_some();
-    if name.trim().is_empty()
-        || name.trim().chars().count() > 32
-        || name.chars().any(char::is_control)
-    {
-        return Err(AppError::Validation(
-            "摄像头名称须为 1–32 个字符，不能包含控制字符".into(),
-        ));
-    }
-
-    let updated_at = Utc::now();
-    let mut transaction = state.pool.begin().await?;
-    let record = sqlx::query_as::<_, CameraRecord>(
-        "UPDATE cameras SET name = ?1, location = ?2, main_stream_url_enc = ?3, sub_stream_url_enc = ?4, has_sub_stream = ?5, onvif_url = ?6, username_enc = ?7, password_enc = ?8, enabled = ?9, record_enabled = ?10, status = CASE WHEN ?9 THEN 'pending' ELSE 'disabled' END, updated_at = ?11 WHERE id = ?12 AND deleted_at IS NULL \
-         RETURNING id, name, location, source_kind, client_id, adapter_kind, manufacturer, model, firmware_version, serial_number, capabilities_json, streams_json, health_message, device_status, main_stream_url_enc, sub_stream_url_enc, has_sub_stream, onvif_url, username_enc, password_enc, enabled, record_enabled, storage_mode, status, last_seen_at, created_at, updated_at",
-    )
-    .bind(name.trim())
-    .bind(location.trim())
-    .bind(main_stream_url_enc)
-    .bind(sub_stream_url_enc)
-    .bind(has_sub_stream)
-    .bind(onvif_url)
-    .bind(username_enc)
-    .bind(password_enc)
-    .bind(enabled)
-    .bind(record_enabled)
-    .bind(updated_at)
-    .bind(id)
-    .fetch_one(&mut *transaction)
-    .await?;
-    let credentials = record.decrypt_credentials(&state.secrets)?;
-    let operation = reconciliation::queue_camera_change(
-        &mut transaction,
-        &record,
-        record.enabled,
-        &user.id,
-        "camera_updated",
-    )
-    .await?;
-    write_audit_in(
-        &mut transaction,
-        Some(&user.id),
-        "camera.update",
-        "camera",
-        Some(id),
-        json!({ "name": &record.name }),
-    )
-    .await?;
-    transaction.commit().await?;
-    Ok(Json(CameraMutationResponse {
-        camera: CameraView::from_record(&record, &credentials),
-        media_synced: false,
-        warning: None,
-        operation_id: operation.id,
-        operation_state: operation.state,
-    }))
-}
-
-async fn delete_camera(
-    user: CurrentUser,
-    State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-) -> Result<(StatusCode, Json<reconciliation::MediaOperationView>)> {
-    let camera = load_camera(&state, id).await?;
-    if camera.source_kind != "direct" {
-        return Err(AppError::Conflict(
-            "客户端摄像头只能在配对的 Sentinel Client 上删除".into(),
-        ));
-    }
-    let mut transaction = state.pool.begin().await?;
-    let now = Utc::now();
-    sqlx::query(
-        "UPDATE cameras SET deleted_at = ?, status = 'disabled', updated_at = ? \
-         WHERE id = ? AND deleted_at IS NULL",
-    )
-    .bind(now)
-    .bind(now)
-    .bind(id)
-    .execute(&mut *transaction)
-    .await?;
-    let operation = reconciliation::queue_camera_change(
-        &mut transaction,
-        &camera,
-        false,
-        &user.id,
-        "camera_deleted",
-    )
-    .await?;
-    write_audit_in(
-        &mut transaction,
-        Some(&user.id),
-        "camera.delete",
-        "camera",
-        Some(id),
-        json!({ "name": camera.name }),
-    )
-    .await?;
-    transaction.commit().await?;
-    Ok((StatusCode::ACCEPTED, Json(operation)))
 }
 
 async fn media_operation(
@@ -626,16 +345,6 @@ async fn pair_client(
     .fetch_optional(&mut *transaction)
     .await?
     .ok_or(AppError::Unauthorized)?;
-    if sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM sentinel_clients WHERE installation_id = ?",
-    )
-    .bind(request.installation_id)
-    .fetch_one(&mut *transaction)
-    .await?
-        != 0
-    {
-        return Err(AppError::Conflict("该客户端安装身份已经配对".into()));
-    }
     let changed = sqlx::query(
         "UPDATE sentinel_clients SET installation_id = ?, client_version = ?, token_hash = ?, \
          status = 'online', last_seen_at = ?, updated_at = ? WHERE id = ? AND token_hash IS NULL",
@@ -689,15 +398,7 @@ async fn revoke_client(
         return Err(AppError::NotFound("客户端不存在".into()));
     };
     if status == "revoked" {
-        let camera_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM cameras WHERE client_id = ? AND deleted_at IS NULL",
-        )
-        .bind(id)
-        .fetch_one(&mut *transaction)
-        .await?;
-        if camera_count != 0 {
-            return Err(AppError::Conflict("请先删除该实例管理的摄像头".into()));
-        }
+        purge_revoked_client_in(&mut transaction, id).await?;
         write_audit_in(
             &mut transaction,
             Some(&user.id),
@@ -707,10 +408,6 @@ async fn revoke_client(
             json!({}),
         )
         .await?;
-        sqlx::query("DELETE FROM sentinel_clients WHERE id = ?")
-            .bind(id)
-            .execute(&mut *transaction)
-            .await?;
         transaction.commit().await?;
         return Ok(StatusCode::NO_CONTENT);
     }
@@ -734,8 +431,9 @@ async fn revoke_client(
     .await?;
     for camera in cameras {
         sqlx::query(
-            "UPDATE cameras SET enabled = 0, status = 'disabled', updated_at = ? WHERE id = ?",
+            "UPDATE cameras SET enabled = 0, status = 'disabled', deleted_at = ?, updated_at = ? WHERE id = ?",
         )
+        .bind(now)
         .bind(now)
         .bind(camera.id)
         .execute(&mut *transaction)
@@ -762,23 +460,100 @@ async fn revoke_client(
     Ok(StatusCode::NO_CONTENT)
 }
 
+async fn purge_revoked_client_in(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    client_id: Uuid,
+) -> Result<()> {
+    let camera_ids = sqlx::query_scalar::<_, Uuid>("SELECT id FROM cameras WHERE client_id = ?")
+        .bind(client_id)
+        .fetch_all(&mut **transaction)
+        .await?;
+    for camera_id in &camera_ids {
+        let desired = sqlx::query_as::<_, (i64, bool)>(
+            "SELECT generation, desired_present FROM media_desired_states WHERE camera_id = ?",
+        )
+        .bind(camera_id)
+        .fetch_optional(&mut **transaction)
+        .await?;
+        let Some((generation, false)) = desired else {
+            return Err(AppError::Conflict(
+                "摄像机媒体删除期望态不完整，不能永久删除".into(),
+            ));
+        };
+        let operation = sqlx::query_as::<_, (String, Option<String>, Vec<u8>)>(
+            "SELECT state, resolution_code, request_payload FROM _sarmg_operations \
+             WHERE namespace = ? AND target_key = ? ORDER BY created_at_micros DESC LIMIT 1",
+        )
+        .bind(reconciliation::OPERATION_NAMESPACE)
+        .bind(camera_id.hyphenated().to_string())
+        .fetch_optional(&mut **transaction)
+        .await?;
+        let removal_confirmed = operation.is_some_and(|(state, resolution, payload)| {
+            reconciliation::removal_operation_matches(&payload, *camera_id, generation)
+                && (state == "succeeded"
+                    || (state == "resolved"
+                        && resolution.as_deref() == Some("confirmed_succeeded")))
+        });
+        if !removal_confirmed {
+            return Err(AppError::Conflict(
+                "摄像机媒体清理尚未确认完成，请稍后重试删除".into(),
+            ));
+        }
+        let still_present: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM media_actual_paths WHERE camera_id = ? AND present = 1)",
+        )
+        .bind(camera_id)
+        .fetch_one(&mut **transaction)
+        .await?;
+        if still_present {
+            return Err(AppError::Conflict(
+                "摄像机媒体路径仍然存在，请稍后重试删除".into(),
+            ));
+        }
+    }
+    for camera_id in &camera_ids {
+        sqlx::query("DELETE FROM media_actual_paths WHERE camera_id = ?")
+            .bind(camera_id)
+            .execute(&mut **transaction)
+            .await?;
+        sqlx::query("DELETE FROM media_desired_states WHERE camera_id = ?")
+            .bind(camera_id)
+            .execute(&mut **transaction)
+            .await?;
+    }
+    sqlx::query("DELETE FROM cameras WHERE client_id = ?")
+        .bind(client_id)
+        .execute(&mut **transaction)
+        .await?;
+    sqlx::query("DELETE FROM sentinel_clients WHERE id = ?")
+        .bind(client_id)
+        .execute(&mut **transaction)
+        .await?;
+    Ok(())
+}
+
 async fn client_snapshot(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(request): Json<ClientSnapshotRequest>,
 ) -> Result<Response> {
     if request.protocol != CLIENT_PAIRING_PROTOCOL
-        || request.cameras.len() > 256
+        || request.cameras.len() != 1
         || request.command_results.len() > 100
     {
         return Err(AppError::Validation(
-            "客户端快照协议或摄像头数量无效".into(),
+            "每个授权实例必须且只能上报一台摄像机".into(),
         ));
     }
     let client_id = authenticate_client(&state, &headers).await?;
     let mut ids = HashSet::with_capacity(request.cameras.len());
     for camera in &request.cameras {
         validate_client_camera(camera)?;
+        if camera.id != client_id {
+            return Err(AppError::Validation(
+                "摄像机身份必须与授权实例身份一致".into(),
+            ));
+        }
         if !ids.insert(camera.id) {
             return Err(AppError::Validation("客户端快照包含重复摄像头".into()));
         }
@@ -1182,15 +957,6 @@ async fn stream_ticket(
     }))
 }
 
-async fn discover_onvif(
-    _user: CurrentUser,
-    State(state): State<AppState>,
-) -> Result<Json<Vec<onvif::DiscoveredDevice>>> {
-    Ok(Json(
-        onvif::discover(state.config.onvif_discovery_timeout).await?,
-    ))
-}
-
 async fn ptz(
     user: CurrentUser,
     State(state): State<AppState>,
@@ -1211,81 +977,52 @@ async fn ptz(
     {
         return Err(AppError::Validation("PTZ速度必须在-1到1之间".into()));
     }
-    let (camera, credentials) = load_camera_with_credentials(&state, id).await?;
-    if camera.source_kind == "client" {
-        let capabilities: DeviceCapabilities = serde_json::from_str(&camera.capabilities_json)
-            .map_err(|_| AppError::Internal("stored camera capabilities are invalid".into()))?;
-        if !capabilities.ptz {
-            return Err(AppError::Validation("摄像头不支持PTZ".into()));
-        }
-        if camera.device_status != "online" {
-            return Err(AppError::Conflict("摄像头当前不在线".into()));
-        }
-        let client_id = camera
-            .client_id
-            .ok_or_else(|| AppError::Internal("client camera has no owner".into()))?;
-        let command_id = Uuid::new_v4();
-        let now = Utc::now();
-        let expires_at = now + chrono::Duration::seconds(10);
-        sqlx::query(
-            "INSERT INTO device_commands \
-             (id, camera_id, client_id, kind, payload, created_at, expires_at) \
-             VALUES (?, ?, ?, 'ptz', ?, ?, ?)",
-        )
-        .bind(command_id)
-        .bind(camera.id)
-        .bind(client_id)
-        .bind(
-            serde_json::to_string(&json!({
-                "action": request.action,
-                "pan": values.0,
-                "tilt": values.1,
-                "zoom": values.2,
-            }))
-            .map_err(|_| AppError::Internal("PTZ command serialization failed".into()))?,
-        )
-        .bind(now)
-        .bind(expires_at)
-        .execute(&state.pool)
-        .await?;
-        write_audit(
-            &state,
-            Some(&user.id),
-            "camera.ptz.queued",
-            "camera",
-            Some(id),
-            json!({ "command_id": command_id, "action": request.action, "pan": values.0, "tilt": values.1, "zoom": values.2 }),
-        )
-        .await;
-        return Ok(StatusCode::ACCEPTED);
+    let camera = load_camera(&state, id).await?;
+    let capabilities: DeviceCapabilities = serde_json::from_str(&camera.capabilities_json)
+        .map_err(|_| AppError::Internal("stored camera capabilities are invalid".into()))?;
+    if !capabilities.ptz {
+        return Err(AppError::Validation("摄像头不支持PTZ".into()));
     }
-    let onvif_url = camera
-        .onvif_url
-        .as_deref()
-        .ok_or_else(|| AppError::Validation("摄像头没有配置ONVIF地址".into()))?;
-    onvif::ptz(
-        onvif_url,
-        credentials.username.as_deref(),
-        credentials.password.as_deref(),
-        onvif::PtzCommand {
-            action: &request.action,
-            pan: values.0,
-            tilt: values.1,
-            zoom: values.2,
-        },
-        &state.config.onvif_xaddr_allowlist,
+    if camera.device_status != "online" {
+        return Err(AppError::Conflict("摄像头当前不在线".into()));
+    }
+    let client_id = camera
+        .client_id
+        .ok_or_else(|| AppError::Internal("client camera has no owner".into()))?;
+    let command_id = Uuid::new_v4();
+    let now = Utc::now();
+    let expires_at = now + chrono::Duration::seconds(10);
+    sqlx::query(
+        "INSERT INTO device_commands \
+         (id, camera_id, client_id, kind, payload, created_at, expires_at) \
+         VALUES (?, ?, ?, 'ptz', ?, ?, ?)",
     )
+    .bind(command_id)
+    .bind(camera.id)
+    .bind(client_id)
+    .bind(
+        serde_json::to_string(&json!({
+            "action": request.action,
+            "pan": values.0,
+            "tilt": values.1,
+            "zoom": values.2,
+        }))
+        .map_err(|_| AppError::Internal("PTZ command serialization failed".into()))?,
+    )
+    .bind(now)
+    .bind(expires_at)
+    .execute(&state.pool)
     .await?;
     write_audit(
         &state,
         Some(&user.id),
-        "camera.ptz",
+        "camera.ptz.queued",
         "camera",
         Some(id),
-        json!({ "action": request.action, "pan": values.0, "tilt": values.1, "zoom": values.2 }),
+        json!({ "command_id": command_id, "action": request.action, "pan": values.0, "tilt": values.1, "zoom": values.2 }),
     )
     .await;
-    Ok(StatusCode::NO_CONTENT)
+    Ok(StatusCode::ACCEPTED)
 }
 
 #[derive(Deserialize)]
@@ -1567,80 +1304,13 @@ async fn media_auth(
 }
 
 async fn load_camera(state: &AppState, id: Uuid) -> Result<CameraRecord> {
-    let (camera, _) = load_camera_with_credentials(state, id).await?;
-    Ok(camera)
-}
-
-async fn load_camera_with_credentials(
-    state: &AppState,
-    id: Uuid,
-) -> Result<(CameraRecord, CameraCredentials)> {
-    let camera = sqlx::query_as::<_, CameraRecord>(&format!(
+    sqlx::query_as::<_, CameraRecord>(&format!(
         "{CAMERA_SELECT} WHERE id = ? AND deleted_at IS NULL"
     ))
     .bind(id)
     .fetch_optional(&state.pool)
     .await?
-    .ok_or_else(|| AppError::NotFound("摄像头不存在".into()))?;
-    let credentials = camera.decrypt_credentials(&state.secrets)?;
-    Ok((camera, credentials))
-}
-
-fn encrypt_camera_credential(
-    state: &AppState,
-    camera_id: Uuid,
-    field: CredentialField,
-    plaintext: &str,
-) -> Result<Vec<u8>> {
-    let envelope = state.secrets.encrypt(camera_id, field, plaintext)?;
-    state.secrets.decrypt(camera_id, field, &envelope)?;
-    Ok(envelope)
-}
-
-fn validate_camera_values(
-    name: &str,
-    main: &str,
-    sub: Option<&str>,
-    onvif: Option<&str>,
-) -> Result<()> {
-    if name.trim().is_empty()
-        || name.trim().chars().count() > 32
-        || name.chars().any(char::is_control)
-    {
-        return Err(AppError::Validation(
-            "摄像头名称须为 1–32 个字符，不能包含控制字符".into(),
-        ));
-    }
-    validate_rtsp(main)?;
-    if let Some(sub) = sub.filter(|value| !value.trim().is_empty()) {
-        validate_rtsp(sub)?;
-    }
-    if let Some(onvif) = onvif.filter(|value| !value.trim().is_empty()) {
-        validate_http(onvif)?;
-    }
-    Ok(())
-}
-
-fn validate_rtsp(value: &str) -> Result<()> {
-    let url =
-        Url::parse(value.trim()).map_err(|_| AppError::Validation("RTSP地址格式无效".into()))?;
-    if matches!(url.scheme(), "rtsp" | "rtsps") && url.host().is_some() {
-        Ok(())
-    } else {
-        Err(AppError::Validation(
-            "流地址必须使用rtsp://或rtsps://".into(),
-        ))
-    }
-}
-
-fn validate_http(value: &str) -> Result<()> {
-    onvif::validate_configured_url(value.trim())
-}
-
-fn clean_optional(value: Option<String>) -> Option<String> {
-    value
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
+    .ok_or_else(|| AppError::NotFound("摄像头不存在".into()))
 }
 
 async fn write_audit(
@@ -1762,9 +1432,53 @@ mod request_contract_tests {
         let camera = Uuid::new_v4();
         insert_test_client(&pool, owner, "owner").await;
         insert_test_client(&pool, other, "other").await;
+        let installation = Uuid::new_v4();
+        sqlx::query("UPDATE sentinel_clients SET installation_id = ? WHERE id IN (?, ?)")
+            .bind(installation)
+            .bind(owner)
+            .bind(other)
+            .execute(&pool)
+            .await
+            .expect("one physical client installation may hold multiple camera authorizations");
 
         assert_eq!(upsert_test_camera(&pool, owner, camera, "first").await, 1);
         assert_eq!(upsert_test_camera(&pool, owner, camera, "updated").await, 1);
+        let second_camera = Uuid::new_v4();
+        let second_for_same_authorization = sqlx::query(CLIENT_CAMERA_UPSERT)
+            .bind(second_camera)
+            .bind("second")
+            .bind("entrance")
+            .bind(owner)
+            .bind(second_camera)
+            .bind("rtsp")
+            .bind("vendor")
+            .bind("model")
+            .bind("firmware")
+            .bind("serial-2")
+            .bind("{}")
+            .bind("[]")
+            .bind(Option::<&str>::None)
+            .bind("online")
+            .bind(false)
+            .bind(true)
+            .bind(true)
+            .bind("server")
+            .bind(Utc::now())
+            .bind(Utc::now())
+            .bind(Utc::now())
+            .execute(&pool)
+            .await;
+        assert!(second_for_same_authorization.is_err());
+        let direct_camera = sqlx::query(
+            "INSERT INTO cameras (id, name, source_kind, adapter_kind, created_at, updated_at) \
+             VALUES (?, 'legacy-direct', 'direct', 'server_direct', ?, ?)",
+        )
+        .bind(Uuid::new_v4())
+        .bind(Utc::now())
+        .bind(Utc::now())
+        .execute(&pool)
+        .await;
+        assert!(direct_camera.is_err());
         let stored: (String, Uuid, String, String, bool) = sqlx::query_as(
             "SELECT name, client_id, storage_mode, device_status, record_enabled \
              FROM cameras WHERE id = ?",
@@ -1802,26 +1516,90 @@ mod request_contract_tests {
         pool.close().await;
     }
 
-    #[test]
-    fn instance_name_policy_counts_unicode_characters() {
-        for character in ["a", "中", "あ", "😀"] {
-            assert!(validate_camera_values(
-                &character.repeat(32),
-                "rtsp://127.0.0.1/live",
-                None,
-                None
-            )
-            .is_ok());
-            assert!(validate_camera_values(
-                &character.repeat(33),
-                "rtsp://127.0.0.1/live",
-                None,
-                None
-            )
-            .is_err());
-        }
-        assert!(validate_camera_values("bad\nname", "rtsp://127.0.0.1/live", None, None).is_err());
+    #[tokio::test]
+    async fn revoked_paired_instance_is_deleted_only_after_media_removal_succeeds() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = directory.path().join("delete.sqlite3");
+        let pool = crate::sqlite::open_pool(&format!("sqlite://{}", database.display()))
+            .await
+            .unwrap();
+        let client = Uuid::new_v4();
+        insert_test_client(&pool, client, "delete-owner").await;
+        assert_eq!(
+            upsert_test_camera(&pool, client, client, "delete-camera").await,
+            1
+        );
+        sqlx::query("UPDATE sentinel_clients SET status = 'revoked', revoked_at = ? WHERE id = ?")
+            .bind(Utc::now())
+            .bind(client)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "INSERT INTO media_desired_states (camera_id, generation, desired_present, \
+             main_path, record_enabled, updated_at) VALUES (?, 1, 0, 'delete-main', 0, ?)",
+        )
+        .bind(client)
+        .bind(Utc::now())
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let mut blocked = pool.begin().await.unwrap();
+        assert!(matches!(
+            purge_revoked_client_in(&mut blocked, client).await,
+            Err(AppError::Conflict(_))
+        ));
+        blocked.rollback().await.unwrap();
+
+        let now = Utc::now().timestamp_micros();
+        sqlx::query(
+            "INSERT INTO _sarmg_operations (operation_id, namespace, target_key, action, \
+             idempotency_digest, request_fingerprint, request_payload, state, attempt, \
+             max_attempts, not_before_micros, created_at_micros, updated_at_micros) \
+             VALUES (?, ?, ?, 'reconcile_camera', ?, ?, ?, 'succeeded', 1, 8, ?, ?, ?)",
+        )
+        .bind(Uuid::new_v4().to_string())
+        .bind(reconciliation::OPERATION_NAMESPACE)
+        .bind(client.hyphenated().to_string())
+        .bind(vec![1_u8; 32])
+        .bind(vec![2_u8; 32])
+        .bind(
+            serde_json::to_vec(&json!({
+                "camera_id": client,
+                "generation": 1,
+                "reason": "client_revoked",
+                "requested_by": null
+            }))
+            .unwrap(),
+        )
+        .bind(now)
+        .bind(now)
+        .bind(now)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let mut transaction = pool.begin().await.unwrap();
+        purge_revoked_client_in(&mut transaction, client)
+            .await
+            .unwrap();
+        transaction.commit().await.unwrap();
+        let client_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM sentinel_clients WHERE id = ?")
+                .bind(client)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let camera_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM cameras WHERE id = ?")
+            .bind(client)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!((client_count, camera_count), (0, 0));
+        pool.close().await;
     }
+
     use serde::de::DeserializeOwned;
 
     fn rejects_unknown<T: DeserializeOwned>(value: Value) {

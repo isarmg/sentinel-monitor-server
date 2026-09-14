@@ -15,19 +15,17 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use sqlx::{Executor, Sqlite, SqlitePool, Transaction};
 use std::time::Duration as StdDuration;
-use url::Url;
 use uuid::Uuid;
 
 const GLOBAL_LEASE_REQUEST_BUDGET: u64 = 6;
 const OPERATION_LEASE_REQUEST_BUDGET: u64 = 4;
 const LEASE_SAFETY_MARGIN_SECONDS: u64 = 30;
-const OPERATION_NAMESPACE: &str = "sentinel.media-reconciliation";
+pub(crate) const OPERATION_NAMESPACE: &str = "sentinel.media-reconciliation";
 
 const CAMERA_SELECT_INTERNAL: &str = "SELECT id, name, location, source_kind, client_id, \
     adapter_kind, manufacturer, model, firmware_version, serial_number, capabilities_json, \
-    streams_json, health_message, device_status, \
-    main_stream_url_enc, sub_stream_url_enc, has_sub_stream, onvif_url, \
-    username_enc, password_enc, enabled, record_enabled, storage_mode, status, last_seen_at, \
+    streams_json, health_message, device_status, has_sub_stream, enabled, record_enabled, \
+    storage_mode, status, last_seen_at, \
     created_at, updated_at FROM cameras";
 #[derive(Clone, Debug, Serialize)]
 pub struct MediaOperationView {
@@ -59,6 +57,14 @@ struct MediaOperationRequest {
     generation: i64,
     reason: String,
     requested_by: Option<String>,
+}
+
+pub(crate) fn removal_operation_matches(payload: &[u8], camera_id: Uuid, generation: i64) -> bool {
+    serde_json::from_slice::<MediaOperationRequest>(payload).is_ok_and(|request| {
+        request.camera_id == camera_id
+            && request.generation == generation
+            && request.reason == "client_revoked"
+    })
 }
 
 #[derive(Clone, sqlx::FromRow)]
@@ -171,12 +177,6 @@ pub async fn reconcile_once(state: &AppState) -> Result<bool> {
 }
 
 pub async fn validate_stored_camera_credentials(state: &AppState) -> Result<()> {
-    let cameras = sqlx::query_as::<_, CameraRecord>(CAMERA_SELECT_INTERNAL)
-        .fetch_all(&state.pool)
-        .await?;
-    for camera in cameras {
-        camera.decrypt_credentials(&state.secrets)?;
-    }
     let clients = sqlx::query_as::<_, (Uuid, Vec<u8>, Vec<u8>)>(
         "SELECT id,authorization_code_enc,authorization_code_hash \
          FROM sentinel_clients ORDER BY id",
@@ -717,7 +717,6 @@ async fn apply_desired(
     camera: &CameraRecord,
     desired: &DesiredState,
 ) -> Result<AppliedSources> {
-    let credentials = camera.decrypt_credentials(&state.secrets)?;
     let standard_sub_path = camera_path(camera.id, "sub");
     if !desired.desired_present {
         state.media.delete_path(&desired.main_path).await?;
@@ -728,37 +727,32 @@ async fn apply_desired(
         });
     }
 
-    let main_source = camera_source(camera, credentials.main_stream_url.as_deref(), &credentials)?;
-    let publisher = camera.source_kind == "client";
+    let main_source = "publisher";
     state
         .media
         .upsert_path(
             &desired.main_path,
-            &main_source,
-            if publisher {
-                false
-            } else {
-                !desired.record_enabled
-            },
+            main_source,
+            false,
             desired.record_enabled,
         )
         .await?;
 
     let mut sub_digest = None;
-    match (&desired.sub_path, &credentials.sub_stream_url) {
-        (Some(sub_path), sub_url) if publisher || sub_url.is_some() => {
-            let sub_source = camera_source(camera, sub_url.as_deref(), &credentials)?;
+    match &desired.sub_path {
+        Some(sub_path) => {
+            let sub_source = "publisher";
             state
                 .media
-                .upsert_path(sub_path, &sub_source, !publisher, false)
+                .upsert_path(sub_path, sub_source, false, false)
                 .await?;
-            sub_digest = Some(source_digest(&sub_source));
+            sub_digest = Some(source_digest(sub_source));
         }
-        _ => state.media.delete_path(&standard_sub_path).await?,
+        None => state.media.delete_path(&standard_sub_path).await?,
     }
 
     Ok(AppliedSources {
-        main_digest: Some(source_digest(&main_source)),
+        main_digest: Some(source_digest(main_source)),
         sub_digest,
     })
 }
@@ -1045,57 +1039,28 @@ struct ExpectedConfigs {
 }
 
 fn expected_configs(
-    state: &AppState,
-    camera: &CameraRecord,
+    _state: &AppState,
+    _camera: &CameraRecord,
     desired: &DesiredState,
 ) -> Result<ExpectedConfigs> {
-    let credentials = camera.decrypt_credentials(&state.secrets)?;
     if !desired.desired_present {
         return Ok(ExpectedConfigs {
             main: None,
             sub: None,
         });
     }
-    let main_source = camera_source(camera, credentials.main_stream_url.as_deref(), &credentials)?;
-    let publisher = camera.source_kind == "client";
+    let main_source = "publisher";
     let main = Some(PathConfigSnapshot {
-        source_digest: Some(source_digest(&main_source)),
-        source_on_demand: if publisher {
-            false
-        } else {
-            !desired.record_enabled
-        },
+        source_digest: Some(source_digest(main_source)),
+        source_on_demand: false,
         record: desired.record_enabled,
     });
-    let sub = match (&desired.sub_path, &credentials.sub_stream_url) {
-        (Some(_), sub_url) if publisher || sub_url.is_some() => {
-            let source = camera_source(camera, sub_url.as_deref(), &credentials)?;
-            Some(PathConfigSnapshot {
-                source_digest: Some(source_digest(&source)),
-                source_on_demand: !publisher,
-                record: false,
-            })
-        }
-        _ => None,
-    };
+    let sub = desired.sub_path.as_ref().map(|_| PathConfigSnapshot {
+        source_digest: Some(source_digest("publisher")),
+        source_on_demand: false,
+        record: false,
+    });
     Ok(ExpectedConfigs { main, sub })
-}
-
-fn camera_source(
-    camera: &CameraRecord,
-    stream_url: Option<&str>,
-    credentials: &crate::models::CameraCredentials,
-) -> Result<String> {
-    if camera.source_kind == "client" {
-        return Ok("publisher".into());
-    }
-    let stream_url = stream_url
-        .ok_or_else(|| AppError::Internal("direct camera stream credential is missing".into()))?;
-    source_with_credentials(
-        stream_url,
-        credentials.username.as_deref(),
-        credentials.password.as_deref(),
-    )
 }
 
 fn config_matches(
@@ -1203,33 +1168,6 @@ async fn ensure_drift_operation(
     Ok(())
 }
 
-fn source_with_credentials(
-    source: &str,
-    username: Option<&str>,
-    password: Option<&str>,
-) -> Result<String> {
-    let mut url =
-        Url::parse(source).map_err(|_| AppError::Validation("RTSP地址格式无效".into()))?;
-    if !matches!(url.scheme(), "rtsp" | "rtsps") {
-        return Err(AppError::Validation(
-            "流地址必须使用rtsp://或rtsps://".into(),
-        ));
-    }
-    if url.username().is_empty() {
-        if let Some(username) = username.filter(|value| !value.is_empty()) {
-            url.set_username(username)
-                .map_err(|_| AppError::Validation("摄像头用户名无效".into()))?;
-        }
-    }
-    if url.password().is_none() {
-        if let Some(password) = password {
-            url.set_password(Some(password))
-                .map_err(|_| AppError::Validation("摄像头密码无效".into()))?;
-        }
-    }
-    Ok(url.to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1264,11 +1202,26 @@ mod tests {
             "Foundation administrator IDs are opaque, not product UUIDs"
         );
         sqlx::query(
-            "INSERT INTO cameras (id, name, main_stream_url_enc, created_by, created_at, updated_at) \
-             VALUES (?, 'Lease Camera', ?, ?, ?, ?)",
+            "INSERT INTO sentinel_clients (id, name, authorization_code_enc, authorization_code_hash, \
+             created_by, created_at, updated_at) VALUES (?, 'Lease Camera', ?, ?, ?, ?, ?)",
         )
         .bind(camera)
-        .bind(vec![1u8; 32])
+        .bind(vec![1_u8; 64])
+        .bind(vec![1_u8; 32])
+        .bind(user.to_string())
+        .bind(now)
+        .bind(now)
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO cameras (id, name, client_id, client_camera_id, adapter_kind, \
+             created_by, created_at, updated_at) \
+             VALUES (?, 'Lease Camera', ?, ?, 'onvif', ?, ?, ?)",
+        )
+        .bind(camera)
+        .bind(camera)
+        .bind(camera)
         .bind(user.to_string())
         .bind(now)
         .bind(now)

@@ -69,7 +69,7 @@ viewer。摄像头的 RTSP/ONVIF `username`、加密 `password` 和媒体 JWT `a
 | SEN-C-007 | `SENTINEL_RUNTIME_DIR` 与 `STATIC_DIR` 必须绝对路径 | `src/config.rs` | 保障 | 低 | cwd 变化会把锁或前端指到不同位置 | 相对路径拒绝；绝对路径接受 |
 | SEN-C-008 | 登录 body、bucket 容量、来源/账户窗口、Argon2 并发与超时均有范围 | `src/config.rs`、`src/login_security.rs` | 保障 | 中 | 错误配置可能关闭限流或耗尽 CPU/内存 | 最小/最大/越界值；超时后许可回收 |
 | SEN-C-009 | Media token TTL、状态刷新、reconcile 周期、上游请求超时均显式配置 | `src/config.rs` | 建议保留 | 中 | 删除可调性会把不同网络/规模强行绑定同一节奏 | 0/极端值行为；周期任务不重叠失控 |
-| SEN-C-010 | ONVIF discovery timeout 和上报 XAddr CIDR allowlist 可配置 | `ONVIF_DISCOVERY_TIMEOUT_MS`、`ONVIF_XADDR_ALLOWLIST` | 保障 | 中 | 发现可能长时间阻塞或请求不受信地址 | CIDR 解析、超时、allowlist 正反例 |
+| SEN-C-010 | Server 不接收摄像机网络地址或设备凭据；发现、地址校验和适配器配置全部位于 Client | Sentinel Client `device`/`onvif` 模块、Server 当前 Schema | 保障 | 中 | Server 重新接触摄像机内网会绕过授权实例边界 | Server direct API 为 405、Schema 拒绝未绑定摄像机 |
 | SEN-C-011 | 正式 `serve-release` 要求 `STATIC_DIR` 等于已验证发行根的 `web/` | `src/main.rs` | 保障 | 中 | 可把已验证 Rust 与任意前端混搭 | 同发行路径正例；外部静态目录负例 |
 | SEN-C-012 | start 按 companion→readiness→应用顺序启动；任一步失败会清理本次启动的进程 | `native/sentinelctl start`、`native/.start-action.sh` | 保障 | 高 | 失败可能遗留孤儿 MediaMTX 或错误 PID 文件 | companion 失败、应用失败、并发 start、回滚 |
 | SEN-C-013 | stop 先停应用，再停 MediaMTX，遵循数据库/协调器先释放的顺序 | `native/sentinelctl stop`、`native/.stop-action.sh` | 保障 | 中 | 先停媒体面会扩大 operation 结果不确定窗口 | 正常停止、重复停止、PID 身份不匹配 |
@@ -99,28 +99,25 @@ viewer。摄像头的 RTSP/ONVIF `username`、加密 `password` 和媒体 JWT `a
 | SEN-A-018 | Foundation 管理接口支持创建、列表、改密和停用；无物理删除、改名或重新启用；最后一个 active 账户不能停用 | /api/v2/platform/administrators、事务内授权 | 保障 | 高 | 无账号可登录或授权快照竞态 | 并发相互停用、过期会话、CSRF 轮换 |
 | SEN-A-019 | 管理员写入与安全审计同事务；密码/停用包含会话撤销审计；成功登录与 Session 创建审计也原子提交 | Foundation admin-sqlite | 保障 | 高 | 状态与审计分叉 | 审计故障回滚、actor/subject/request ID，无凭据泄漏 |
 
-## 5. 摄像头、凭据与 ONVIF
+## 5. 摄像机实例与客户端边界
 
 | ID | 当前功能/特性与真实行为 | 实现/代码锚点 | 分类 | 复杂度 | 删除后的确定后果 | 最低验证/边界 |
 |---|---|---|---|---|---|---|
-| SEN-K-001 | 摄像头 list/create/update/soft-delete；删除后不再出现在普通查询 | `src/routes.rs`、`cameras.deleted_at` | 核心 | 高 | 无法维护受管设备清单 | CRUD、404、删除 operation、重启 |
-| SEN-K-002 | 主流必须是 `rtsp://` 或 `rtsps://` 且有 host；子流可选 | `validate_rtsp` | 保障 | 中 | 任意 URL 会传入 companion，错误更晚且可能扩大出站面 | scheme、host、空值组合 |
-| SEN-K-003 | ONVIF URL 使用独立 HTTP URL/地址策略验证 | `onvif::validate_configured_url` | 保障 | 高 | 可形成 SSRF 到本机、link-local 或非预期目标 | DNS、多地址、private/registered、allowlist |
-| SEN-K-004 | 主/子 RTSP URL、用户名、密码以 AES-256-GCM envelope 存库 | `src/crypto.rs`、`cameras.*_enc` | 保障 | 高 | 改成明文会扩大数据库泄漏；删字段则无法连接需认证摄像头 | 加解密、库中无明文、重启 |
-| SEN-K-005 | HKDF-SHA256 派生 credential key，AAD 绑定产品、版本、camera UUID 和字段 | `SecretBox`、`credential_aad` | 保障 | 高 | 密文可被跨记录或跨字段搬移而不报错 | 错 camera、错 field、错 key、篡改 tag |
-| SEN-K-006 | envelope 严格拒绝未知字段、非规范 Base64、错误 revision/key ID | `CredentialEnvelope`、`decode_canonical_base64` | 保障 | 高 | 宽松解析会形成隐含多格式支持和歧义 | 缺失/额外字段、padding、revision、key ID |
-| SEN-K-007 | 启动、readiness、system status 和 doctor 会认证全部持久凭据 | `validate_stored_camera_credentials`、`doctor.rs` | 保障 | 高 | 错 key 或坏密文直到访问单摄像头才暴露 | 任一字段损坏使整体检查失败且不改库 |
-| SEN-K-008 | 对浏览器只返回是否有子流、是否配置 ONVIF 和可选 username，不返回流 URL/密码 | `CameraView::from_record` | 保障 | 中 | 管理 API 泄漏内网拓扑或设备 Secret | JSON keys 负例；浏览器网络记录 |
-| SEN-K-009 | WS-Discovery 搜索 ONVIF 设备，返回候选 XAddr，不自动写库 | `onvif::discover`、`/discovery/onvif` | 可选 | 中 | 仍可手工录入，但部署发现成本上升 | 超时、重复候选、无设备、未认证拒绝 |
-| SEN-K-010 | ONVIF XML 有节点、深度、文本、响应大小和 XAddr 数量上限 | `src/onvif.rs` 常量 | 保障 | 高 | 恶意或损坏设备可消耗内存/CPU | 超深、超大、过多地址、格式错误 XML |
-| SEN-K-011 | PTZ 只接受 move/stop，pan/tilt/zoom 各在 `[-1,1]` | `PtzRequest`、`routes::ptz` | 可选 | 中 | 删除后仍可监看但不能从控制台云台控制 | 边界值、错误动作、无 ONVIF 配置 |
-| SEN-K-012 | PTZ 是同步 ONVIF 调用并在成功后 best-effort 审计；当前不使用 durable operation | `routes::ptz`、`onvif::ptz` | 可选 | 高 | 若误删超时/错误分类，会产生长挂；若声称 durable 会误导重试策略 | 明确成功、超时、响应不可解析；文档不得宣称可恢复 operation |
+| SEN-K-001 | Server 的一个授权实例严格对应一台 Client 上报摄像机；同一物理 Client 安装可持有多个授权实例 | `sentinel_clients`、`cameras UNIQUE(client_id)`、edge v3 | 核心 | 高 | 授权、摄像机和录像归属重新变得含糊 | 同 installation 多授权正例；同授权第二台摄像机拒绝 |
+| SEN-K-002 | Server 只读列出 Client 上报摄像机；`POST/PUT/DELETE /cameras` 和 Server ONVIF discovery 均不存在 | `routes::router`、当前 Schema | 保障 | 高 | 可绕过 Client 与永久授权码直接创建摄像机 | method/path 负例、Schema direct insert 负例 |
+| SEN-K-003 | 多品牌差异由 Client 的适配器归一为统一 identity、capabilities、streams 与状态快照 | Sentinel Client `device`/`onvif`、`ClientCameraSnapshot` | 核心 | 高 | Server 会重新耦合厂商协议 | RTSP/ONVIF 输出同一严格 DTO，拒绝厂商私有字段 |
+| SEN-K-004 | 永久授权码使用认证加密保存并绑定授权实例 ID；Server 可查看和更换，更换立即撤销旧 Token | `SecretBox`、`authorization_code_enc`、`update_client_authorization` | 保障 | 高 | 数据库泄漏可直接暴露配对权限，或旧客户端继续连接 | 错实例/错 key/篡改失败，更换后旧凭据失败 |
+| SEN-K-005 | 摄像机 RTSP/ONVIF 地址和设备账号只保留在 Client；Server Schema 不存在这些列 | `cameras`、Client LocalState | 保障 | 高 | Server 数据库会暴露摄像机内网和设备 Secret | Schema 列清单、管理 JSON 均无 URL/密码 |
+| SEN-K-006 | Client 快照必须恰好一台摄像机且摄像机 ID 等于授权实例 ID | `client_snapshot`、edge v3 | 保障 | 高 | 一个授权码可越权覆盖其他摄像机 | 0/2 台、错 ID、重复 ID 均拒绝 |
+| SEN-K-007 | 启动与 doctor 认证全部持久授权码 envelope | `doctor::verify_credentials`、`SecretBox` | 保障 | 高 | 错 key 或坏密文直到配对管理时才暴露 | 任一授权码篡改使检查失败且不改库 |
+| SEN-K-008 | 撤销实例会停用并隐藏摄像机、排队清理 MediaMTX；清理确认后可永久删除摄像机和授权实例 | `revoke_client`、media reconciliation | 保障 | 高 | 外键使已撤销实例永久无法删除，或媒体路径残留 | 未清理时冲突；成功清理后二次删除成功 |
+| SEN-K-009 | PTZ 只接受 move/stop，pan/tilt/zoom 各在 `[-1,1]`，并作为短时命令发送到拥有该摄像机的 Client | `PtzRequest`、`device_commands`、`routes::ptz` | 可选 | 中 | 删除后仍可监看但不能从控制台云台控制 | 边界值、离线、无能力、命令到期 |
 
 ## 6. 期望态、持久操作与协调器
 
 | ID | 当前功能/特性与真实行为 | 实现/代码锚点 | 分类 | 复杂度 | 删除后的确定后果 | 最低验证/边界 |
 |---|---|---|---|---|---|---|
-| SEN-O-001 | 摄像头 create/update/delete 在同一 SQLite 事务写 desired state、operation 与审计 | `queue_camera_change`、`write_audit_in` | 核心 | 高 | HTTP 成功后没有可恢复的 MediaMTX 意图，或审计与意图分离 | 事务失败零部分写；返回 operation ID |
+| SEN-O-001 | Client 快照新增/变更摄像机，以及授权更换/撤销，在同一 SQLite 事务写 desired state 与 operation | `client_snapshot`、`queue_camera_change` | 核心 | 高 | HTTP 成功后没有可恢复的 MediaMTX 意图 | 事务失败零部分写；operation 持久化 |
 | SEN-O-002 | 每摄像头 desired `generation` 单调增长，operation 绑定 generation | `media_desired_states`、`media_operations` | 保障 | 高 | 陈旧 worker 可能覆盖更新后的期望状态 | 连续变更、旧 generation 完成、删除后更新 |
 | SEN-O-003 | operation 状态包含 pending/running/succeeded/failed/unknown/dead_letter/resolved | `src/current_schema.sql`、`MediaOperationView` | 核心 | 高 | 无法区分可重试失败、成功和外部效果不确定 | 合法转换、非法组合、终态字段 |
 | SEN-O-004 | 活跃 generation 唯一索引避免同一摄像头同代重复 active operation | `media_operations_active_generation_idx` | 保障 | 高 | 同一期望态可能被多次下发 | 并发 queue；相同 generation 冲突 |
@@ -131,9 +128,9 @@ viewer。摄像头的 RTSP/ONVIF `username`、加密 `password` 和媒体 JWT `a
 | SEN-O-009 | retry 有 attempt、max_attempts、`retry_at` 和有界退避；不可安全重试进入终态 | `retry_delay`、`finish_failure` | 保障 | 高 | 远端故障会热循环或永久不再收敛 | attempt 边界、时间推进、dead_letter |
 | SEN-O-010 | superseded operation 明确收口，不执行已被新 generation 取代的意图 | `finish_superseded` | 保障 | 高 | 快速连改会下发过时配置 | 连续更新/删除、队列次序、审计状态 |
 | SEN-O-011 | reconciler 按 desired state 新增/更新/删除 main 与可选 sub path | `apply_desired`、`MediaMtxClient::upsert_path/delete_path` | 核心 | 高 | 数据库配置不再作用于真实媒体服务 | 主/子流、enable、record flag、delete |
-| SEN-O-012 | source digest 比较避免在日志/持久观察状态中保存完整带凭据 RTSP URL | `source_digest`、`media_applied_paths` | 保障 | 中 | 漂移检测可能泄漏 Secret 或无法比较配置 | digest 变化、相同 source、日志脱敏 |
+| SEN-O-012 | MediaMTX source 固定为 Client `publisher`，只持久 source digest；Server 不持有带凭据 RTSP URL | `source_digest`、`media_actual_paths` | 保障 | 中 | 漂移检测可能失真或把设备 Secret 带入 Server | publisher digest、日志脱敏 |
 | SEN-O-013 | 周期比较 expected 与 MediaMTX path config/actual publisher/recording 并排队 drift operation | `observe_and_schedule_drift` | 建议保留 | 高 | 外部手改或 companion 重启后持续漂移 | 缺 path、错误 source/record、已一致不重复排队 |
-| SEN-O-014 | operation 查询 API 返回持久状态，浏览器在摄像头保存后轮询 | `/media/operations/{id}`、`main.tsx` | 建议保留 | 中 | 页面只能显示“请求已接收”，无法知道最终收敛结果 | pending→终态、unknown 展示、404 |
+| SEN-O-014 | operation 查询/人工核对 API 返回持久状态；当前实例 Web 不单独暴露任务页 | `/media/operations/{id}`、`resolve_media_operation` | 建议保留 | 中 | 无法诊断 unknown/dead-letter 的收敛结果 | pending→终态、unknown/resolved、404 |
 | SEN-O-015 | 当前没有通用请求 Idempotency-Key 或客户端 revision CAS；幂等来自 generation/唯一索引和 desired-state 收敛 | `queue_camera_change`、Schema 索引 | 保障 | 高 | 误以为有 header 级幂等会导致调用方不安全重放 | 文档/API 不声明不存在的 header；并发测试按实际 generation 语义 |
 
 ## 7. MediaMTX、直播、录像和媒体授权
@@ -163,7 +160,7 @@ viewer。摄像头的 RTSP/ONVIF `username`、加密 `password` 和媒体 JWT `a
 | SEN-E-003 | 事件列表支持 camera、仅未确认和 1–500 条 limit | `EventQuery`、`list_events` | 建议保留 | 中 | 大量事件无法按当前需求过滤，或响应无界 | filters、limit clamp、排序 |
 | SEN-E-004 | 事件确认记录时间和 Administrator ID | `ack_event`、`acknowledged_*` | 建议保留 | 中 | 告警无法形成最小人工闭环 | 不存在 ID、重复确认、CSRF、账号删除后的 FK |
 | SEN-E-005 | SSE 只作实时通知，SQLite 是事实源；lagged 时发送 `resync-required` 后断开 | `event_stream`、broadcast channel | 保障 | 高 | 静默跳过会让页面误以为事件完整；删 SSE 则只能轮询 | 正常事件、lag、关闭、重新全量查询 |
-| SEN-E-006 | 审计表记录用户、动作、实体、细节和时间；查询最多 500 条 | `audit_logs`、`list_audit` | 建议保留 | 中 | 敏感变更追溯能力下降 | create/update/delete/PTZ/login；limit clamp |
+| SEN-E-006 | 审计表记录用户、动作、实体、细节和时间；查询最多 500 条 | `audit_logs`、`list_audit` | 建议保留 | 中 | 敏感变更追溯能力下降 | client create/pair/rotate/revoke/delete、PTZ queue、login；limit clamp |
 | SEN-E-007 | 摄像头/用户持久变更审计与业务同事务；PTZ/登录审计当前 best-effort | `write_audit_in`、`write_audit` | 保障 | 高 | 若把两类语义混同，运维会错误承诺审计不丢 | DB 故障注入；两类语义分别说明 |
 | SEN-E-008 | 当前没有审计 outbox、独立 sink 或后台重投表 | Schema 与生产模块不存在该表/worker | 核心 | 高 | 若未来需要“必达外部审计”，必须新增状态机，不能把当前表描述为 outbox | 文档、Schema 和代码搜索一致 |
 | SEN-E-009 | system status 汇总数据库、MediaMTX 与摄像头 total/online/recording | `/system/status` | 建议保留 | 低 | 控制台缺少一页式运行概况 | companion 不可达、坏 credential、空设备 |
@@ -210,7 +207,7 @@ viewer。摄像头的 RTSP/ONVIF `username`、加密 `password` 和媒体 JWT `a
 | SEN-R-017 | CI 同时门禁 Rust fmt/check/clippy/test、Web、native 生命周期与 Caddy 当前代理合同 | `.github/workflows/ci.yml` | 开发运维 | 高 | 任一语言或交付层可独立漂移进入 main；代理可能重新指向不存在的容器 | clean checkout 全 job；锁文件模式；根级 Caddyfile/容器上游负例；三个 loopback 上游精确一次 |
 | SEN-R-018 | Rust 固定 1.98.0，Cargo.lock 与 npm package-lock 都纳入提交 | `rust-toolchain.toml`、lockfiles | 开发运维 | 中 | 依赖解析随时间变化，构建结果不可复现 | `--locked`、`npm ci`、工具链版本 |
 | SEN-R-019 | 源配置统一为 `config/`，主机部署资产为 `deploy/`，客户端为 `clients/web/`，生命周期为 `native/`；根目录不放散落部署文件 | 仓库目录结构、CI proxy gate | 开发运维 | 低 | 配置、客户端和部署资产散落，开发者难以判断事实源；双份代理模板会漂移 | 目录清单；根级 `Caddyfile` 不存在；脚本/文档不引用已移除位置 |
-| SEN-R-020 | 当前 Schema identity 为 application `sentinel-monitor`、version 0.2.2、revision 5、SHA `86726841ebe3316fe5bf409e260464c870cf61c7a0f7d2c70d4c5faa499926dc`；`_sarmg_administrators` 使用 username，不保存 email/role | `schema/generated/current_schema.sql`、`src/sqlite.rs`、`native/lifecycle-test.sh` | 保障 | 高 | 发行物、运行库和运维文档可能各自接受不同管理身份 DDL | code-owned fingerprint 重算、metadata/现场 schema、列清单、lifecycle identity 一致 |
+| SEN-R-020 | 当前 Schema identity 为 application `sentinel-monitor`、version 0.2.2、revision 7、SHA `bb64805d1434fa953b5a215c636c086d98bce467825f7e9b6d3a5c1c0bd359c4`；`_sarmg_administrators` 使用 username，不保存 email/role | `schema/generated/current_schema.sql`、`src/sqlite.rs`、`native/lifecycle-test.sh` | 保障 | 高 | 发行物、运行库和运维文档可能各自接受不同管理身份 DDL | code-owned fingerprint 重算、metadata/现场 schema、列清单、lifecycle identity 一致 |
 
 ## 11. 可观测性、容量和故障边界
 
@@ -221,7 +218,7 @@ viewer。摄像头的 RTSP/ONVIF `username`、加密 `password` 和媒体 JWT `a
 | SEN-Q-003 | 上游错误只持久化/返回固定脱敏类别，不保存远端正文和 Secret | `sanitized_failure`、`AppError` | 保障 | 高 | 摄像头凭据或内网内容可能进入 DB、JSON、Journal | 故意含 Secret 的上游错误负例 |
 | SEN-Q-004 | 事件 broadcast 容量固定 256，lag 通过 resync 协议显式暴露 | `broadcast::channel(256)` | 保障 | 中 | 无界内存或静默丢实时通知 | 超 256 事件、慢消费者、SQLite 回查 |
 | SEN-Q-005 | 录像容量和保留由 MediaMTX `recordMaxPartSize`、segment 和 deleteAfter 约束 | `config/mediamtx.yml` | 保障 | 中 | 单文件/总保留失控可能填满磁盘 | 文件增长、168h 清理、磁盘/inode 监控；应用当前不建录像 inventory 表 |
-| SEN-Q-006 | HTTP JSON、login、ONVIF XML、媒体 auth 字段、playback duration 都有显式上限 | routes/config/onvif | 保障 | 高 | 外部输入可无界消耗内存、CPU、连接或上游带宽 | 每个上限的边界和恢复测试 |
+| SEN-Q-006 | HTTP JSON、login、Client 快照、媒体 auth 字段和 playback duration 都有显式上限 | routes/config/models | 保障 | 高 | 外部输入可无界消耗内存、CPU、连接或上游带宽 | 每个上限的边界和恢复测试 |
 | SEN-Q-007 | SQLite 是事件与 operation 的持久事实源；SSE、React state 和日志只是投影 | Schema、routes、Web effects | 保障 | 高 | 重启或断线后页面内存会被误当作最终事实 | 重连全量读取、进程重启、SSE lag |
 
 ## 12. 明确边界与取舍

@@ -39,10 +39,9 @@ IP Camera --RTSP/ONVIF--> MediaMTX --WHEP/HLS--> Caddy --> Browser
 1. `clients/web/src/protocol-contract.json`：浏览器、Rust 路由和 MediaMTX 回调共享的当前协议身份。
 2. `src/main.rs`、`config.rs`、`routes.rs`：CLI、配置和 `/api/v2` 入口。
 3. `auth.rs`、`login_security.rs`：用户 Session、CSRF、媒体 JWT 和登录保护。
-4. `crypto.rs`：摄像头敏感字段的唯一当前 envelope。
+4. `crypto.rs`：摄像机实例永久授权码的唯一当前 envelope。
 5. `reconciliation.rs`、`mediamtx.rs`：期望态操作、租约和实际态协调。
-6. `onvif.rs`：设备发现和 PTZ 边界。
-7. `release.rs`、`native/*.sh`：固定发行树和原生生命周期。
+6. `release.rs`、`native/*.sh`：固定发行树和原生生命周期；设备发现与厂商适配位于 Sentinel Client。
 
 ## 3. 开发环境
 
@@ -73,26 +72,26 @@ cargo run -- serve
 控制面只有 Administrator：每个成功登录的账户都能访问摄像头、直播、录像、PTZ、事件、用户、审计
 和系统状态。请求精确为 `{username,password}`，Session 精确包含
 `authenticated/user_id/username/role/csrf_token` 五字段；`users` 表不保存 email 或 `role`，wire 中固定的
-`role:"admin"` 只是 Foundation 身份合同。摄像头
-RTSP/ONVIF 用户名、媒体 JWT `actions` 都是数据面凭据或资源范围，不能解释为第二套控制面角色。
+`role:"admin"` 只是 Foundation 身份合同。实例授权码、Client 访问令牌和媒体 JWT
+`actions` 都是数据面凭据或资源范围，不能解释为第二套控制面角色。
 
-## 5. 摄像头凭据为什么是 envelope
+## 5. 实例授权码为什么是 envelope
 
-主/辅流 URL、用户名和密码都以规范 JSON envelope 的 AES-256-GCM 密文保存。专用 key 从
-`CREDENTIALS_KEY` 经 HKDF-SHA256 派生；AAD 绑定产品、版本、revision、key ID、camera UUID 和精确
-数据库字段，因此密文不能复制到另一摄像头或另一字段。
+每个摄像机实例的 64 位授权码以 Foundation secret envelope 的认证密文保存。专用
+key 从 `CREDENTIALS_KEY` 派生；AAD 绑定授权实例 ID，因此密文不能复制到另一实例。设备
+RTSP/ONVIF URL、用户名和密码只属于 Client，Server Schema 不存储这些字段。
 
 当前 key ID 固定为 `sentinel-credentials-0.2.9-key-1`。产品没有 previous key/keyring，不接受旧
 `nonce || ciphertext` 或宽松 Base64。`CREDENTIALS_KEY` 丢失意味着密文不可恢复。
 
-## 6. 一次摄像头变更
+## 6. 一次摄像机实例变更
 
-HTTP 请求不能同时原子提交 SQLite 和远端 MediaMTX。因此 API 先在一个 SQLite 事务写入摄像头期望态
-和 `media_operations`，立即返回 operation ID；后台协调器取得租约，在事务外调用 MediaMTX，再写入
-成功、失败或 unknown。客户端通过状态 API 查询结果。
+管理员先创建一个授权实例；一个授权码只能配对一台摄像机。同一 Client 安装可保存多个授权码，
+但会以独立实例分别配对、上报中立设备快照并向 MediaMTX 发布。Server 不提供摄像头
+create/update/delete 或 ONVIF 发现 API。
 
-`unknown` 表示远端效果可能已经发生，不能盲目新建重复请求。周期 reconciler 会比较期望 Path、实际
-配置、Publisher 和 Recording，发现漂移后创建显式操作。
+授权码更换会立即失效旧 Client token，设备必须重新配对。删除已配对实例分两阶段：先撤销并
+调和 MediaMTX 路径清理，确认成功后才原子删除摄像机状态和授权实例。
 
 ## 7. 播放和录像
 

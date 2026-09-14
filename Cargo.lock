@@ -1593,15 +1593,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "quick-xml"
-version = "0.38.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b66c2058c55a409d601666cffe35f04333cf1013010882cec174a7467cd4e21c"
-dependencies = [
- "memchr",
-]
-
-[[package]]
 name = "quinn"
 version = "0.11.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1817,12 +1808,6 @@ dependencies = [
  "untrusted",
  "windows-sys 0.52.0",
 ]
-
-[[package]]
-name = "roxmltree"
-version = "0.20.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c20b6793b5c2fa6553b250154b78d6d0db37e72700ae35fad9387a46f487c97"
 
 [[package]]
 name = "rsa"
@@ -2060,16 +2045,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sarmg-secure-xml"
-version = "0.7.11"
-source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=8f2a5c888bc5f543186ad58bc5b3cee4dc5b2602#8f2a5c888bc5f543186ad58bc5b3cee4dc5b2602"
-dependencies = [
- "quick-xml",
- "roxmltree",
- "thiserror",
-]
-
-[[package]]
 name = "sarmg-server-runtime"
 version = "0.7.11"
 source = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=8f2a5c888bc5f543186ad58bc5b3cee4dc5b2602#8f2a5c888bc5f543186ad58bc5b3cee4dc5b2602"
@@ -2129,7 +2104,6 @@ dependencies = [
  "clap",
  "futures-util",
  "hkdf",
- "ipnet",
  "jsonwebtoken",
  "libc",
  "rand 0.8.7",
@@ -2146,7 +2120,6 @@ dependencies = [
  "sarmg-secret",
  "sarmg-secret-envelope",
  "sarmg-secure-http",
- "sarmg-secure-xml",
  "sarmg-server-runtime",
  "sarmg-server-target",
  "sarmg-sqlite",

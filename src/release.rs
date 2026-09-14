@@ -781,7 +781,7 @@ mod tests {
         assert_eq!(identity.target, env!("SENTINEL_BUILD_TARGET"));
         assert_eq!(identity.wire_protocol, "sentinel-wire-v2");
         assert_eq!(identity.api_prefix, "/api/v2");
-        assert_eq!(identity.schema_revision, 5);
+        assert_eq!(identity.schema_revision, 7);
         assert_eq!(identity.credential_envelope_revision, 1);
         assert!(manifest_header().unwrap().ends_with('\n'));
     }

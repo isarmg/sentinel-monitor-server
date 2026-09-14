@@ -9,13 +9,13 @@
 
 `product_metadata` 精确绑定 application、version、revision 和 code-owned DDL SHA。启动/doctor 从实际
 `sqlite_schema` 重新规范计算，不信任 metadata 自报。当前 SHA 为
-`f547ddc817d830d23b5305bb1f88b29898d6531568edd6eb194c2b629eb560c0`；`users` 只有 canonical
+`bb64805d1434fa953b5a215c636c086d98bce467825f7e9b6d3a5c1c0bd359c4`；管理员表只有 canonical
 `username`，没有 email/role。空文件、非当前库和漂移库都只读拒绝。
 
 共享 Foundation `sarmg-schema-identity 0.7.11` 定义 fingerprint v1 的字节 framing、metadata 五列 DDL/
 shape 和 exact identity 比较；Sentinel 把私有 rusqlite generation 映射为共享 `SchemaRow`/
 `ProductMetadataRow` 后执行验证。SQLite 文件、WAL/journal 快照、路径防替换和业务 lease 校验仍由产品
-负责。这里只存在当前 revision 1，不因为采用共享算法增加任何旧格式兼容。
+负责。这里只存在当前 revision 7，不因为采用共享算法增加任何旧格式兼容。
 
 ## 7.3 Administrator 身份合同
 
@@ -23,10 +23,10 @@ shape 和 exact identity 比较；Sentinel 把私有 rusqlite generation 映射�
 Foundation 拥有 username 规范化与跨语言守卫；Rust Schema 保存同一 canonical 形状，React/Vite 管理
 Web 消费同一字段。摄像头 username、媒体 JWT/camera identity 不属于该合同，保持独立数据面语义。
 
-## 7.4 Credential envelope
+## 7.4 Authorization envelope
 
-摄像头 Secret 使用当前算法、version、nonce、key ID 和上下文 AAD 认证加密。AAD 把密文绑定到产品、
-记录和字段，防止复制到另一行仍能解密。解析时拒绝任何额外/缺失字段。
+实例授权码使用 Foundation secret envelope 认证加密，AAD 绑定客户端实例 ID。数据库只保存
+`authorization_code_enc` 和查找用 hash；摄像机 RTSP/ONVIF 凭据只保存在 Client，Server 没有对应列。
 
 ## 7.5 External key
 

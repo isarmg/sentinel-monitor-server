@@ -1,6 +1,6 @@
 CREATE TABLE sentinel_clients (
     id TEXT PRIMARY KEY,
-    installation_id TEXT UNIQUE,
+    installation_id TEXT,
     name TEXT NOT NULL,
     client_version TEXT,
     token_hash BLOB UNIQUE CHECK (token_hash IS NULL OR length(token_hash) = 32),
@@ -20,10 +20,10 @@ CREATE TABLE cameras (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     location TEXT NOT NULL DEFAULT '',
-    source_kind TEXT NOT NULL DEFAULT 'direct' CHECK (source_kind IN ('direct', 'client')),
-    client_id TEXT REFERENCES sentinel_clients(id) ON DELETE RESTRICT,
-    client_camera_id TEXT,
-    adapter_kind TEXT NOT NULL DEFAULT 'server_direct'
+    source_kind TEXT NOT NULL DEFAULT 'client' CHECK (source_kind = 'client'),
+    client_id TEXT NOT NULL REFERENCES sentinel_clients(id) ON DELETE RESTRICT,
+    client_camera_id TEXT NOT NULL,
+    adapter_kind TEXT NOT NULL
         CHECK (length(adapter_kind) BETWEEN 1 AND 64 AND adapter_kind NOT GLOB '*[^a-z0-9._-]*'),
     manufacturer TEXT CHECK (manufacturer IS NULL OR length(manufacturer) BETWEEN 1 AND 128),
     model TEXT CHECK (model IS NULL OR length(model) BETWEEN 1 AND 128),
@@ -36,12 +36,7 @@ CREATE TABLE cameras (
     health_message TEXT CHECK (health_message IS NULL OR length(health_message) BETWEEN 1 AND 512),
     device_status TEXT NOT NULL DEFAULT 'pending'
         CHECK (device_status IN ('pending', 'online', 'offline', 'disabled', 'error')),
-    main_stream_url_enc BLOB,
-    sub_stream_url_enc BLOB,
     has_sub_stream INTEGER NOT NULL DEFAULT 0 CHECK (has_sub_stream IN (0, 1)),
-    onvif_url TEXT,
-    username_enc BLOB,
-    password_enc BLOB,
     enabled INTEGER NOT NULL DEFAULT 1,
     record_enabled INTEGER NOT NULL DEFAULT 1,
     storage_mode TEXT NOT NULL DEFAULT 'server' CHECK (storage_mode IN ('client', 'server')),
@@ -51,15 +46,7 @@ CREATE TABLE cameras (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     deleted_at TEXT,
-    UNIQUE (client_id, client_camera_id),
-    CHECK (
-        (source_kind = 'direct' AND client_id IS NULL AND client_camera_id IS NULL
-            AND main_stream_url_enc IS NOT NULL AND storage_mode = 'server')
-        OR
-        (source_kind = 'client' AND client_id IS NOT NULL AND client_camera_id IS NOT NULL
-            AND main_stream_url_enc IS NULL AND sub_stream_url_enc IS NULL
-            AND onvif_url IS NULL AND username_enc IS NULL AND password_enc IS NULL)
-    )
+    UNIQUE (client_id)
 );
 
 CREATE INDEX cameras_status_idx ON cameras (status);

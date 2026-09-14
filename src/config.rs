@@ -1,5 +1,4 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use ipnet::IpNet;
 use sarmg_admin_auth::normalize_administrator_username;
 use std::{env, net::SocketAddr, path::PathBuf, time::Duration};
 
@@ -24,8 +23,6 @@ pub struct Config {
     pub status_interval: Duration,
     pub reconcile_interval: Duration,
     pub request_timeout: Duration,
-    pub onvif_discovery_timeout: Duration,
-    pub onvif_xaddr_allowlist: Vec<IpNet>,
     pub static_dir: PathBuf,
 }
 
@@ -97,11 +94,6 @@ impl Config {
             status_interval: Duration::from_secs(parse_u64("STATUS_INTERVAL_SECS", 10)?),
             reconcile_interval: Duration::from_secs(parse_u64("RECONCILE_INTERVAL_SECS", 60)?),
             request_timeout: Duration::from_secs(bounded_u64("REQUEST_TIMEOUT_SECS", 20, 1, 300)?),
-            onvif_discovery_timeout: Duration::from_millis(parse_u64(
-                "ONVIF_DISCOVERY_TIMEOUT_MS",
-                3000,
-            )?),
-            onvif_xaddr_allowlist: parse_cidr_list("ONVIF_XADDR_ALLOWLIST")?,
             static_dir: absolute_path("STATIC_DIR", required("STATIC_DIR")?)?,
         })
     }
@@ -180,20 +172,6 @@ fn validate_development_bind(bind_addr: SocketAddr, development_mode: bool) -> R
     } else {
         Ok(())
     }
-}
-
-fn parse_cidr_list(name: &str) -> Result<Vec<IpNet>, String> {
-    env::var(name)
-        .unwrap_or_default()
-        .split(',')
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|value| {
-            value
-                .parse()
-                .map_err(|_| format!("{name} must be a comma-separated CIDR list"))
-        })
-        .collect()
 }
 
 fn trim_slash(mut value: String) -> String {

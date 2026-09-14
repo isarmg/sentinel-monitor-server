@@ -3,7 +3,7 @@
 ## 4.1 正式启动门
 
 Server 在监听前验证不可变发行树、Web fingerprint、数据库路径和锁、当前 Schema、lease 不变量及全部
-持久 credential 可由当前 external key 认证。无法证明任何一项即拒绝，不在请求期间懒修复。
+持久实例授权码可由当前 external key 认证。无法证明任何一项即拒绝，不在请求期间懒修复。
 
 ## 4.2 登录链路
 
@@ -15,34 +15,31 @@ Server 在监听前验证不可变发行树、Web fingerprint、数据库路径�
 
 成功响应只有 `{authenticated,user_id,username,role:"admin",csrf_token}` 五个字段。写 API 再验证 Session、
 CSRF 和 Origin/Host。forwarded header 只有在明确可信代理边界内才可使用。管理 username 只标识
-Administrator；摄像头 username 是加密设备凭据，不参与这条登录链。
+Administrator；实例授权码和 Client token 不参与这条浏览器登录链。
 
-## 4.3 创建摄像头
+## 4.3 创建授权实例
 
-请求严格验证名称、URL/Host、协议参数和 credential；Secret 在进入事务前按 camera/字段上下文加密，随后持久化期望摄像头与
-pending operation，再返回 operation 文档。HTTP 成功只表示意图已可靠接收，不表示媒体已可用。
+菜单中创建实例后，Server 生成一个加密持久的 64 位授权码。Client 可保存多个码，每个码只能与一台摄像机快照绑定。
+Client 统一不同品牌的发现、认证、能力和流信息；Server 只接收当前中立模型。
 
-## 4.4 修改与删除
+## 4.4 更换授权码与删除
 
-每次摄像头 create/update/delete 都增加 desired generation 并创建或收口该代 operation；当前没有通用
-`Idempotency-Key` header，也没有客户端 revision CAS。唯一活跃 generation 索引和 reconciler 的
-desired-state 收敛防止同代重复执行。删除成功要区分控制面 soft-delete、MediaMTX path 清理和录像保留；
-不能把“隐藏 UI 行”当成全部媒体字节已删除。
+更换授权码会清除 installation/token/在线状态、禁用摄像机并排队清理媒体路径；旧 Client 必须使用新码重新配对。
+删除已配对实例先标记 revoked，待媒体操作成功且已观测不存在路径后，再删除设备、期望/实际状态和授权实例。
 
 ## 4.5 状态查询
 
-浏览器查询安全投影：资源 ID、展示字段、是否存在子流/ONVIF、状态和 operation 状态。响应不得包含
-RTSP URL、credential ciphertext、密码、完整上游错误或播放 signing secret。
+浏览器查询安全投影：授权实例、Client 上报的设备身份/能力/流、在线状态和媒体操作状态。响应不得包含
+Client 保管的 RTSP/ONVIF 凭据、完整上游错误或播放 signing secret。授权码仅在管理员实例视图中可查看和更换。
 
 ## 4.6 重试语义
 
-摄像头配置是期望态：请求成功后保存返回的 operation ID，并查询其状态；网络超时不能据此断言请求未
-持久化。当前 API 不接受幂等键，调用方不能凭空假设同一请求会返回原 operation。PTZ 则是同步瞬时动作，
-当前不进入 durable operation；断线后结果无法从 operation API 恢复，禁止自动盲重放 move。
+媒体路径配置是期望态，由 durable operation 与 reconciler 收敛。PTZ 不由 Server 直连设备；它会写入有期限的
+`device_commands`，交给该授权实例所属 Client 拉取并回报结果。移动指令不能在结果不确定时自动盲重放。
 
 ## 4.7 响应语义
 
-- `201`：摄像头已创建且 operation 已持久化；`200`：更新响应；`202`：删除意图已接收。
+- `201`：授权实例已创建或 Client 已配对；`202`：PTZ 指令已排队；`204`：撤销或最终删除已提交。
 - `401/403`：身份/CSRF/授权失败。
 - `409`：当前资源或账户状态冲突。
 - `400`：JSON、字段或业务边界验证失败。

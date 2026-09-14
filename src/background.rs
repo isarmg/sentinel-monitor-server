@@ -12,8 +12,7 @@ use uuid::Uuid;
 
 const CAMERA_SELECT: &str = "SELECT id, name, location, source_kind, client_id, \
     adapter_kind, manufacturer, model, firmware_version, serial_number, capabilities_json, \
-    streams_json, health_message, device_status, \
-    main_stream_url_enc, sub_stream_url_enc, has_sub_stream, onvif_url, username_enc, password_enc, \
+    streams_json, health_message, device_status, has_sub_stream, \
     enabled, record_enabled, storage_mode, status, last_seen_at, created_at, updated_at \
     FROM cameras WHERE deleted_at IS NULL";
 

@@ -1,7 +1,3 @@
-use crate::{
-    crypto::{CredentialField, SecretBox},
-    error::Result,
-};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -23,12 +19,7 @@ pub struct CameraRecord {
     pub streams_json: String,
     pub health_message: Option<String>,
     pub device_status: String,
-    pub main_stream_url_enc: Option<Vec<u8>>,
-    pub sub_stream_url_enc: Option<Vec<u8>>,
     pub has_sub_stream: bool,
-    pub onvif_url: Option<String>,
-    pub username_enc: Option<Vec<u8>>,
-    pub password_enc: Option<Vec<u8>>,
     pub enabled: bool,
     pub record_enabled: bool,
     pub storage_mode: String,
@@ -38,48 +29,12 @@ pub struct CameraRecord {
     pub updated_at: DateTime<Utc>,
 }
 
-pub struct CameraCredentials {
-    pub main_stream_url: Option<String>,
-    pub sub_stream_url: Option<String>,
-    pub username: Option<String>,
-    pub password: Option<String>,
-}
-
-impl CameraRecord {
-    pub fn decrypt_credentials(&self, secrets: &SecretBox) -> Result<CameraCredentials> {
-        Ok(CameraCredentials {
-            main_stream_url: self
-                .main_stream_url_enc
-                .as_deref()
-                .map(|value| secrets.decrypt(self.id, CredentialField::MainStreamUrl, value))
-                .transpose()?,
-            sub_stream_url: self
-                .sub_stream_url_enc
-                .as_deref()
-                .map(|value| secrets.decrypt(self.id, CredentialField::SubStreamUrl, value))
-                .transpose()?,
-            username: self
-                .username_enc
-                .as_deref()
-                .map(|value| secrets.decrypt(self.id, CredentialField::Username, value))
-                .transpose()?,
-            password: self
-                .password_enc
-                .as_deref()
-                .map(|value| secrets.decrypt(self.id, CredentialField::Password, value))
-                .transpose()?,
-        })
-    }
-}
-
 #[derive(Clone, Serialize)]
 pub struct CameraView {
     pub id: Uuid,
     pub name: String,
     pub location: String,
     pub has_sub_stream: bool,
-    pub onvif_configured: bool,
-    pub username: Option<String>,
     pub source_kind: String,
     pub client_id: Option<Uuid>,
     pub adapter_kind: String,
@@ -101,36 +56,12 @@ pub struct CameraView {
 }
 
 impl CameraView {
-    pub fn from_record(value: &CameraRecord, credentials: &CameraCredentials) -> Self {
-        let capabilities = if value.source_kind == "direct" {
-            DeviceCapabilities {
-                video: true,
-                main_stream: true,
-                sub_stream: value.has_sub_stream,
-                local_recording: false,
-                server_recording: true,
-                ptz: value.onvif_url.is_some(),
-                ..DeviceCapabilities::default()
-            }
-        } else {
-            serde_json::from_str(&value.capabilities_json).unwrap_or_default()
-        };
-        let streams = if value.source_kind == "direct" {
-            let mut streams = vec![StreamDescriptor::unknown("main")];
-            if value.has_sub_stream {
-                streams.push(StreamDescriptor::unknown("sub"));
-            }
-            streams
-        } else {
-            serde_json::from_str(&value.streams_json).unwrap_or_default()
-        };
+    pub fn from_record(value: &CameraRecord) -> Self {
         Self {
             id: value.id,
             name: value.name.clone(),
             location: value.location.clone(),
             has_sub_stream: value.has_sub_stream,
-            onvif_configured: value.onvif_url.is_some(),
-            username: credentials.username.clone(),
             source_kind: value.source_kind.clone(),
             client_id: value.client_id,
             adapter_kind: value.adapter_kind.clone(),
@@ -138,14 +69,10 @@ impl CameraView {
             model: value.model.clone(),
             firmware_version: value.firmware_version.clone(),
             serial_number: value.serial_number.clone(),
-            capabilities,
-            streams,
+            capabilities: serde_json::from_str(&value.capabilities_json).unwrap_or_default(),
+            streams: serde_json::from_str(&value.streams_json).unwrap_or_default(),
             health_message: value.health_message.clone(),
-            device_status: if value.source_kind == "direct" {
-                value.status.clone()
-            } else {
-                value.device_status.clone()
-            },
+            device_status: value.device_status.clone(),
             storage_mode: value.storage_mode.clone(),
             enabled: value.enabled,
             record_enabled: value.record_enabled,
@@ -182,67 +109,8 @@ pub struct StreamDescriptor {
     pub frame_rate: Option<f64>,
 }
 
-impl StreamDescriptor {
-    fn unknown(profile: &str) -> Self {
-        Self {
-            profile: profile.to_owned(),
-            video_codec: None,
-            audio_codec: None,
-            width: None,
-            height: None,
-            frame_rate: None,
-        }
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CreateCameraRequest {
-    pub name: String,
-    #[serde(default)]
-    pub location: String,
-    pub main_stream_url: String,
-    pub sub_stream_url: Option<String>,
-    pub onvif_url: Option<String>,
-    pub username: Option<String>,
-    pub password: Option<String>,
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-    #[serde(default = "default_true")]
-    pub record_enabled: bool,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct UpdateCameraRequest {
-    pub name: Option<String>,
-    pub location: Option<String>,
-    pub main_stream_url: Option<String>,
-    pub sub_stream_url: Option<String>,
-    #[serde(default)]
-    pub clear_sub_stream: bool,
-    pub onvif_url: Option<String>,
-    #[serde(default)]
-    pub clear_onvif: bool,
-    pub username: Option<String>,
-    pub password: Option<String>,
-    #[serde(default)]
-    pub clear_password: bool,
-    pub enabled: Option<bool>,
-    pub record_enabled: Option<bool>,
-}
-
 fn default_true() -> bool {
     true
-}
-
-#[derive(Serialize)]
-pub struct CameraMutationResponse {
-    pub camera: CameraView,
-    pub media_synced: bool,
-    pub warning: Option<String>,
-    pub operation_id: String,
-    pub operation_state: String,
 }
 
 #[derive(Deserialize)]
@@ -269,7 +137,7 @@ pub struct PtzRequest {
     pub zoom: Option<f64>,
 }
 
-pub const CLIENT_PAIRING_PROTOCOL: &str = "sentinel-edge-v2";
+pub const CLIENT_PAIRING_PROTOCOL: &str = "sentinel-edge-v3";
 
 #[derive(Clone, sqlx::FromRow)]
 pub struct SentinelClientRecord {
@@ -439,12 +307,6 @@ mod tests {
 
     #[test]
     fn every_public_request_dto_rejects_unknown_fields() {
-        rejects_unknown::<CreateCameraRequest>(json!({
-            "name": "Camera",
-            "main_stream_url": "rtsp://camera.invalid/main",
-            "unknown": true
-        }));
-        rejects_unknown::<UpdateCameraRequest>(json!({ "unknown": true }));
         rejects_unknown::<StreamTicketQuery>(json!({ "unknown": true }));
         rejects_unknown::<PtzRequest>(json!({ "action": "stop", "unknown": true }));
         rejects_unknown::<EventQuery>(json!({ "unknown": true }));
@@ -463,10 +325,6 @@ mod tests {
 
     #[test]
     fn required_public_request_fields_cannot_be_omitted() {
-        assert!(serde_json::from_value::<CreateCameraRequest>(json!({
-            "main_stream_url": "rtsp://camera.invalid/main"
-        }))
-        .is_err());
         assert!(serde_json::from_value::<PtzRequest>(json!({})).is_err());
         assert!(serde_json::from_value::<ClientSnapshotRequest>(json!({
             "protocol": CLIENT_PAIRING_PROTOCOL,

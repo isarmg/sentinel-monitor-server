@@ -19,16 +19,12 @@ import {
   administratorApi,
   apiPath,
   isAuditRows,
-  isCameraMutation,
   isCameras,
-  isDiscoveredDevices,
   isMonitorEvents,
-  isOperation,
   isRecordingSpans,
   isStreamTicket,
   isSentinelClient,
   isSentinelClients,
-  isSystemStatus,
   isUndefined,
   request,
   type AuditRow,
@@ -36,36 +32,10 @@ import {
   type MonitorEvent,
   type RecordingSpan,
   type SentinelClient,
-  type SystemStatus,
 } from "./api";
 import { WhepPlayer } from "./whep";
 
 type View = InstancePage;
-type CameraDraft = {
-  id: string;
-  name: string;
-  location: string;
-  main_stream_url: string;
-  sub_stream_url: string;
-  onvif_url: string;
-  username: string;
-  password: string;
-  enabled: boolean;
-  record_enabled: boolean;
-};
-
-const emptyCamera = (): CameraDraft => ({
-  id: "",
-  name: "",
-  location: "",
-  main_stream_url: "",
-  sub_stream_url: "",
-  onvif_url: "",
-  username: "",
-  password: "",
-  enabled: true,
-  record_enabled: true,
-});
 function Console() {
   const { notify } = useAdminApplication();
   const [view, setView] = useState<View>(currentView);
@@ -73,19 +43,14 @@ function Console() {
   const toast = useCallback((message: string, _type = "info") => notify(message), [notify]);
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [events, setEvents] = useState<MonitorEvent[]>([]);
-  const [audit, setAudit] = useState<AuditRow[]>([]);
-  const [status, setStatus] = useState<SystemStatus | null>(null);
+  const [audit, setAudit] = useState<AuditRow[] | null>(null);
   const [clients, setClients] = useState<SentinelClient[]>([]);
-  const [systemFailure, setSystemFailure] = useState<{ requestId?: string } | null>(null);
+  const [auditFailure, setAuditFailure] = useState<{ requestId?: string } | null>(null);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [unacknowledgedOnly, setUnacknowledgedOnly] = useState(false);
-  const [cameraDraft, setCameraDraft] = useState<CameraDraft | null>(null);
+  const [creatingClient, setCreatingClient] = useState(false);
   const [drawerCamera, setDrawerCamera] = useState<Camera | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<Camera | null>(null);
-  const [deletePending, setDeletePending] = useState(false);
-  const deleteBusy = useRef(false);
-  const [deleteFailure, setDeleteFailure] = useState<{ requestId?: string } | null>(null);
   const loadCameras = useCallback(async () => {
     setCameras(await request("/cameras", isCameras));
   }, []);
@@ -93,16 +58,13 @@ function Console() {
     const suffix = unacknowledgedOnly ? "?unacknowledged=true" : "";
     setEvents(await request(`/events${suffix}`, isMonitorEvents));
   }, [unacknowledgedOnly]);
-  const loadSystem = useCallback(async () => {
-    setSystemFailure(null);
+  const loadAudit = useCallback(async () => {
+    setAudit(null);
+    setAuditFailure(null);
     try {
-      const [nextStatus, nextAudit] = await Promise.all([
-        request("/system/status", isSystemStatus),
-        request("/audit?limit=30", isAuditRows),
-      ]);
-      setStatus(nextStatus); setAudit(nextAudit);
+      setAudit(await request("/audit?limit=30", isAuditRows));
     } catch (error) {
-      setStatus(null); setAudit([]); setSystemFailure({ requestId: errorRequestId(error) });
+      setAudit(null); setAuditFailure({ requestId: errorRequestId(error) });
       throw error;
     }
   }, []);
@@ -110,9 +72,8 @@ function Console() {
     setClients(await request("/clients", isSentinelClients));
   }, []);
 
-  useEffect(() => { void Promise.all([loadCameras(), loadEvents()]).catch((error) => toast(errorText(error), "error")); }, [loadCameras, loadEvents, toast]);
-  useEffect(() => { if (view === "logs") void loadSystem().catch((error) => toast(errorText(error), "error")); }, [loadSystem, toast, view]);
-  useEffect(() => { if (view === "instances") void loadClients().catch((error) => toast(errorText(error), "error")); }, [loadClients, toast, view]);
+  useEffect(() => { void Promise.all([loadCameras(), loadEvents(), loadClients()]).catch((error) => toast(errorText(error), "error")); }, [loadCameras, loadClients, loadEvents, toast]);
+  useEffect(() => { if (view === "logs") void loadAudit().catch((error) => toast(errorText(error), "error")); }, [loadAudit, toast, view]);
   useEffect(() => {
     const source = new EventSource(apiPath("/events/stream"));
     source.addEventListener("system-event", (message) => {
@@ -129,81 +90,46 @@ function Console() {
     return () => source.close();
   }, [loadCameras, loadEvents, toast]);
 
-  const online = cameras.filter((camera) => camera.status === "online").length;
-  const filtered = useMemo(() => {
+  const filteredCameras = useMemo(() => {
     const term = search.trim().toLowerCase();
     return cameras.filter((camera) => `${camera.name} ${camera.location}`.toLowerCase().includes(term));
   }, [cameras, search]);
-  const chosen = filtered.find(camera => camera.id === selected) ?? filtered[0];
-  const visible = chosen ? [chosen] : [];
-
-  const saveCamera = async (draft: CameraDraft) => {
-    const payload: Record<string, unknown> = {
-      name: draft.name,
-      location: draft.location,
-      username: draft.username,
-      enabled: draft.enabled,
-      record_enabled: draft.record_enabled,
-    };
-    for (const key of ["main_stream_url", "sub_stream_url", "onvif_url", "password"] as const) {
-      if (draft[key] !== "") payload[key] = draft[key];
-    }
-    const result = await request(draft.id === "" ? "/cameras" : `/cameras/${draft.id}`, isCameraMutation, {
-      method: draft.id === "" ? "POST" : "PUT", body: JSON.stringify(payload),
-    });
-    setCameraDraft(null);
-    toast(result.warning ? t("设备已保存，但媒体配置需要核对。", "Device saved; media configuration needs review.") : t("摄像头已保存，媒体配置正在后台应用", "Camera saved; media configuration is being applied in the background"), result.warning === null ? "success" : "warning");
-    await loadCameras();
-  };
-  const deleteCamera = async (camera: Camera) => {
-    await request(`/cameras/${camera.id}`, isOperation, { method: "DELETE" });
-    toast(t("摄像头已删除", "Camera deleted"), "success"); await loadCameras();
-  };
-  const discover = async () => {
-    const devices = await request("/discovery/onvif", isDiscoveredDevices, { method: "POST" });
-    if (devices.length === 0) return toast(t("没有发现ONVIF设备；可改用手动添加", "No ONVIF devices found. Try adding a camera manually"), "warning");
-    setCameraDraft({ ...emptyCamera(), onvif_url: devices[0]?.xaddrs[0] ?? "" });
-    toast(t("发现 {0} 台设备，已填入第一台的ONVIF地址", "Found {0} devices; filled in the first ONVIF address", [devices.length]), "success");
-  };
+  const chosen = clients.find(client => client.id === selected) ?? clients[0];
+  const clientCameras = chosen === undefined ? [] : cameras.filter(camera => camera.client_id === chosen.id);
+  const visible = chosen === undefined ? [] : filteredCameras.filter(camera => camera.client_id === chosen.id);
+  const recordings = clientCameras.filter(camera => camera.storage_mode === "server");
   const acknowledge = async (id: string) => {
     await request(`/events/${id}/ack`, isUndefined, { method: "POST" });
     await loadEvents();
   };
 
   return <div className="sentinel-business sarmg-content-stack">
-    <InstanceHeaderActions create={view !== "logs" ? () => setCameraDraft(emptyCamera()) : undefined} createLabel={t("新建直连摄像头", "Create direct camera")} refresh={() => void Promise.all([loadCameras(), loadEvents(), ...(view === "logs" ? [loadSystem()] : []), ...(view === "instances" ? [loadClients()] : [])]).catch(error => toast(errorText(error), "error"))} />
-    <InstanceWorkspace instances={filtered} selected={chosen?.id} select={id => { setSelected(id); window.location.hash = "details"; }} label={t("摄像头实例", "Camera instances")} showSidebar={view === "details"}>
+    <InstanceHeaderActions create={() => setCreatingClient(true)} refresh={() => void Promise.all([loadCameras(), loadEvents(), loadClients(), ...(view === "logs" ? [loadAudit()] : [])]).catch(error => toast(errorText(error), "error"))} />
+    <InstanceWorkspace instances={clients} selected={chosen?.id} select={id => { setSelected(id); window.location.hash = "details"; }} label={t("摄像机实例", "Camera instances")} showSidebar={view === "details"}>
     <InstancePageNavigation page={view} detailsDisabled={!chosen} navigate={value => { window.location.hash = value; }} />
-    <h1 className="sarmg-visually-hidden">{viewTitle(view)}</h1><p>{online} / {cameras.length} {t("在线", "Online")}</p>
-    {view === "instances" && <><InstanceOverview cameras={filtered} select={id => { setSelected(id); window.location.hash = "details"; }} search={search} setSearch={setSearch} /><ClientsView clients={clients} changed={loadClients} toast={toast} /></>}
-    {view === "details" && <CameraView cameras={visible} search={search} setSearch={setSearch} edit={(camera) => setCameraDraft(toCameraDraft(camera))} remove={(camera) => { setDeleteFailure(null); setDeleteTarget(camera); }} inspect={setDrawerCamera} discover={() => void discover().catch((error) => toast(errorText(error), "error"))} />}
-    {view === "logs" && <><RecordingsView cameras={cameras.filter(camera => camera.storage_mode === "server")} toast={toast} /><EventsView events={events} cameras={cameras} unacknowledgedOnly={unacknowledgedOnly} setUnacknowledgedOnly={setUnacknowledgedOnly} refresh={() => void loadEvents().catch((error) => toast(errorText(error), "error"))} acknowledge={(id) => void acknowledge(id).catch((error) => toast(errorText(error), "error"))} /><SystemView status={status} failure={systemFailure} audit={audit} refresh={() => void loadSystem().catch((error) => toast(errorText(error), "error"))} /></>}
+    <h1 className="sarmg-visually-hidden">{viewTitle(view)}</h1>
+    {view === "instances" && <><InstanceStatistics cameras={cameras} clients={clients} /><section className="view active sarmg-content-stack"><h2>{t("实例列表", "Instance list")}</h2><ClientsView clients={clients} cameras={cameras} changed={loadClients} toast={toast} select={id => { setSelected(id); window.location.hash = "details"; }} /></section></>}
+    {view === "details" && chosen && <><ClientDetails client={chosen} cameras={clientCameras} /><CameraView cameras={visible} search={search} setSearch={setSearch} inspect={setDrawerCamera} />{recordings.length > 0 && <RecordingsView cameras={recordings} toast={toast} />}</>}
+    {view === "logs" && <><EventsView events={events} cameras={cameras} unacknowledgedOnly={unacknowledgedOnly} setUnacknowledgedOnly={setUnacknowledgedOnly} refresh={() => void loadEvents().catch((error) => toast(errorText(error), "error"))} acknowledge={(id) => void acknowledge(id).catch((error) => toast(errorText(error), "error"))} /><AuditLogView failure={auditFailure} audit={audit} refresh={() => void loadAudit().catch((error) => toast(errorText(error), "error"))} /></>}
     </InstanceWorkspace>
-    {cameraDraft !== null && <CameraEditor draft={cameraDraft} setDraft={setCameraDraft} save={saveCamera} />}
+    {creatingClient && <CreateClientDialog close={() => setCreatingClient(false)} changed={loadClients} toast={toast} />}
     {drawerCamera !== null && <CameraDrawer camera={drawerCamera} close={() => setDrawerCamera(null)} toast={toast} />}
-    {deleteTarget && <ConfirmDangerDialog title={t("删除摄像头“", "Delete camera “") + deleteTarget.name + "”？"} description={t("已有录像文件不会立即删除。", "Existing recordings will not be deleted immediately.")} pending={deletePending} onClose={() => { if (!deleteBusy.current) setDeleteTarget(null); }} onConfirm={() => {
-      if (deleteBusy.current) return;
-      deleteBusy.current = true; setDeletePending(true); setDeleteFailure(null);
-      void deleteCamera(deleteTarget).then(() => setDeleteTarget(null))
-        .catch(error => setDeleteFailure({ requestId: errorRequestId(error) }))
-        .finally(() => { deleteBusy.current = false; setDeletePending(false); });
-    }}>{deleteFailure && <ErrorState requestId={deleteFailure.requestId}>{t("删除未能完成，请刷新摄像头列表确认状态。", "Deletion could not be completed. Refresh the camera list to check the state.")}</ErrorState>}</ConfirmDangerDialog>}
   </div>;
 }
 
-function CameraView({ cameras, search, setSearch, edit, remove, inspect, discover }: {
+function CameraView({ cameras, search, setSearch, inspect }: {
   cameras: Camera[]; search: string; setSearch(value: string): void;
-  edit(camera: Camera): void; remove(camera: Camera): void; inspect(camera: Camera): void; discover(): void;
+  inspect(camera: Camera): void;
 }) {
-  return <section className="view active sarmg-content-stack"><div className="command-bar"><div className="search-wrap"><span>⌕</span><TextField type="search" aria-label={t("搜索摄像头", "Search cameras")} value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("搜索名称或位置", "Search by name or location")} /></div><div className="command-actions"><Button className="button button-quiet" onClick={discover}>{t("发现ONVIF设备", "Discover ONVIF devices")}</Button></div></div>
-    <div className="camera-grid">{cameras.length === 0 ? <div className="empty-state full-span">{t("还没有匹配的摄像头。", "No matching cameras yet.")}</div> : cameras.map((camera, index) => <article key={camera.id} className="camera-card sarmg-content-panel reveal" style={{ animationDelay: `${index * 45}ms` }}><LiveVideo camera={camera} profile={camera.has_sub_stream ? "sub" : "main"} /><div className="camera-meta"><div><span className={`status-dot ${effectiveStatus(camera)}`} /><strong>{camera.name}</strong><small>{camera.location || t("未标注位置", "Location not specified")} · {[camera.manufacturer, camera.model].filter(Boolean).join(" ") || camera.adapter_kind.toUpperCase()} · {camera.storage_mode === "server" ? t("服务器录像", "Server recording") : t("客户端录像", "Client recording")}</small></div><span className="camera-status">{statusLabel(effectiveStatus(camera))}</span></div><div className="camera-actions"><Button onClick={() => inspect(camera)}>{t("主码流", "Main stream")}</Button>{camera.source_kind === "direct" && <><Button onClick={() => edit(camera)}>{t("配置", "Configuration")}</Button><Button className="danger-link" onClick={() => remove(camera)}>{t("删除", "Delete")}</Button></>}</div></article>)}</div>
+  return <section className="view active sarmg-content-stack"><div className="command-bar"><div className="search-wrap"><span>⌕</span><TextField type="search" aria-label={t("搜索摄像头", "Search cameras")} value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("搜索名称或位置", "Search by name or location")} /></div></div>
+    <div className="camera-grid">{cameras.length === 0 ? <div className="empty-state full-span">{t("该客户端还没有上报匹配的摄像头。", "This client has not reported any matching cameras yet.")}</div> : cameras.map((camera, index) => <article key={camera.id} className="camera-card sarmg-content-panel reveal" style={{ animationDelay: `${index * 45}ms` }}><LiveVideo camera={camera} profile={camera.has_sub_stream ? "sub" : "main"} /><div className="camera-meta"><div><span className={`status-dot ${effectiveStatus(camera)}`} /><strong>{camera.name}</strong><small>{camera.location || t("未标注位置", "Location not specified")} · {[camera.manufacturer, camera.model].filter(Boolean).join(" ") || camera.adapter_kind.toUpperCase()} · {camera.storage_mode === "server" ? t("服务器录像", "Server recording") : t("客户端录像", "Client recording")}</small></div><span className="camera-status">{statusLabel(effectiveStatus(camera))}</span></div><div className="camera-actions"><Button onClick={() => inspect(camera)}>{t("查看与控制", "View and control")}</Button></div></article>)}</div>
     </section>;
 }
 
-function InstanceOverview({ cameras, select, search, setSearch }: { cameras: Camera[]; select(id: string): void; search: string; setSearch(value: string): void }) {
-  return <section className="view active sarmg-content-stack"><h2>{t("实例总览", "Instance overview")}</h2><TextField type="search" aria-label={t("搜索摄像头", "Search cameras")} value={search} onChange={event => setSearch(event.target.value)} placeholder={t("搜索名称或位置", "Search by name or location")} />
-    <Table aria-label={t("摄像头实例列表", "Camera instance list")}><thead><tr><th>{t("名称", "Name")}</th><th>{t("厂商与型号", "Make and model")}</th><th>{t("接入方式", "Adapter")}</th><th>{t("状态", "Status")}</th><th>{t("存储", "Storage")}</th></tr></thead><tbody>{cameras.map(camera => <tr key={camera.id}><th><Button onClick={() => select(camera.id)}>{camera.name}</Button></th><td>{[camera.manufacturer, camera.model].filter(Boolean).join(" ") || "—"}</td><td>{camera.adapter_kind.toUpperCase()}</td><td>{statusLabel(effectiveStatus(camera))}</td><td>{camera.storage_mode === "server" ? t("服务器", "Server") : t("客户端", "Client")}</td></tr>)}</tbody></Table>
-  </section>;
+function InstanceStatistics({ cameras, clients }: { cameras: Camera[]; clients: SentinelClient[] }) {
+  return <section className="view active sarmg-content-stack"><h2>{t("统计", "Statistics")}</h2><Table aria-label={t("实例统计", "Instance statistics")}><thead><tr><th>{t("统计项", "Metric")}</th><th>{t("当前值", "Current value")}</th></tr></thead><tbody>
+    <tr><th scope="row">{t("实例总数", "Total instances")}</th><td>{clients.length}</td></tr><tr><th scope="row">{t("在线实例", "Online instances")}</th><td>{clients.filter(client => client.status === "online").length}</td></tr><tr><th scope="row">{t("待配对实例", "Instances awaiting pairing")}</th><td>{clients.filter(client => client.status === "pending").length}</td></tr><tr><th scope="row">{t("已上报摄像机", "Reported cameras")}</th><td>{cameras.filter(camera => camera.source_kind === "client").length}</td></tr>
+  </tbody></Table></section>;
 }
 
 function LiveVideo({ camera, profile, controls = false }: { camera: Camera; profile: string; controls?: boolean }) {
@@ -235,26 +161,19 @@ function LiveVideo({ camera, profile, controls = false }: { camera: Camera; prof
   return <div className={controls ? "detail-video" : "video-shell"}><video ref={video} muted autoPlay playsInline controls={controls} />{label !== "" && <div className="video-state">{label}</div>}{!controls && <div className="scanline" />}</div>;
 }
 
-function ClientsView({ clients, changed, toast }: {
+function ClientsView({ clients, cameras, changed, toast, select }: {
   clients: SentinelClient[];
+  cameras: Camera[];
   changed(): Promise<void>;
   toast(message: string, type?: string): void;
+  select(id: string): void;
 }) {
-  const [name, setName] = useState("");
   const [pending, setPending] = useState(false);
   const [rotating, setRotating] = useState<SentinelClient | null>(null);
   const [removing, setRemoving] = useState<SentinelClient | null>(null);
   const randomCode = () => {
     const bytes = crypto.getRandomValues(new Uint8Array(32));
     return Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("");
-  };
-  const create = async () => {
-    setPending(true);
-    try {
-      await request("/clients", isSentinelClient, { method: "POST", body: JSON.stringify({ name }) });
-      setName(""); await changed();
-      toast(t("客户端实例已创建", "Client instance created"), "success");
-    } finally { setPending(false); }
   };
   const rotate = async (client: SentinelClient) => {
     setPending(true);
@@ -272,18 +191,48 @@ function ClientsView({ clients, changed, toast }: {
       toast(client.status === "revoked" ? t("实例已删除", "Instance deleted") : t("实例已取消或撤销，可再次删除其信息", "Instance cancelled or revoked; delete it again to remove its entry"), "success");
     } finally { setPending(false); }
   };
-  return <section className="view active sarmg-content-stack">
-    <section className="management-block sarmg-content-panel"><div className="section-heading"><h2>{t("新建客户端实例", "Create client instance")}</h2></div>
-      <p>{t("每个实例拥有一个长期授权码。服务端加密保存并可查看；更换授权码会撤销现有客户端，必须重新配对。", "Each instance has one long-lived authorization code. It is encrypted, remains visible on the Server, and changing it revokes the current client until it pairs again.")}</p>
-      <label>{t("实例名称", "Instance name")}<TextField value={name} onChange={event => setName(event.target.value)} /></label>
-      <div className="sarmg-actions"><Button disabled={pending || name.trim() === ""} onClick={() => void create().catch(error => toast(errorText(error), "error"))}>{pending ? t("创建中…", "Creating…") : t("创建实例", "Create instance")}</Button></div>
-    </section>
-    <Table aria-label={t("客户端实例", "Client instances")}><thead><tr><th>{t("名称", "Name")}</th><th>{t("状态", "Status")}</th><th>{t("永久授权码", "Permanent authorization code")}</th><th>{t("版本", "Version")}</th><th>{t("操作", "Actions")}</th></tr></thead><tbody>
-      {clients.length === 0 ? <tr><td colSpan={5} className="empty-state">{t("尚无客户端实例", "No client instances")}</td></tr> : clients.map(client => <tr key={client.id}><td>{client.name}</td><td>{displayLabel(client.status)}</td><td><code>{client.authorization_code}</code></td><td>{client.client_version ?? "—"}</td><td>{client.status !== "revoked" && <Button disabled={pending} onClick={() => setRotating(client)}>{t("更换授权码", "Change code")}</Button>}<Button disabled={pending} onClick={() => setRemoving(client)}>{client.status === "pending" ? t("取消配对", "Cancel pairing") : client.status === "revoked" ? t("删除实例", "Delete instance") : t("撤销实例", "Revoke instance")}</Button></td></tr>)}
+  const cameraByInstance = new Map(cameras.filter(camera => camera.client_id !== null).map(camera => [camera.client_id, camera]));
+  return <div className="sarmg-content-stack">
+    <p>{t("一个实例对应一台摄像机和一个永久授权码；同一客户端安装可使用多个授权码分别连接多台摄像机。", "Each instance represents one camera and one permanent authorization code. One client installation may use multiple codes for separate cameras.")}</p>
+    <Table aria-label={t("摄像机实例列表", "Camera instance list")}><thead><tr><th>{t("名称", "Name")}</th><th>{t("配对状态", "Pairing status")}</th><th>{t("摄像机状态", "Camera status")}</th><th>{t("厂商 / 型号", "Make / model")}</th><th>{t("永久授权码", "Permanent authorization code")}</th><th>{t("操作", "Actions")}</th></tr></thead><tbody>
+      {clients.length === 0 ? <tr><td colSpan={6} className="empty-state">{t("尚无摄像机实例", "No camera instances")}</td></tr> : clients.map(client => { const camera = cameraByInstance.get(client.id); return <tr key={client.id}><th scope="row"><Button onClick={() => select(client.id)}>{client.name}</Button></th><td>{displayLabel(client.status)}</td><td>{camera ? statusLabel(effectiveStatus(camera)) : t("尚未上报", "Not yet reported")}</td><td>{camera ? [camera.manufacturer, camera.model].filter(Boolean).join(" / ") || camera.adapter_kind.toUpperCase() : "—"}</td><td><code>{client.authorization_code}</code></td><td>{client.status !== "revoked" && <Button disabled={pending} onClick={() => setRotating(client)}>{t("更换授权码", "Change code")}</Button>}<Button disabled={pending} onClick={() => setRemoving(client)}>{client.status === "pending" ? t("取消配对", "Cancel pairing") : client.status === "revoked" ? t("删除实例", "Delete instance") : t("撤销实例", "Revoke instance")}</Button></td></tr>; })}
     </tbody></Table>
     {rotating && <ConfirmDangerDialog title={t("更换实例授权码", "Change instance authorization code")} description={t("这会立即撤销当前客户端凭据并停用它管理的摄像头。客户端必须使用新授权码重新配对并重新上报摄像头。", "This immediately revokes the current client credential and disables its cameras. The client must pair again with the new authorization code and report its cameras again.")} pending={pending} onClose={() => { if (!pending) setRotating(null); }} onConfirm={() => { const target = rotating; setRotating(null); void rotate(target).catch(error => toast(errorText(error), "error")); }} />}
-    {removing && <ConfirmDangerDialog title={removing.status === "revoked" ? t("删除实例", "Delete instance") : removing.status === "pending" ? t("取消配对", "Cancel pairing") : t("撤销实例", "Revoke instance")} description={removing.status === "revoked" ? t("永久删除已取消或撤销的实例信息；若仍关联摄像头，请先删除摄像头。", "Permanently delete the cancelled or revoked instance entry. Delete any linked cameras first.") : t("当前授权码和客户端凭据将失效；操作完成后仍可从列表永久删除该实例信息。", "The authorization code and client credential will be invalidated. The instance entry can then be permanently deleted from the list.")} pending={pending} onClose={() => { if (!pending) setRemoving(null); }} onConfirm={() => { const target = removing; setRemoving(null); void remove(target).catch(error => toast(errorText(error), "error")); }} />}
-  </section>;
+    {removing && <ConfirmDangerDialog title={removing.status === "revoked" ? t("删除实例", "Delete instance") : removing.status === "pending" ? t("取消配对", "Cancel pairing") : t("撤销实例", "Revoke instance")} description={removing.status === "revoked" ? t("媒体路径清理确认完成后，永久删除该摄像机状态和授权实例；若清理尚未收敛，服务端会拒绝并要求稍后重试。", "Permanently delete the camera state and authorization instance after media-path removal is confirmed. If cleanup has not converged, the server rejects the request and asks you to retry later.") : t("当前授权码和客户端凭据将失效；服务端会先清理媒体路径，完成后可再永久删除该实例。", "The authorization code and client credential will be invalidated. The server first removes media paths; after cleanup, the instance can be permanently deleted.")} pending={pending} onClose={() => { if (!pending) setRemoving(null); }} onConfirm={() => { const target = removing; setRemoving(null); void remove(target).catch(error => toast(errorText(error), "error")); }} />}
+  </div>;
+}
+
+function ClientDetails({ client, cameras }: { client: SentinelClient; cameras: Camera[] }) {
+  return <section className="view active sarmg-content-stack"><h2>{t("实例详细信息", "Instance details")}</h2><Table aria-label={t("实例详细信息", "Instance details")}><thead><tr><th>{t("名称", "Name")}</th><th>{t("状态", "Status")}</th><th>{t("版本", "Version")}</th><th>{t("最后在线", "Last online")}</th><th>{t("摄像头", "Cameras")}</th></tr></thead><tbody><tr><th scope="row">{client.name}</th><td>{displayLabel(client.status)}</td><td>{client.client_version ?? "—"}</td><td>{client.last_seen_at === null ? "—" : formatDate(client.last_seen_at)}</td><td>{cameras.length}</td></tr></tbody></Table></section>;
+}
+
+function CreateClientDialog({ close, changed, toast }: { close(): void; changed(): Promise<void>; toast(message: string, type?: string): void }) {
+  const [name, setName] = useState("");
+  const [pending, setPending] = useState(false);
+  const [failure, setFailure] = useState<{ requestId?: string } | null>(null);
+  const busy = useRef(false);
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (busy.current || name.trim() === "") return;
+    busy.current = true; setPending(true); setFailure(null);
+    try {
+      await request("/clients", isSentinelClient, { method: "POST", body: JSON.stringify({ name: name.trim() }) });
+      await changed();
+      close();
+      toast(t("客户端实例已创建", "Client instance created"), "success");
+    } catch (error) {
+      setFailure({ requestId: errorRequestId(error) });
+    } finally {
+      busy.current = false; setPending(false);
+    }
+  };
+  return <Dialog title={t("新建摄像机实例", "Create camera instance")} description={t("每个实例生成一个永久授权码并只允许绑定一台摄像机；同一客户端可重复添加其他实例授权码。", "Each instance generates one permanent authorization code and binds exactly one camera. The same client can add authorization codes for other instances.")} onClose={() => { if (!busy.current) close(); }}>
+    <form className="sentinel-business sarmg-content-stack" onSubmit={event => void submit(event)} aria-busy={pending}>
+      {failure && <ErrorState requestId={failure.requestId}>{t("实例未能创建，请重试。", "The instance could not be created. Try again.")}</ErrorState>}
+      <label>{t("实例名称", "Instance name")}<InstanceNameField autoFocus value={name} onChange={event => setName(event.target.value)} required /></label>
+      <div className="sarmg-actions"><Button type="button" onClick={close} disabled={pending}>{t("取消", "Cancel")}</Button><Button type="submit" disabled={pending || name.trim() === ""}>{pending ? t("创建中…", "Creating…") : t("创建实例", "Create instance")}</Button></div>
+    </form>
+  </Dialog>;
 }
 
 function RecordingsView({ cameras, toast }: { cameras: Camera[]; toast(message: string, type?: string): void }) {
@@ -307,50 +256,14 @@ function EventsView({ events, cameras, unacknowledgedOnly, setUnacknowledgedOnly
   return <section className="view active sarmg-content-stack"><div className="command-bar"><label className="toggle-line"><Checkbox checked={unacknowledgedOnly} onChange={(event) => setUnacknowledgedOnly(event.target.checked)} />{t("仅显示未确认事件", "Show unacknowledged events only")}</label></div><Table aria-label={t("监控事件", "Monitoring events")}><thead><tr><th>{t("等级", "Severity")}</th><th>{t("事件", "Event")}</th><th>{t("摄像头", "Camera")}</th><th>{t("时间", "Time")}</th><th>{t("状态", "Status")}</th></tr></thead><tbody>{events.length === 0 ? <tr><td colSpan={5} className="empty-state">{t("没有事件", "No events")}</td></tr> : events.map((event) => <tr key={event.id}><td><span className={`severity ${event.severity}`}>{severityLabel(event.severity)}</span></td><td><strong>{displayLabel(event.kind)}</strong></td><td>{event.camera_id === null ? t("系统", "System") : names.get(event.camera_id) ?? t("系统", "System")}</td><td>{formatDate(event.created_at)}</td><td>{event.acknowledged_at === null ? <Button className="text-button" onClick={() => acknowledge(event.id)}>{t("确认", "Acknowledge")}</Button> : t("已确认", "Acknowledged")}</td></tr>)}</tbody></Table></section>;
 }
 
-function SystemView({ status, failure, audit, refresh }: { status: SystemStatus | null; failure: { requestId?: string } | null; audit: AuditRow[]; refresh(): void }) {
+function AuditLogView({ failure, audit, refresh }: { failure: { requestId?: string } | null; audit: AuditRow[] | null; refresh(): void }) {
   return <section className="view active sarmg-content-stack">
-    {failure ? <ErrorState requestId={failure.requestId} onRetry={refresh}>{t("系统状态与业务审计暂不可用。", "System status and business audit are temporarily unavailable.")}</ErrorState>
-      : status === null ? <LoadingState>{t("正在加载系统状态…", "Loading system status…")}</LoadingState> : <Table aria-label={t("系统状态", "System status")}>
-      <thead><tr><th scope="col">{t("项目", "Item")}</th><th scope="col">{t("当前状态", "Current status")}</th><th scope="col">{t("说明", "Description")}</th></tr></thead>
-      <tbody>
-        <tr><th scope="row">{t("媒体服务", "Media service")}</th><td>{status.media_service === "ok" ? t("运行正常", "Healthy") : t("连接失败", "Connection failed")}</td><td>MediaMTX</td></tr>
-        <tr><th scope="row">{t("在线设备", "Online devices")}</th><td>{status.cameras.online} / {status.cameras.total}</td><td>{t("当前主码流状态", "Current main stream status")}</td></tr>
-        <tr><th scope="row">{t("录像任务", "Recording tasks")}</th><td>{status.cameras.recording}</td><td>{t("主码流持续录制", "Continuous main stream recording")}</td></tr>
-      </tbody>
-    </Table>}
-    <section className="management-block sarmg-content-panel"><div className="section-heading"><h2>{t("最近业务审计记录", "Recent business audit")}</h2></div>
-      <div className="audit-list">{audit.length === 0 ? <div className="empty-state">{t("暂无审计记录", "No audit records yet")}</div> : audit.map((row) => <div key={row.id}><span>{displayLabel(row.action)}</span><small>{formatDate(row.created_at)}</small><code>{displayLabel(row.entity_type)}{row.entity_id === null ? "" : " / " + row.entity_id.slice(0, 8)}</code></div>)}</div>
-    </section>
+    {failure ? <ErrorState requestId={failure.requestId} onRetry={refresh}>{t("审计日志暂不可用。", "Audit logs are temporarily unavailable.")}</ErrorState>
+      : audit === null ? <LoadingState>{t("正在加载审计日志…", "Loading audit logs…")}</LoadingState>
+        : <section className="management-block sarmg-content-panel"><div className="section-heading"><h2>{t("审计日志", "Audit logs")}</h2></div>
+          <div className="audit-list">{audit.length === 0 ? <div className="empty-state">{t("暂无审计日志", "No audit logs yet")}</div> : audit.map((row) => <div key={row.id}><span>{displayLabel(row.action)}</span><small>{formatDate(row.created_at)}</small><code>{displayLabel(row.entity_type)}{row.entity_id === null ? "" : " / " + row.entity_id.slice(0, 8)}</code></div>)}</div>
+        </section>}
   </section>;
-}
-
-function CameraEditor({ draft, setDraft, save }: { draft: CameraDraft; setDraft(value: CameraDraft | null): void; save(value: CameraDraft): Promise<void> }) {
-  const [pending, setPending] = useState(false);
-  const busy = useRef(false);
-  const [failure, setFailure] = useState<{ requestId?: string } | null>(null);
-  const field = (key: keyof CameraDraft) => (event: React.ChangeEvent<HTMLInputElement>) => setDraft({ ...draft, [key]: event.target.type === "checkbox" ? event.target.checked : event.target.value });
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); if (busy.current) return;
-    busy.current = true; setPending(true); setFailure(null);
-    try { await save(draft); } catch (error) { setFailure({ requestId: errorRequestId(error) }); setDraft({ ...draft, password: "" }); }
-    finally { busy.current = false; setPending(false); }
-  }
-  return <Dialog title={draft.id === "" ? t("添加摄像头", "Add camera") : t("编辑摄像头", "Edit camera")} onClose={() => { if (!busy.current) setDraft(null); }}>
-    <form className="sentinel-business" onSubmit={event => void submit(event)} aria-busy={pending}>
-      {failure && <ErrorState requestId={failure.requestId}>{t("设备配置未能保存，请检查输入并重试。", "Unable to save the device configuration. Check the input and retry.")}</ErrorState>}
-      <fieldset disabled={pending}><div className="form-grid">
-        <label>{t("名称", "Name")}<InstanceNameField value={draft.name} onChange={field("name")} required /></label>
-        <label>{t("位置", "Location")}<TextField value={draft.location} onChange={field("location")} /></label>
-        <label className="wide">{t("主码流 RTSP", "Main stream RTSP")}<TextField value={draft.main_stream_url} onChange={field("main_stream_url")} required={draft.id === ""} /></label>
-        <label className="wide">{t("子码流 RTSP", "Sub-stream RTSP")}<TextField value={draft.sub_stream_url} onChange={field("sub_stream_url")} /></label>
-        <label className="wide">{t("ONVIF设备服务地址", "ONVIF device service URL")}<TextField value={draft.onvif_url} onChange={field("onvif_url")} /></label>
-        <label>{t("设备用户名", "Device username")}<TextField value={draft.username} onChange={field("username")} autoComplete="off" /></label>
-        <label>{t("设备密码", "Device password")}<TextField type="password" value={draft.password} onChange={field("password")} autoComplete="new-password" /></label>
-      </div><p className="field-help">{t("编辑时流地址和密码留空会保持原值；凭据不会返回浏览器。", "Leave stream URLs and passwords blank to preserve them when editing. Credentials are never returned to the browser.")}</p>
-      <div className="check-row"><label><Checkbox checked={draft.enabled} onChange={field("enabled")} />{t("启用设备", "Enable device")}</label><label><Checkbox checked={draft.record_enabled} onChange={field("record_enabled")} />{t("录制主码流", "Record main stream")}</label></div>
-      <div className="sarmg-actions"><Button onClick={() => setDraft(null)}>{t("取消", "Cancel")}</Button><Button type="submit">{pending ? t("正在保存…", "Saving…") : t("保存设备", "Save device")}</Button></div></fieldset>
-    </form>
-  </Dialog>;
 }
 
 function CameraDrawer({ camera, close, toast }: { camera: Camera; close(): void; toast(message: string, type?: string): void }) {
@@ -408,8 +321,6 @@ const formatDate = (value: string) => new Intl.DateTimeFormat(getLocale(), { yea
 const formatDuration = (seconds: number) => { const total = Math.round(seconds); const hours = Math.floor(total / 3600); const minutes = Math.floor((total % 3600) / 60); return [hours > 0 ? t("{0}时", "{0}h", [hours]) : "", minutes > 0 ? t("{0}分", "{0}m", [minutes]) : "", t("{0}秒", "{0}s", [total % 60]) ].filter(Boolean).join(getLocale() === "en" ? " " : ""); };
 const localDateInput = (date: Date) => new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 const errorText = (error: unknown) => { const id = errorRequestId(error); return id ? t("请求失败，请重试。请求标识： {0}", "Request failed. Please retry. Request ID: {0}", [id]) : t("请求失败，请重试。", "Request failed. Please retry."); };
-const toCameraDraft = (camera: Camera): CameraDraft => ({ ...emptyCamera(), id: camera.id, name: camera.name, location: camera.location, username: camera.username ?? "", enabled: camera.enabled, record_enabled: camera.record_enabled });
-
 function currentView(): View {
   const hash = window.location.hash.slice(1);
   return hash === "details" || hash === "logs" ? hash : "instances";

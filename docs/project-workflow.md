@@ -12,13 +12,13 @@ Sentinel Monitor 0.2.9
 │  ├─ 验证固定 release + MediaMTX contract
 │  ├─ 解析当前配置与 Secret
 │  ├─ 取得 database/runtime/MediaMTX 锁
-│  ├─ 验证当前 SQLite、Schema 与全部摄像头凭据
+│  ├─ 验证当前 SQLite、Schema 与全部实例授权密文
 │  ├─ 启动 Rust API、reconciler 与 MediaMTX
 │  ├─ 控制/API/playback 保持 loopback；生产 RTSPS/HLS/WebRTC 媒体 listener 按合同绑定主机网卡
 │  └─ Caddy 将浏览器 TLS 同源入口转发到三个明确的 127.0.0.1 上游
 ├─ Administrator 控制面
 │  ├─ login/session/logout -> Session + CSRF
-│  ├─ 摄像头期望态 -> durable operation
+│  ├─ 授权实例/Client 设备快照 -> 摄像机期望态
 │  ├─ reconciler -> MediaMTX actual state
 │  └─ 用户、事件、审计与 operation status
 ├─ 媒体面
@@ -56,7 +56,7 @@ Rust binary，生成完整 manifest，在同一文件系统暂存并验证后，
 2. 解析环境；生产 Cookie 必须 Secure，`STATIC_DIR` 必须等于发行树 Web 目录。
 3. 取得数据库 instance 排他锁和 maintenance 共享锁。
 4. 取得 runtime `app.lock` 并维护 PID；MediaMTX 由脚本持有 companion lock。
-5. 私有复制并验证 SQLite generation、租约 singleton 与所有加密摄像头凭据。
+5. 私有复制并验证 SQLite generation、租约 singleton 与所有加密实例授权码。
 6. 启动后台 reconciler、HTTP 服务与 readiness；任何合同不能证明时 fail closed。
 
 ## 4. Administrator 认证流程
@@ -88,34 +88,33 @@ POST /api/v2/auth/logout + X-CSRF-Token
 Administrator Session；unsafe method 还要求当前 CSRF、Origin/Host/URI authority 边界以及单值
 `Sec-Fetch-Site: same-origin`。
 
-摄像头表中的 RTSP/ONVIF `username`、`password` 是访问设备的加密业务凭据，绝不是 Sentinel 控制面
-用户、权限或 Session。二者不得共用存储、日志字段或前端状态。
+摄像机 RTSP/ONVIF 凭据由 Client 保管，Server 摄像机表不存储 URL、username 或 password。
+一个加密授权码只对应一个摄像机实例，与 Administrator Session 始终分离。
 
-这一身份变更只覆盖 Server 的 `users.username`、管理认证 API 和由 Server 发布的 React/Vite Web。
-摄像头身份、MediaMTX internal auth、媒体 JWT subject/camera/actions、录像和播放流程都保持原合同；
-不能机械替换摄像头表或媒体 token 中的数据面字段。
+管理认证 API 和 React/Vite Web 属于 Server 控制面；Client 配对、MediaMTX internal auth、
+媒体 JWT subject/camera/actions、录像和播放属于数据面。两类身份不得共用存储或日志字段。
 
-## 5. 摄像头写操作状态机
+## 5. 授权实例与媒体状态机
 
 ```text
-HTTP camera create/update/delete
-  -> 验证 Administrator Session、CSRF、Origin/Host、严格 DTO
-  -> SQLite transaction: desired camera + media_operation + audit_logs
-  -> 返回 camera + operation_id（删除为 202）
+Administrator 创建授权实例 -> 加密保存授权码
+  -> Client 以该码配对，上报且仅上报一台摄像机快照
+  -> SQLite transaction: camera snapshot + desired media state + operation
   -> reconciler 领取 global lease + operation lease
   -> transaction 外调用 MediaMTX
        ├─ 成功 -> actual path + succeeded
        ├─ 明确失败 -> failed + 可解释错误
        └─ 结果不可证明 -> unknown
-  -> GET /api/v2/media/operations/{id}
+  -> 更换授权码要求 Client 重新配对
+  -> 删除：先 revoked + 清理路径，再永久删除实例
 ```
 
 只有仍同时持有未过期全局/操作租约的 owner 能 finalize。启动恢复只处理确实过期或缺失租约的 running，
-不会清空健康 owner。删除 API 立即隐藏摄像头，但 MediaMTX 清理状态仍由 operation 跟踪；录像不会因删除
-页面条目而被隐式擦除。
+不会清空健康 owner。首次删除会撤销并隐藏摄像机，二次删除只在 MediaMTX 清理已确认后执行；
+录像字节不会因删除页面条目而被隐式擦除。
 
-PTZ 不走上述状态机：`POST /api/v2/cameras/{id}/ptz` 同步调用 ONVIF，成功后 best-effort 写审计。当前没有
-PTZ operation、通用 `Idempotency-Key` 或客户端 revision CAS；网络结果不确定时不能自动重放 move。
+PTZ 不由 Server 直连 ONVIF：`POST /api/v2/cameras/{id}/ptz` 将有期限命令排队给所属 Client，
+Client 在快照通道回报结果。网络结果不确定时不能自动重放 move。
 
 ## 6. 漂移修复
 
