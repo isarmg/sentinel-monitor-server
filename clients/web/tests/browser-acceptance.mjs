@@ -56,9 +56,10 @@ try {
       await expect(page.getByRole("table", { name: "实例统计" })).toBeVisible();
       await expect(instanceTable.getByRole("button", { name: activeInstance.name, exact: true })).toBeVisible();
       await expect(page.getByRole("complementary")).toHaveCount(0);
+      await expect(page.locator(".sarmg-instance-sidebar, .sarmg-instance-workspace")).toHaveCount(0);
       const menuToFirst = await page.evaluate(() => {
         const header = document.querySelector(".sarmg-page-header");
-        const first = document.querySelector(".sarmg-instance-workspace");
+        const first = document.querySelector(".sentinel-business");
         if (!header || !first) throw new Error("Sentinel spacing fixture is incomplete");
         return first.getBoundingClientRect().top - header.getBoundingClientRect().bottom;
       });
@@ -81,6 +82,8 @@ try {
       await page.keyboard.press("Escape");
       await instanceTable.getByRole("button", { name: activeInstance.name, exact: true }).click();
       await expect(page.getByRole("button", { name: "详细信息", exact: true })).toHaveAttribute("aria-pressed", "true");
+      await expect(page.getByRole("complementary")).toHaveCount(0);
+      await expect(page.locator(".sarmg-instance-sidebar, .sarmg-instance-workspace")).toHaveCount(0);
       await page.getByRole("button", { name: "查看与控制", exact: true }).click();
       const movement = page.getByRole("button", { name: "云台向上", exact: true });
       await movement.focus(); await page.keyboard.down("Space"); await page.keyboard.up("Space");
@@ -102,6 +105,7 @@ try {
       await page.getByRole("button", { name: "确认", exact: true }).click();
       await expect(page.getByRole("cell", { name: "已确认", exact: true })).toBeVisible();
       await expect(page.getByRole("complementary")).toHaveCount(0);
+      await expect(page.locator(".sarmg-instance-sidebar, .sarmg-instance-workspace")).toHaveCount(0);
       await expect(page.getByRole("banner").locator('.sarmg-product-identity')).toHaveText("Sentinel Monitor");
       await expect(page.getByText("更新摄像头", { exact: true })).toBeVisible();
       await expect(page.getByRole("table", { name: "系统状态", exact: true })).toHaveCount(0);

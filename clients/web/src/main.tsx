@@ -3,7 +3,7 @@ import { t, getLocale } from "@sarmg/admin-ui/i18n";
 import { StrictMode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { FormEvent } from "react";
-import { createSarmgAdminApplication, errorRequestId, useAdminApplication, InstancePageNavigation, InstanceHeaderActions, InstanceWorkspace, InstanceNameField, type InstancePage } from "@sarmg/admin-shell";
+import { createSarmgAdminApplication, errorRequestId, useAdminApplication, InstancePageNavigation, InstanceHeaderActions, InstanceNameField, type InstancePage } from "@sarmg/admin-shell";
 import { Button, Checkbox, ConfirmDangerDialog, Dialog, ErrorState, LoadingState, Select, Table, TextField } from "@sarmg/admin-ui";
 
 import "@sarmg/design-tokens/tokens.css";
@@ -105,13 +105,11 @@ function Console() {
 
   return <div className="sentinel-business sarmg-content-stack">
     <InstanceHeaderActions create={() => setCreatingClient(true)} refresh={() => void Promise.all([loadCameras(), loadEvents(), loadClients(), ...(view === "logs" ? [loadAudit()] : [])]).catch(error => toast(errorText(error), "error"))} />
-    <InstanceWorkspace instances={clients} selected={chosen?.id} select={id => { setSelected(id); window.location.hash = "details"; }} label={t("摄像机实例", "Camera instances")} showSidebar={view === "details"}>
     <InstancePageNavigation page={view} detailsDisabled={!chosen} navigate={value => { window.location.hash = value; }} />
     <h1 className="sarmg-visually-hidden">{viewTitle(view)}</h1>
     {view === "instances" && <><InstanceStatistics cameras={cameras} clients={clients} /><section className="view active sarmg-content-stack"><h2>{t("实例列表", "Instance list")}</h2><ClientsView clients={clients} cameras={cameras} changed={loadClients} toast={toast} select={id => { setSelected(id); window.location.hash = "details"; }} /></section></>}
     {view === "details" && chosen && <><ClientDetails client={chosen} cameras={clientCameras} /><CameraView cameras={visible} search={search} setSearch={setSearch} inspect={setDrawerCamera} />{recordings.length > 0 && <RecordingsView cameras={recordings} toast={toast} />}</>}
     {view === "logs" && <><EventsView events={events} cameras={cameras} unacknowledgedOnly={unacknowledgedOnly} setUnacknowledgedOnly={setUnacknowledgedOnly} refresh={() => void loadEvents().catch((error) => toast(errorText(error), "error"))} acknowledge={(id) => void acknowledge(id).catch((error) => toast(errorText(error), "error"))} /><AuditLogView failure={auditFailure} audit={audit} refresh={() => void loadAudit().catch((error) => toast(errorText(error), "error"))} /></>}
-    </InstanceWorkspace>
     {creatingClient && <CreateClientDialog close={() => setCreatingClient(false)} changed={loadClients} toast={toast} />}
     {drawerCamera !== null && <CameraDrawer camera={drawerCamera} close={() => setDrawerCamera(null)} toast={toast} />}
   </div>;

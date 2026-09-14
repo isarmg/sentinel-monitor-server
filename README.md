@@ -1,6 +1,6 @@
 # 哨界 Sentinel Monitor
 
-Sentinel Monitor `0.2.10` 是只支持 `x86_64-unknown-linux-gnu` 物理机原生部署的浏览器摄像头监控系统。Rust/Axum 控制面
+Sentinel Monitor `0.2.11` 是只支持 `x86_64-unknown-linux-gnu` 物理机原生部署的浏览器摄像头监控系统。Rust/Axum 控制面
 负责用户、客户端实例、摄像头、PTZ、审计和期望态；固定版本的 MediaMTX companion 负责 RTSP 接入、WHEP/HLS
 播放和服务端录像；SQLite 保存当前业务状态。独立 `sentinel-monitor-client` 在摄像头所在主机管理 RTSP 凭据、向 Server 发布视频，并可按摄像头选择录像保存在客户端或服务端。
 
@@ -10,7 +10,7 @@ Client 使用可扩展设备适配器统一不同品牌：当前 `rtsp` 适配�
 
 每个 Sentinel Client 实例拥有一个长期授权码。Server 同时保存用于匹配的摘要和可供管理员查看的认证加密密文；首次配对不消耗授权码。管理员更换授权码会立即撤销现有客户端访问凭据、停止其发布路径并将实例恢复为待配对，Client 必须使用新码显式重新配对。
 
-产品只理解当前 `0.2.10` Schema、`/api/v2` 协议、凭据 envelope 和固定发行树，不读取其他代数据库、
+产品只理解当前 `0.2.11` Schema、`/api/v2` 协议、凭据 envelope 和固定发行树，不读取其他代数据库、
 密文、runtime 或配置，也不提供迁移、备份和恢复命令。稳定版本形成后的代际变更才会交给
 `sarmg-upgrade`；当前开发阶段没有历史升级 edge。
 
