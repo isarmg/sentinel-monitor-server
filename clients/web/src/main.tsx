@@ -1,9 +1,9 @@
 import { displayLabel } from "./display-labels";
-import { t, getLocale } from "../shell/i18n.js";
+import { t, getLocale } from "@sarmg/admin-ui/i18n";
 import { StrictMode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { FormEvent } from "react";
-import { createSarmgAdminApplication, errorRequestId, useAdminApplication, InstancePageNavigation, InstanceHeaderActions, InstanceWorkspace, InstanceNameField, type InstancePage } from "../shell/index.js";
+import { createSarmgAdminApplication, errorRequestId, useAdminApplication, InstancePageNavigation, InstanceHeaderActions, InstanceWorkspace, InstanceNameField, type InstancePage } from "@sarmg/admin-shell";
 import { Button, Checkbox, ConfirmDangerDialog, Dialog, ErrorState, LoadingState, Select, Table, TextField } from "@sarmg/admin-ui";
 
 import "@sarmg/design-tokens/tokens.css";

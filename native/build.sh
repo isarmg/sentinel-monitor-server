@@ -185,8 +185,11 @@ install -m 0555 -- "$APP_STAGE" "$STAGE/bin/sentinel-monitor"
 install -m 0555 -- "$MEDIA_SOURCE" "$STAGE/bin/mediamtx"
 install -m 0444 -- "$SOURCE_ROOT/config/mediamtx.yml" "$STAGE/config/mediamtx.yml"
 install -m 0444 -- "$SOURCE_ROOT/config/mediamtx.lock" "$STAGE/config/mediamtx.lock"
-for script in common.sh bootstrap.sh start.sh status.sh stop.sh; do
+for script in common.sh sentinelctl; do
   install -m 0555 -- "$SOURCE_ROOT/native/$script" "$STAGE/native/$script"
+done
+for action in .bootstrap-action.sh .start-action.sh .status-action.sh .stop-action.sh; do
+  install -m 0444 -- "$SOURCE_ROOT/native/$action" "$STAGE/native/$action"
 done
 cp -a -- "$WEB_STAGE/." "$STAGE/web/"
 find -P "$STAGE/web" -type d -exec chmod 0555 -- {} +
@@ -241,4 +244,4 @@ if [[ -z "${SENTINEL_NATIVE_TEST_ROOT:-}" ]]; then
 fi
 
 echo "Published immutable Sentinel release: $RELEASE_ROOT"
-echo "Next: $RELEASE_ROOT/native/bootstrap.sh"
+echo "Next: $RELEASE_ROOT/native/sentinelctl bootstrap"

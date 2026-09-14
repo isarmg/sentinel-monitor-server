@@ -41,10 +41,10 @@ Sentinel Monitor 0.2.8
 `x86_64-unknown-linux-gnu`，没有其他架构、OS 或 libc 的正式构建分支。脚本构建 Web 和 source-bound
 Rust binary，生成完整 manifest，在同一文件系统暂存并验证后，以 no-clobber 语义发布固定版本目录。
 
-`bootstrap.sh` 创建目录、0600 环境文件和初始 Administrator 配置材料，但账户行要到应用首次打开全新
+`sentinelctl bootstrap` 创建目录、0600 环境文件和初始 Administrator 配置材料，但账户行要到应用首次打开全新
 数据库时才创建。它不启动服务、不覆盖配置、不回显随机 Secret。操作者
 编辑密码、配置 Client 可达且证书受信的 `rtsps://` 发布 origin 与证书/私钥并运行
-`--confirm-config` 后，`start.sh` 才按锁顺序启动 companion 和应用；运行机同样必须是 Linux x86_64。
+`sentinelctl bootstrap --confirm-config` 后，`sentinelctl start` 才按锁顺序启动 companion 和应用；运行机同样必须是 Linux x86_64。
 
 主机代理源资产固定为 `deploy/Caddyfile`，不进入应用生命周期脚本。它只允许
 `127.0.0.1:8080/8888/8889` 三个原生进程上游；根目录不存在第二份 Caddyfile，仓库也没有容器 DNS
@@ -139,17 +139,17 @@ Administrator Browser Session
 
 ## 8. 停机与代际数据边界
 
-`stop.sh` 通过 operations lock 串行生命周期动作，先停止应用，使数据库/reconciler/runtime 锁释放，再
+`sentinelctl stop` 通过 operations lock 串行生命周期动作，先停止应用，使数据库/reconciler/runtime 锁释放，再
 停止 MediaMTX。直接 kill 或乱序停止可能把外部效果留在 unknown，应保全日志后由 reconciler/人工判断。
 
 未来备份、恢复或升级必须在两进程停止后，由外部升级仓固定按 database maintenance、runtime、MediaMTX
 顺序取得排他锁，把 SQLite、MediaMTX config/contract、recordings 和 external key 身份作为组合状态处理。
 当前产品不包含迁移器、不扫描其他代路径、不解析非当前 Schema/密文，也不通过 fallback 修补数据。
 
-## 9. Web 构建与 Foundation 0.7.6 流程
+## 9. Web 构建与 Foundation 0.7.11 流程
 
 ```text
-package.json + package-lock.json 精确锁定 Foundation 0.7.6 和工具链
+package.json + package-lock.json 精确锁定 Foundation 0.7.11 和工具链
   -> npm ci
   -> check:foundation
        ├─ 校验 Node/React/TypeScript/Vite 精确版本
@@ -175,7 +175,7 @@ npm run build
 
 `build` 已把 `check:foundation` 设为硬前置，因此不能通过直接执行 Vite 跳过共享边界。构建产物完全自包含；
 浏览器运行时不解析 npm 包，也不访问 npm registry、Foundation 仓库或远程 CSS。
-构建期八个 Web 包来自 Foundation `v0.7.6` GitHub Release 归档，并由 lockfile integrity 锁定字节；
+构建期八个 Web 包来自 Foundation `v0.7.11` GitHub Release 归档，并由 lockfile integrity 锁定字节；
 Rust crate 由版本 `=0.7.0` 和 revision `77e7ad7af8e1bf62432bd6bdd8fa9aff54cb39d1` 双重锁定。两者都不读取
 共同父目录或 sibling checkout，也不提供旧来源 fallback。
 

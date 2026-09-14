@@ -17,7 +17,7 @@ Client 使用可扩展设备适配器统一不同品牌：当前 `rtsp` 适配�
 浏览器源码统一位于 `clients/web/`；可提交的环境样例和受审 MediaMTX 配置统一位于 `config/`；主机侧
 代理模板统一位于 `deploy/`。真实 credentials、运行环境文件和录像不进入源码仓库。生产环境文件唯一位置是
 `/etc/isarmg/sentinel-monitor.env`。本仓库刻意不提供 systemd unit；正式生命周期由不可变发行树内的
-`native/bootstrap.sh|start.sh|status.sh|stop.sh` 管理。
+`native/sentinelctl bootstrap|start|status|stop` 统一管理；内部动作模块不可直接执行。
 
 Sentinel Rust 控制面以及 MediaMTX 的 API、metrics、playback 管理端口只监听 loopback。媒体监听不同：
 生产启动器强制 RTSPS `:8322`，HLS `:8888`、WebRTC HTTP `:8889` 和 WebRTC UDP `:8189` 按 MediaMTX 合同监听主机网卡。

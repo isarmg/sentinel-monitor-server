@@ -604,7 +604,9 @@ fn parse_bounded_xml<'a>(xml: &'a str, context: &str) -> Result<Document<'a>> {
         sarmg_secure_xml::Error::Budget(_) => {
             AppError::Upstream(format!("ONVIF{context}XML超过解析预算"))
         }
-        sarmg_secure_xml::Error::Parse(_) => AppError::Upstream(format!("ONVIF{context}XML无效")),
+        sarmg_secure_xml::Error::Parse(_) | sarmg_secure_xml::Error::Streaming(_) => {
+            AppError::Upstream(format!("ONVIF{context}XML无效"))
+        }
     })
 }
 

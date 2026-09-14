@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+[[ "${SENTINEL_LIFECYCLE_DISPATCH:-}" == "start" ]] || {
+  echo "Use native/sentinelctl start" >&2
+  exit 2
+}
+
 [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]] || {
   printf '%s\n' 'Sentinel release runtime requires x86_64 Linux' >&2
   exit 1
@@ -14,7 +19,7 @@ deployment_paths
 verify_release "$SENTINEL_RELEASE_ROOT"
 
 [[ ! -e "$SENTINEL_REVIEW_MARKER" && ! -L "$SENTINEL_REVIEW_MARKER" ]] ||
-  die "Configuration has not been confirmed; run bootstrap.sh --confirm-config"
+  die "Configuration has not been confirmed; run sentinelctl bootstrap --confirm-config"
 load_deployment_env
 require_runtime_contract
 assert_private_directory "$SENTINEL_STATE_DIR" "state directory"

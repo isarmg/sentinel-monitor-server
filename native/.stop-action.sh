@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+[[ "${SENTINEL_LIFECYCLE_DISPATCH:-}" == "stop" ]] || {
+  echo "Use native/sentinelctl stop" >&2
+  exit 2
+}
+
 SCRIPT_PATH="${BASH_SOURCE[0]}"
 # shellcheck source=/dev/null
 source "$(cd "$(dirname "$SCRIPT_PATH")" && pwd -P)/common.sh"

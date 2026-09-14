@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+[[ "${SENTINEL_LIFECYCLE_DISPATCH:-}" == "bootstrap" ]] || {
+  echo "Use native/sentinelctl bootstrap" >&2
+  exit 2
+}
+
 SCRIPT_PATH="${BASH_SOURCE[0]}"
 # shellcheck source=/dev/null
 source "$(cd "$(dirname "$SCRIPT_PATH")" && pwd -P)/common.sh"
@@ -13,7 +18,7 @@ if (( $# == 0 )); then
 elif (( $# == 1 )) && [[ "$1" == "--confirm-config" ]]; then
   MODE="confirm"
 else
-  die "Usage: bootstrap.sh [--confirm-config]"
+  die "Usage: sentinelctl bootstrap [--confirm-config]"
 fi
 
 ensure_directory "$(dirname "$SENTINEL_CONFIG_DIR")" 755 "configuration parent"
@@ -33,7 +38,7 @@ if [[ "$MODE" == "confirm" ]]; then
     assert_private_file "$SENTINEL_REVIEW_MARKER" "configuration review marker"
     rm -- "$SENTINEL_REVIEW_MARKER"
   fi
-  echo "Sentinel 0.2.8 configuration accepted. Start it with: $SENTINEL_RELEASE_ROOT/native/start.sh"
+  echo "Sentinel 0.2.8 configuration accepted. Start it with: $SENTINEL_RELEASE_ROOT/native/sentinelctl start"
   exit 0
 fi
 
@@ -42,7 +47,7 @@ if [[ -e "$SENTINEL_ENV_FILE" || -L "$SENTINEL_ENV_FILE" ]]; then
   echo "Configuration already exists and was not changed: $SENTINEL_ENV_FILE"
   if [[ -e "$SENTINEL_REVIEW_MARKER" || -L "$SENTINEL_REVIEW_MARKER" ]]; then
     assert_private_file "$SENTINEL_REVIEW_MARKER" "configuration review marker"
-    echo "Review it, then run: $SENTINEL_RELEASE_ROOT/native/bootstrap.sh --confirm-config"
+    echo "Review it, then run: $SENTINEL_RELEASE_ROOT/native/sentinelctl bootstrap --confirm-config"
   fi
   exit 0
 fi
@@ -126,4 +131,4 @@ unset JWT_SECRET CREDENTIAL_KEY ADMIN_PASSWORD
 echo "Created private configuration without printing its secrets: $SENTINEL_ENV_FILE"
 echo "Replace the generated administrator password, set PUBLIC_RTSP_PUBLISH_BASE_URL to the"
 echo "client-reachable rtsps:// origin, provision its trusted certificate/key, and review every setting with a protected editor."
-echo "Then run: $SENTINEL_RELEASE_ROOT/native/bootstrap.sh --confirm-config"
+echo "Then run: $SENTINEL_RELEASE_ROOT/native/sentinelctl bootstrap --confirm-config"

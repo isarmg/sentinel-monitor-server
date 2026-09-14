@@ -42,7 +42,7 @@ pathDefaults:
   sourceOnDemandStartTimeout: 15s
   sourceOnDemandCloseAfter: 15s
   recordFormat: fmp4
-  # start.sh supplies the absolute state path through
+  # sentinelctl start supplies the absolute state path through
   # MTX_PATHDEFAULTS_RECORDPATH; this inert default never points at a checkout.
   recordPath: /var/lib/isarmg/sentinel-monitor/recordings/%path/%Y-%m-%d_%H-%M-%S-%f
   recordPartDuration: 1s

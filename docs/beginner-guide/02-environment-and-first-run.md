@@ -31,7 +31,7 @@ cargo +1.98.0 run -- serve
 
 ## 2.4 启动 companion
 
-使用 `native/start.sh` 让脚本验证 binary SHA、版本、配置、目录权限和锁，再启动 MediaMTX；不要绕过
+使用 `native/sentinelctl start` 让统一命令验证 binary SHA、版本、配置、目录权限和锁，再启动 MediaMTX；不要绕过
 脚本直接后台运行。随后启动 Sentinel，并分别检查应用与 companion 的 loopback readiness。
 
 ## 2.5 第一条摄像头练习

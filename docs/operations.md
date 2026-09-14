@@ -43,21 +43,21 @@ Node `26.7.0`。
 export SENTINEL_MEDIAMTX_SOURCE=/absolute/path/to/mediamtx
 ./native/build.sh
 
-/opt/isarmg/sentinel-monitor/releases/0.2.8/native/bootstrap.sh
+/opt/isarmg/sentinel-monitor/releases/0.2.8/native/sentinelctl bootstrap
 sudoedit /etc/isarmg/sentinel-monitor.env
-/opt/isarmg/sentinel-monitor/releases/0.2.8/native/bootstrap.sh --confirm-config
-/opt/isarmg/sentinel-monitor/releases/0.2.8/native/start.sh
-/opt/isarmg/sentinel-monitor/releases/0.2.8/native/status.sh
+/opt/isarmg/sentinel-monitor/releases/0.2.8/native/sentinelctl bootstrap --confirm-config
+/opt/isarmg/sentinel-monitor/releases/0.2.8/native/sentinelctl start
+/opt/isarmg/sentinel-monitor/releases/0.2.8/native/sentinelctl status
 ```
 
 构建机必须是 Linux x86_64，并安装 Rust `1.98.0` 的 `rustfmt`、`clippy` 组件及
-`x86_64-unknown-linux-gnu` target。`native/build.sh` 显式使用该 target；`start.sh` 会再次拒绝错误运行
+`x86_64-unknown-linux-gnu` target。`native/build.sh` 显式使用该 target；`sentinelctl start` 会再次拒绝错误运行
 平台。不得用修改 manifest 字符串、跳过 target gate 或复制别的平台 binary 形成“临时支持”。
 
 停止：
 
 ```bash
-/opt/isarmg/sentinel-monitor/releases/0.2.8/native/stop.sh
+/opt/isarmg/sentinel-monitor/releases/0.2.8/native/sentinelctl stop
 ```
 
 同版本第二次 build/bootstrap 不覆盖既有 release 或环境文件。bootstrap 不启动服务，只读取固定的平面
@@ -142,7 +142,7 @@ source /etc/isarmg/sentinel-monitor.env
 set +a
 
 "/opt/isarmg/sentinel-monitor/releases/0.2.8/bin/sentinel-monitor" doctor --offline
-/opt/isarmg/sentinel-monitor/releases/0.2.8/native/start.sh
+/opt/isarmg/sentinel-monitor/releases/0.2.8/native/sentinelctl start
 "/opt/isarmg/sentinel-monitor/releases/0.2.8/bin/sentinel-monitor" doctor
 ```
 
@@ -220,7 +220,7 @@ auth body、媒体 JWT、WHEP/HLS 播放与录像状态不使用 Administrator u
 当前 Web 使用 Foundation 的 admin-web、admin-shell、admin-ui、contracts、design-tokens、http-client、
 web-fonts、web-toolchain 八个构建期包，不是生产运行服务。Node 固定为 `.node-version` 的 `26.7.0`。
 
-- 当前 Rust 固定 Foundation `=0.7.6` / `89eafaf171e409e6134fa669b140f615635baf5a`，八个 Web 包固定同版正式 Release tarball 和 lockfile integrity，不读取相邻工作区。
+- 当前 Rust 固定 Foundation `=0.7.11` / `8f2a5c888bc5f543186ad58bc5b3cee4dc5b2602`，八个 Web 包固定同版正式 Release tarball 和 lockfile integrity，不读取相邻工作区。
 - 已通过独立 CI，见[消费者证据](https://github.com/isarmg/sarmg-foundation-server/blob/main/consumers/axum-0.7.0-evidence.md)。后续更新仍须统一 manifest、lockfile、发布身份并复验；独立构建不等于主分支改动已进入现有产品 Release，不改写已发布 tag 或资产，不保留双路径。
 
 ```bash

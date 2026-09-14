@@ -36,11 +36,12 @@ const FIXED_FILES: &[(&str, u32)] = &[
     (SERVER_BINARY, 0o555),
     ("config/mediamtx.lock", 0o444),
     ("config/mediamtx.yml", 0o444),
-    ("native/bootstrap.sh", 0o555),
+    ("native/.bootstrap-action.sh", 0o444),
+    ("native/.start-action.sh", 0o444),
+    ("native/.status-action.sh", 0o444),
+    ("native/.stop-action.sh", 0o444),
     ("native/common.sh", 0o555),
-    ("native/start.sh", 0o555),
-    ("native/status.sh", 0o555),
-    ("native/stop.sh", 0o555),
+    ("native/sentinelctl", 0o555),
     ("web/index.html", 0o444),
 ];
 

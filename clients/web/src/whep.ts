@@ -1,4 +1,4 @@
-import { t } from "../shell/i18n.js";
+import { t } from "@sarmg/admin-ui/i18n";
 function waitForIceGathering(peer: RTCPeerConnection, timeoutMs = 5_000): Promise<void> {
   if (peer.iceGatheringState === "complete") return Promise.resolve();
   return new Promise((resolve) => {

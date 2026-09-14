@@ -1,4 +1,4 @@
-import { t } from "../shell/i18n.js";
+import { t } from "@sarmg/admin-ui/i18n";
 const labels: Record<string, readonly [string, string]> = {
   "camera.online": ["摄像头已恢复在线", "Camera is back online"], "camera.offline": ["摄像头已离线", "Camera is offline"],
   "camera.status": ["摄像头状态变更", "Camera status changed"], "camera.updated": ["更新摄像头", "Update camera"],

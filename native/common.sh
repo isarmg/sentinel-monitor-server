@@ -192,13 +192,20 @@ verify_release() {
     bin/sentinel-monitor \
     bin/mediamtx \
     native/common.sh \
-    native/bootstrap.sh \
-    native/start.sh \
-    native/status.sh \
-    native/stop.sh; do
+    native/sentinelctl; do
     assert_regular_file "$root/$executable" "release executable $executable"
     [[ "$(stat -c '%a' -- "$root/$executable")" == "555" ]] ||
       die "Release executable must have mode 0555: $executable"
+  done
+  local action
+  for action in \
+    native/.bootstrap-action.sh \
+    native/.start-action.sh \
+    native/.status-action.sh \
+    native/.stop-action.sh; do
+    assert_regular_file "$root/$action" "release lifecycle module $action"
+    [[ "$(stat -c '%a' -- "$root/$action")" == "444" ]] ||
+      die "Release lifecycle module must have mode 0444: $action"
   done
   local configuration
   for configuration in config/mediamtx.yml config/mediamtx.lock; do

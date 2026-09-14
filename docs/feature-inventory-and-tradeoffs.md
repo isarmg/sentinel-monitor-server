@@ -47,32 +47,32 @@ viewer。摄像头的 RTSP/ONVIF `username`、加密 `password` 和媒体 JWT `a
 |---|---|---|---|---|---|---|
 | SEN-P-001 | 浏览器摄像头监控产品：Rust 控制面管理摄像头和授权，MediaMTX 承担 RTSP、WHEP、HLS 与录像 | `src/routes.rs`、`src/mediamtx.rs`、`config/mediamtx.yml` | 核心 | 高 | 删除任一主组件都会失去控制面或媒体面，项目不再完整 | 摄像头添加、直播、录像、重启链路 |
 | SEN-P-002 | Server 开发、测试、正式编译目标唯一为 `x86_64-unknown-linux-gnu` | `sarmg-server-target`、`build.rs`、`rust-toolchain.toml` | 保障 | 高 | 放宽后会产生未经验证的平台二进制，且可能与 companion 平台失配 | 非目标编译必须失败；目标常量与 Cargo target 一致 |
-| SEN-P-003 | 正式运行主机唯一为 Linux AMD64；原生脚本再次核对 `uname` | `native/common.sh`、`native/build.sh`、`native/start.sh` | 保障 | 中 | 错误架构可能走到状态创建或 companion 启动后才失败 | Linux x86_64 正例；aarch64/非 Linux 负例 |
-| SEN-P-004 | MediaMTX companion 固定为 `v1.20.0 linux_amd64` 和精确 SHA-256 | `config/mediamtx.lock`、`native/build.sh`、`native/start.sh` | 保障 | 高 | API、配置和媒体行为不可复现，发行身份失去意义 | version 输出、platform、binary SHA 三者同时匹配 |
+| SEN-P-003 | 正式运行主机唯一为 Linux AMD64；原生命令再次核对 `uname` | `native/common.sh`、`native/build.sh`、`native/sentinelctl` | 保障 | 中 | 错误架构可能走到状态创建或 companion 启动后才失败 | Linux x86_64 正例；aarch64/非 Linux 负例 |
+| SEN-P-004 | MediaMTX companion 固定为 `v1.20.0 linux_amd64` 和精确 SHA-256 | `config/mediamtx.lock`、`native/build.sh`、`native/sentinelctl start` | 保障 | 高 | API、配置和媒体行为不可复现，发行身份失去意义 | version 输出、platform、binary SHA 三者同时匹配 |
 | SEN-P-005 | 控制面和媒体面分离；Rust 不代理 RTSP 输入，也不转码视频 | `src/mediamtx.rs`、`deploy/Caddyfile` | 核心 | 高 | 把媒体搬入 Rust 会重写容量、协议和攻击面；删 companion 则无直播/录像 | Rust 路由不存在 RTSP 转发；MediaMTX path 实测 |
 | SEN-P-006 | 当前版本唯一合同；产品不内置数据迁移、备份或恢复命令 | `src/main.rs` CLI、`src/sqlite.rs` | 保障 | 高 | 加入代际 reader 会长期扩大状态和测试矩阵 | CLI 只有 serve/doctor/release 类命令；非当前库零写入拒绝 |
 | SEN-P-007 | Server 端 React 19 + TypeScript strict + Vite 7 控制台位于 `clients/web/` | `clients/web/package.json`、`clients/web/src/main.tsx` | 建议保留 | 高 | API 和媒体能力仍在，但没有内置可操作控制台 | typecheck、Vite build、发行静态树验证 |
-| SEN-P-008 | Server Rust 和八个 Web 包已固定正式 Foundation 0.7.6 的完整 Git revision、Release URL 与 lock integrity，无相邻工作区来源 | Cargo、八个 `@sarmg/*` 依赖、manifest/lock | 保障 | 高 | 平台行为分叉；独立构建通过不代表主分支改动已纳入产品 Release | [独立 CI 与消费者证据](https://github.com/isarmg/sarmg-foundation-server/blob/main/consumers/axum-0.7.0-evidence.md)；后续更新仍须复验锁图和发行身份 |
+| SEN-P-008 | Server Rust 和八个 Web 包已固定正式 Foundation 0.7.11 的完整 Git revision、Release URL 与 lock integrity，无相邻工作区来源 | Cargo、八个 `@sarmg/*` 依赖、manifest/lock | 保障 | 高 | 平台行为分叉；独立构建通过不代表主分支改动已纳入产品 Release | [独立 CI 与消费者证据](https://github.com/isarmg/sarmg-foundation-server/blob/main/consumers/axum-0.7.0-evidence.md)；后续更新仍须复验锁图和发行身份 |
 | SEN-P-009 | `config/` 只存可提交样例和受审 companion 合同；真实 Secret 不进仓库 | `config/sentinel-monitor.env.example`、`.gitignore` | 开发运维 | 低 | Secret 容易误提交，或部署字段缺少审查入口 | Secret 扫描；样例字段与 parser 对照 |
-| SEN-P-010 | 本仓库刻意不发布 systemd unit，生命周期只由 release 内 `native/*.sh` 实现 | `native/bootstrap.sh`、`start.sh`、`status.sh`、`stop.sh` | 开发运维 | 中 | 运维方需自行重建锁序和失败回滚，容易启动半套服务 | 生命周期测试；发行树中无 unit；脚本可重定位 |
+| SEN-P-010 | 本仓库刻意不发布 systemd unit，生命周期只由 release 内单一公开入口实现；内部动作模块为只读且不可执行 | `native/sentinelctl`、`native/.*-action.sh` | 开发运维 | 中 | 运维方需自行重建锁序和失败回滚，容易启动半套服务 | 生命周期测试；发行树中无 unit；仅统一命令可执行且可重定位 |
 
 ## 3. 配置、启动和生命周期
 
 | ID | 当前功能/特性与真实行为 | 实现/代码锚点 | 分类 | 复杂度 | 删除后的确定后果 | 最低验证/边界 |
 |---|---|---|---|---|---|---|
 | SEN-C-001 | 生产环境文件固定为 `/etc/isarmg/sentinel-monitor.env`，而不是项目子目录 | `native/common.sh`、`config/*.env.example` | 开发运维 | 中 | 多路径来源会造成操作者修改无效文件或混合配置 | bootstrap、start、文档和测试使用同一平面路径 |
-| SEN-C-002 | `bootstrap.sh` 排他创建配置、状态和运行目录，不覆盖既有环境文件 | `native/bootstrap.sh` | 保障 | 高 | 重跑初始化可能无提示覆盖 Secret 或状态定位 | 首次创建、第二次 no-clobber、symlink 负例 |
-| SEN-C-003 | bootstrap 写入默认 canonical `BOOTSTRAP_ADMIN_USERNAME=admin`，随机生成 JWT Secret、32 字节 credential key 和初始密码且不回显 | `native/bootstrap.sh` | 保障 | 中 | 终端、CI 日志或 shell history 可能泄漏高价值 Secret，或首管身份与 Server parser 漂移 | lifecycle 日志中搜索 Secret；username 精确；文件 mode 0600 |
-| SEN-C-004 | 人工确认标记阻止未审阅初始 Secret 直接启动 | `sentinel-monitor.REVIEW-SECRETS-BEFORE-START`、`bootstrap.sh` | 保障 | 低 | 默认凭据可能直接进入运行环境 | 未确认 start 失败；`--confirm-config` 后标记消失 |
-| SEN-C-005 | `BIND_ADDR` 缺省值和正式模板均为 `127.0.0.1:8080`；`APP_ENV=development` 进一步禁止显式外部绑定；生产使用 Secure `__Host-` Cookie | `src/config.rs`、`config/sentinel-monitor.env.example`、`native/bootstrap.sh`、`src/auth.rs` | 保障 | 中 | 默认监听任意网卡会绕开 TLS 网关；非 Secure 开发 Cookie 可能暴露到局域网 | 缺省 loopback、IPv4/IPv6 loopback正例；development 外部地址负例；正式样例一致 |
+| SEN-C-002 | `sentinelctl bootstrap` 排他创建配置、状态和运行目录，不覆盖既有环境文件 | `native/sentinelctl`、`native/.bootstrap-action.sh` | 保障 | 高 | 重跑初始化可能无提示覆盖 Secret 或状态定位 | 首次创建、第二次 no-clobber、symlink 负例 |
+| SEN-C-003 | bootstrap 写入默认 canonical `BOOTSTRAP_ADMIN_USERNAME=admin`，随机生成 JWT Secret、32 字节 credential key 和初始密码且不回显 | `native/.bootstrap-action.sh` | 保障 | 中 | 终端、CI 日志或 shell history 可能泄漏高价值 Secret，或首管身份与 Server parser 漂移 | lifecycle 日志中搜索 Secret；username 精确；文件 mode 0600 |
+| SEN-C-004 | 人工确认标记阻止未审阅初始 Secret 直接启动 | `sentinel-monitor.REVIEW-SECRETS-BEFORE-START`、`sentinelctl bootstrap` | 保障 | 低 | 默认凭据可能直接进入运行环境 | 未确认 start 失败；`--confirm-config` 后标记消失 |
+| SEN-C-005 | `BIND_ADDR` 缺省值和正式模板均为 `127.0.0.1:8080`；`APP_ENV=development` 进一步禁止显式外部绑定；生产使用 Secure `__Host-` Cookie | `src/config.rs`、`config/sentinel-monitor.env.example`、`native/.bootstrap-action.sh`、`src/auth.rs` | 保障 | 中 | 默认监听任意网卡会绕开 TLS 网关；非 Secure 开发 Cookie 可能暴露到局域网 | 缺省 loopback、IPv4/IPv6 loopback正例；development 外部地址负例；正式样例一致 |
 | SEN-C-006 | `APP_JWT_SECRET` 至少 32 bytes，`CREDENTIALS_KEY` 必须标准 Base64 且解码恰为 32 bytes | `src/config.rs` | 保障 | 中 | 弱密钥或歧义 key 长度会降低媒体授权和凭据保护 | 缺失、短值、非法 Base64、31/33 bytes 负例 |
 | SEN-C-007 | `SENTINEL_RUNTIME_DIR` 与 `STATIC_DIR` 必须绝对路径 | `src/config.rs` | 保障 | 低 | cwd 变化会把锁或前端指到不同位置 | 相对路径拒绝；绝对路径接受 |
 | SEN-C-008 | 登录 body、bucket 容量、来源/账户窗口、Argon2 并发与超时均有范围 | `src/config.rs`、`src/login_security.rs` | 保障 | 中 | 错误配置可能关闭限流或耗尽 CPU/内存 | 最小/最大/越界值；超时后许可回收 |
 | SEN-C-009 | Media token TTL、状态刷新、reconcile 周期、上游请求超时均显式配置 | `src/config.rs` | 建议保留 | 中 | 删除可调性会把不同网络/规模强行绑定同一节奏 | 0/极端值行为；周期任务不重叠失控 |
 | SEN-C-010 | ONVIF discovery timeout 和上报 XAddr CIDR allowlist 可配置 | `ONVIF_DISCOVERY_TIMEOUT_MS`、`ONVIF_XADDR_ALLOWLIST` | 保障 | 中 | 发现可能长时间阻塞或请求不受信地址 | CIDR 解析、超时、allowlist 正反例 |
 | SEN-C-011 | 正式 `serve-release` 要求 `STATIC_DIR` 等于已验证发行根的 `web/` | `src/main.rs` | 保障 | 中 | 可把已验证 Rust 与任意前端混搭 | 同发行路径正例；外部静态目录负例 |
-| SEN-C-012 | start 按 companion→readiness→应用顺序启动；任一步失败会清理本次启动的进程 | `native/start.sh` | 保障 | 高 | 失败可能遗留孤儿 MediaMTX 或错误 PID 文件 | companion 失败、应用失败、并发 start、回滚 |
-| SEN-C-013 | stop 先停应用，再停 MediaMTX，遵循数据库/协调器先释放的顺序 | `native/stop.sh` | 保障 | 中 | 先停媒体面会扩大 operation 结果不确定窗口 | 正常停止、重复停止、PID 身份不匹配 |
+| SEN-C-012 | start 按 companion→readiness→应用顺序启动；任一步失败会清理本次启动的进程 | `native/sentinelctl start`、`native/.start-action.sh` | 保障 | 高 | 失败可能遗留孤儿 MediaMTX 或错误 PID 文件 | companion 失败、应用失败、并发 start、回滚 |
+| SEN-C-013 | stop 先停应用，再停 MediaMTX，遵循数据库/协调器先释放的顺序 | `native/sentinelctl stop`、`native/.stop-action.sh` | 保障 | 中 | 先停媒体面会扩大 operation 结果不确定窗口 | 正常停止、重复停止、PID 身份不匹配 |
 | SEN-C-014 | PID 文件和进程可执行路径共同校验，不只信任 PID 数字 | `native/common.sh` | 保障 | 中 | PID 重用可能误杀无关进程或误报运行状态 | 伪 PID、已退出 PID、不同 executable 负例 |
 
 ## 4. Administrator 认证与请求安全
@@ -150,9 +150,9 @@ viewer。摄像头的 RTSP/ONVIF `username`、加密 `password` 和媒体 JWT `a
 | SEN-M-008 | 录像播放只允许 mp4/fmp4，单次 0.1 秒至 6 小时 | `play_recording` | 保障 | 中 | 无边界请求可放大上游和带宽资源消耗 | duration 边界、format、非法时间 |
 | SEN-M-009 | 播放代理只转发 Content-Type/Length/Range/Disposition 白名单响应头并流式正文 | `play_recording` | 保障 | 高 | 全量透传上游头可能改变安全策略；整段缓冲会耗内存 | 200/206、Range、上游错误、大正文 |
 | SEN-M-010 | MediaMTX 录制 fMP4、15 分钟 segment、默认保留 168 小时 | `config/mediamtx.yml` | 建议保留 | 中 | 删除 record 失去历史回放；改保留期直接改变容量需求 | config lock、record path、过期清理实测 |
-| SEN-M-011 | start 通过环境把录像根固定到 `/var/lib/isarmg/sentinel-monitor/recordings` | `MTX_PATHDEFAULTS_RECORDPATH`、`native/start.sh` | 保障 | 中 | inert 样例路径或 cwd 可能成为真实写入位置 | 进程环境、路径权限、release relocation |
+| SEN-M-011 | start 通过环境把录像根固定到 `/var/lib/isarmg/sentinel-monitor/recordings` | `MTX_PATHDEFAULTS_RECORDPATH`、`native/.start-action.sh` | 保障 | 中 | inert 样例路径或 cwd 可能成为真实写入位置 | 进程环境、路径权限、release relocation |
 | SEN-M-012 | Caddy 将 `/media-webrtc/*`、`/media-hls/*` 与应用汇聚到一个浏览器 origin；三个上游精确为本机 `127.0.0.1:8889/8888/8080`，不支持容器 DNS 别名 | `deploy/Caddyfile`、CI proxy gate | 保障 | 中 | 跨 origin 会复杂化 Cookie、CORS 和媒体授权；容器名在当前原生部署中无法解析 | 根级副本缺失；WHEP/HLS/API 同源；管理端口不公网暴露；拒绝 `app:`/`mediamtx:`；生产设置真实 `SITE_ADDRESS` |
-| SEN-M-013 | MediaMTX API、metrics、playback 固定 loopback；生产启动器强制受信证书的 RTSPS 8322，HLS 8888、WebRTC HTTP 8889 与 UDP 8189 绑定主机网卡。防火墙分别限制 Client 发布、Caddy 上游和浏览器 UDP | `src/config.rs`、`native/start.sh`、`native/bootstrap.sh` | 保障 | 高 | 明文发布可能暴露媒体 Token；错把媒体 listener 当成 loopback 会令远程 Client 无法发布 | rtsps-only、证书/私钥检查、loopback 拒绝、listener 与 NAT 验收 |
+| SEN-M-013 | MediaMTX API、metrics、playback 固定 loopback；生产启动器强制受信证书的 RTSPS 8322，HLS 8888、WebRTC HTTP 8889 与 UDP 8189 绑定主机网卡。防火墙分别限制 Client 发布、Caddy 上游和浏览器 UDP | `src/config.rs`、`native/sentinelctl`、内部 bootstrap/start 动作 | 保障 | 高 | 明文发布可能暴露媒体 Token；错把媒体 listener 当成 loopback 会令远程 Client 无法发布 | rtsps-only、证书/私钥检查、loopback 拒绝、listener 与 NAT 验收 |
 
 ## 8. 事件、状态与审计
 

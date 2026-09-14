@@ -1,6 +1,3 @@
-#[path = "../foundation/platform_router.rs"]
-mod foundation_platform;
-
 use crate::{
     auth::{decode_media_token, issue_media_token, CurrentUser},
     background::camera_path,
@@ -59,7 +56,7 @@ const CLIENT_CAMERA_UPSERT: &str =
 
 pub fn router(state: AppState, runtime: sarmg_server_runtime::RuntimeHandle) -> Result<Router> {
     let static_dir = state.config.static_dir.clone();
-    let platform = foundation_platform::platform_router(
+    let platform = sarmg_server_runtime::platform_router(
         runtime,
         "sentinel-monitor",
         state.administrator_origin,
