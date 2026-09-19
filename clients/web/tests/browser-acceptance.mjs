@@ -29,7 +29,7 @@ try {
         paths.push(path);
         if (path.endsWith("/auth/session")) return route.fulfill({ json: session });
         if (path.endsWith("/events/stream")) return route.fulfill({ status: 200, contentType: "text/event-stream", body: ": acceptance\n\n" });
-        if (path.endsWith("/system/status")) return route.fulfill({ json: { service: "sentinel-monitor", version: "0.2.11", database: "ok", media_service: "ok", cameras: { total: 1, online: 0, recording_configured: 0 }, server_time: time } });
+        if (path.endsWith("/system/status")) return route.fulfill({ json: { service: "sentinel-monitor", version: "0.2.12", database: "ok", media_service: "ok", cameras: { total: 1, online: 0, recording_configured: 0 }, server_time: time } });
         if (request.method() !== "GET") assert.equal(request.headers()["x-csrf-token"], session.csrf_token);
         if (path.endsWith("/clients") && request.method() === "GET") return route.fulfill({ json: clients });
         if (path.endsWith("/clients") && request.method() === "POST") {
