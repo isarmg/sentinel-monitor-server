@@ -22,11 +22,12 @@ verify_release "$SENTINEL_RELEASE_ROOT"
   die "Configuration has not been confirmed; run sentinelctl bootstrap --confirm-config"
 load_deployment_env
 require_runtime_contract
+ensure_directory "$(dirname "$SENTINEL_RUNTIME_PATH")" 755 "runtime parent"
+ensure_directory "$SENTINEL_RUNTIME_PATH" 700 "runtime directory"
 assert_private_directory "$SENTINEL_STATE_DIR" "state directory"
 assert_private_directory "$SENTINEL_STATE_DIR/db" "database directory"
 assert_private_directory "$RECORDINGS_DIR" "recordings directory"
 assert_private_directory "$SENTINEL_STATE_DIR/logs" "log directory"
-assert_private_directory "$SENTINEL_RUNTIME_PATH" "runtime directory"
 assert_regular_file "$MEDIAMTX_BINARY" "MediaMTX binary"
 assert_regular_file "$MEDIAMTX_CONFIG" "MediaMTX configuration"
 assert_regular_file "$MEDIAMTX_CONTRACT" "MediaMTX contract"
@@ -146,7 +147,7 @@ fi
 
 MEDIA_READY=false
 for _ in {1..30}; do
-  if curl -fsS "${MEDIAMTX_READY_URL:-http://127.0.0.1:9997/v3/info}" >/dev/null; then
+  if curl -fsS --connect-timeout 1 --max-time 2 --max-filesize 4096 "${MEDIAMTX_READY_URL:-http://127.0.0.1:9997/v3/info}" >/dev/null; then
     MEDIA_READY=true
     break
   fi
@@ -177,6 +178,7 @@ for _ in {1..60}; do
   sleep 0.25
 done
 [[ "$APP_READY" == true ]] || die "Sentinel application did not become ready"
+remove_bootstrap_password
 if [[ -n "$STARTED_APP" ]]; then
   wait_for_pid_identity "$APP_PID_FILE" "$APP_BIN" "$STARTED_APP" ||
     die "Sentinel application did not retain its expected PID identity"
@@ -186,4 +188,4 @@ trap - EXIT
 STARTED_APP=""
 STARTED_MEDIA=""
 
-echo "Sentinel Monitor 0.2.9 is ready at ${SENTINEL_READY_URL:-http://127.0.0.1:8080/readyz}"
+echo "Sentinel Monitor $SENTINEL_VERSION is ready at ${SENTINEL_READY_URL:-http://127.0.0.1:8080/readyz}"

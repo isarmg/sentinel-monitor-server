@@ -91,8 +91,13 @@ impl Config {
                 &value("PUBLIC_RTSP_PUBLISH_BASE_URL", "rtsp://127.0.0.1:8554"),
                 development_mode,
             )?,
-            status_interval: Duration::from_secs(parse_u64("STATUS_INTERVAL_SECS", 10)?),
-            reconcile_interval: Duration::from_secs(parse_u64("RECONCILE_INTERVAL_SECS", 60)?),
+            status_interval: Duration::from_secs(bounded_u64("STATUS_INTERVAL_SECS", 10, 1, 3600)?),
+            reconcile_interval: Duration::from_secs(bounded_u64(
+                "RECONCILE_INTERVAL_SECS",
+                60,
+                1,
+                3600,
+            )?),
             request_timeout: Duration::from_secs(bounded_u64("REQUEST_TIMEOUT_SECS", 20, 1, 300)?),
             static_dir: absolute_path("STATIC_DIR", required("STATIC_DIR")?)?,
         })
@@ -166,9 +171,9 @@ fn bounded_u64(name: &str, default: u64, minimum: u64, maximum: u64) -> Result<u
     }
 }
 
-fn validate_development_bind(bind_addr: SocketAddr, development_mode: bool) -> Result<(), String> {
-    if development_mode && !bind_addr.ip().is_loopback() {
-        Err("development mode must bind to a loopback address".into())
+fn validate_development_bind(bind_addr: SocketAddr, _development_mode: bool) -> Result<(), String> {
+    if !bind_addr.ip().is_loopback() {
+        Err("BIND_ADDR must be loopback because the fixed MediaMTX auth callback and public gateway use the local application listener".into())
     } else {
         Ok(())
     }
@@ -191,7 +196,7 @@ mod tests {
         assert!(validate_development_bind("[::1]:8080".parse().unwrap(), true).is_ok());
         assert!(validate_development_bind("0.0.0.0:8080".parse().unwrap(), true).is_err());
         assert!(validate_development_bind("192.168.1.10:8080".parse().unwrap(), true).is_err());
-        assert!(validate_development_bind("0.0.0.0:8080".parse().unwrap(), false).is_ok());
+        assert!(validate_development_bind("0.0.0.0:8080".parse().unwrap(), false).is_err());
     }
 
     #[test]

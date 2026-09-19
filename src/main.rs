@@ -202,8 +202,14 @@ async fn serve(release_root: Option<&std::path::Path>) -> anyhow::Result<()> {
         .timeout(config.request_timeout)
         .user_agent(concat!("sentinel-monitor/", env!("CARGO_PKG_VERSION")))
         .build()?;
+    let stream_http = reqwest::Client::builder()
+        .connect_timeout(config.request_timeout)
+        .read_timeout(config.request_timeout)
+        .user_agent(concat!("sentinel-monitor/", env!("CARGO_PKG_VERSION")))
+        .build()?;
     let media = MediaMtxClient::new(
         http.clone(),
+        stream_http,
         config.mediamtx_api_url.clone(),
         config.mediamtx_playback_url.clone(),
     );

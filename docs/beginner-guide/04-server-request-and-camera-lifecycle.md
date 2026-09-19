@@ -21,6 +21,7 @@ Administrator；实例授权码和 Client token 不参与这条浏览器登录�
 
 菜单中创建实例后，Server 生成一个加密持久的 64 位授权码。Client 可保存多个码，每个码只能与一台摄像机快照绑定。
 Client 统一不同品牌的发现、认证、能力和流信息；Server 只接收当前中立模型。
+只有尚未生成 Client token 的实例可以配对；同一授权码不能覆盖已配对 Client。Client token 丢失时由管理员更换授权码后重新配对。
 
 ## 4.4 更换授权码与删除
 
@@ -36,6 +37,7 @@ Client 保管的 RTSP/ONVIF 凭据、完整上游错误或播放 signing secret�
 
 媒体路径配置是期望态，由 durable operation 与 reconciler 收敛。PTZ 不由 Server 直连设备；它会写入有期限的
 `device_commands`，交给该授权实例所属 Client 拉取并回报结果。移动指令不能在结果不确定时自动盲重放。
+命令采用至少一次投递，Client 必须按命令 ID 去重。`expires_at` 是 Server 生成的绝对截止时间：Server 只投递未过期命令，Client 在执行设备副作用前再次检查；截止后的迟到回执不能把 expired 改回成功。轮换或撤销会终结旧 pending 命令。`stop` 是安全例外，可在摄像头禁用或状态过旧时发送，但仍要求当前 Client 凭据有效。
 
 ## 4.7 响应语义
 

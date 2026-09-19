@@ -8,7 +8,9 @@
     }
 
     handle_path /media-hls/* {
-        reverse_proxy 127.0.0.1:8888
+        reverse_proxy 127.0.0.1:8888 {
+            header_down Location "^/(.*)$" "/media-hls/$1"
+        }
     }
 
     # Sentinel serves both the administrator API and the immutable Web build.

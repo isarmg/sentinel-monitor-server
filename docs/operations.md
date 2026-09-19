@@ -23,7 +23,7 @@ Node `26.7.0`。
 ├─ bin/{sentinel-monitor,mediamtx}
 ├─ web/{index.html,assets/...}
 ├─ config/{mediamtx.yml,mediamtx.lock}
-└─ native/{bootstrap,start,status,stop,common}.sh
+└─ native/{sentinelctl,common.sh,.bootstrap-action.sh,.start-action.sh,.status-action.sh,.stop-action.sh}
 
 /etc/isarmg/sentinel-monitor.env
 /var/lib/isarmg/sentinel-monitor/{db,recordings,logs}
@@ -65,6 +65,9 @@ sudoedit /etc/isarmg/sentinel-monitor.env
 `PUBLIC_RTSP_PUBLISH_BASE_URL=REPLACE_WITH_PUBLIC_RTSPS_ORIGIN` 是强制审阅占位符；必须改为配对 Client
 可达、证书链受 Client 系统信任且名称匹配的 `rtsps://host:8322` origin，并设置
 `MEDIAMTX_RTSP_CERT/KEY`，`--confirm-config` 才会接受。生产运行时拒绝明文、loopback/unspecified 发布地址。
+首次成功启动完成管理员初始化后，`start` 会从环境文件中原子移除
+`BOOTSTRAP_ADMIN_PASSWORD`；后续启动不再要求或向服务进程传入首管密码。若全新数据库尚未初始化，
+则必须先保留该字段，启动失败也不会提前删除它。
 
 ## 3. 核心配置
 
@@ -171,7 +174,9 @@ binary/version/SHA/config。在线模式再检查两个 loopback readiness。失
 ## 8. 发布测试
 
 ```bash
-bash -n native/*.sh
+for script in native/*.sh native/.*-action.sh native/sentinelctl; do
+  bash -n "$script" || exit 1
+done
 ./native/lifecycle-test.sh
 ./native/relocated-smoke-test.sh
 ```
@@ -191,6 +196,8 @@ lifecycle test 仅使用临时根，覆盖 no-clobber、合同外环境拒绝、
 | 无画面 | 摄像头 RTSP、publisher、JWT 时间窗、Caddy WHEP/HLS 路由 |
 | doctor Schema 失败 | 停止服务，保全 generation，交给升级工具 |
 | 凭据解密失败 | 确认当前 key 和 key ID；不要自动换 key 或绕过认证 |
+
+系统状态中的 `recording_configured` 只统计已启用且配置为服务器录像的摄像机，不证明 MediaMTX 正在持续写盘。媒体服务状态、流就绪、录像文件增长和磁盘错误需要分别观测。
 
 ## 10. 安全事件
 

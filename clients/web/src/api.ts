@@ -100,9 +100,11 @@ export type MonitorEvent = {
 
 export type AuditRow = {
   id: string;
+  user_id: string | null;
   action: string;
   entity_type: string;
   entity_id: string | null;
+  details: Record<string, unknown>;
   created_at: string;
 };
 
@@ -111,7 +113,7 @@ export type SystemStatus = {
   version: string;
   database: string;
   media_service: string;
-  cameras: { total: number; online: number; recording: number };
+  cameras: { total: number; online: number; recording_configured: number };
   server_time: string;
 };
 
@@ -209,6 +211,7 @@ export const isOperation: JsonGuard<MediaOperation> = (
     "error_code",
     "error_message",
   ].every((key) => isNullableString(value[key]));
+export const isOperations = arrayOf(isOperation);
 
 export const isStreamTicket: JsonGuard<StreamTicket> = (
   value,
@@ -239,7 +242,7 @@ export const isMonitorEvents = arrayOf(isMonitorEvent);
 const isAuditRow: JsonGuard<AuditRow> = (value): value is AuditRow =>
   isRecord(value) &&
   ["id", "action", "entity_type", "created_at"].every((key) => isString(value[key])) &&
-  isNullableString(value.entity_id);
+  isNullableString(value.user_id) && isNullableString(value.entity_id) && isRecord(value.details);
 export const isAuditRows = arrayOf(isAuditRow);
 
 export const isSystemStatus: JsonGuard<SystemStatus> = (
@@ -252,7 +255,7 @@ export const isSystemStatus: JsonGuard<SystemStatus> = (
   isRecord(value.cameras) &&
   isNumber(value.cameras.total) &&
   isNumber(value.cameras.online) &&
-  isNumber(value.cameras.recording);
+  isNumber(value.cameras.recording_configured);
 
 
 export const isSentinelClient: JsonGuard<SentinelClient> = (value): value is SentinelClient =>

@@ -9,7 +9,7 @@ use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use hkdf::Hkdf;
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 const MEDIA_JWT_KEY_SALT: &[u8] = b"sentinel-monitor/0.2.2/media-jwt/signing-key";
@@ -53,6 +53,7 @@ pub struct MediaClaims {
     pub camera_id: Uuid,
     pub path: String,
     pub actions: Vec<String>,
+    pub credential_binding: Option<String>,
     pub jti: Uuid,
     pub iat: u64,
     pub nbf: u64,
@@ -64,6 +65,7 @@ pub fn issue_media_token(
     camera_id: Uuid,
     path: String,
     actions: Vec<String>,
+    credential_binding: Option<String>,
     config: &Config,
 ) -> Result<(String, DateTime<Utc>)> {
     let now = Utc::now();
@@ -79,6 +81,7 @@ pub fn issue_media_token(
         camera_id,
         path,
         actions,
+        credential_binding,
         jti: Uuid::new_v4(),
         iat: now.timestamp() as u64,
         nbf: now.timestamp() as u64,
@@ -121,6 +124,16 @@ pub fn decode_media_token(token: &str, config: &Config) -> Result<MediaClaims> {
             .actions
             .iter()
             .any(|action| !matches!(action.as_str(), "read" | "playback" | "publish"))
+        || if claims.actions.iter().any(|action| action == "publish") {
+            claims.credential_binding.as_ref().is_none_or(|value| {
+                value.len() != 64
+                    || !value
+                        .bytes()
+                        .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+            })
+        } else {
+            claims.credential_binding.is_some()
+        }
         || claims.nbf != claims.iat
         || claims.iat > now
         || claims.exp.checked_sub(claims.iat) != Some(config.media_token_ttl.as_secs())
@@ -128,6 +141,17 @@ pub fn decode_media_token(token: &str, config: &Config) -> Result<MediaClaims> {
         return Err(AppError::Unauthorized);
     }
     Ok(claims)
+}
+
+pub fn publish_binding(token_hash: &[u8]) -> String {
+    let mut digest = Sha256::new();
+    digest.update(b"sentinel/publish-binding/v1\0");
+    digest.update(token_hash);
+    digest
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 fn media_signing_key(config: &Config) -> Result<[u8; 32]> {
@@ -148,7 +172,7 @@ mod tests {
         json!({
             "protocol":"sentinel-media-jwt-v2","iss":"sentinel-monitor/0.2.2",
             "aud":"sentinel-mediamtx/1.20.0","kind":"media","sub":Uuid::new_v4(),
-            "camera_id":Uuid::new_v4(),"path":"camera/main","actions":["read"],
+            "camera_id":Uuid::new_v4(),"path":"camera/main","actions":["read"],"credential_binding":null,
             "jti":Uuid::new_v4(),"iat":1,"nbf":1,"exp":121
         })
     }

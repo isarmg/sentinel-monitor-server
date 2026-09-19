@@ -253,6 +253,7 @@ pub struct DeviceCommand {
     pub camera_id: Uuid,
     pub kind: String,
     pub payload: Value,
+    pub expires_at: DateTime<Utc>,
 }
 
 #[derive(Serialize)]

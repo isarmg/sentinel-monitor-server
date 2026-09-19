@@ -9,8 +9,34 @@ use std::collections::HashMap;
 #[derive(Clone)]
 pub struct MediaMtxClient {
     client: Client,
+    stream_client: Client,
     api_url: String,
     playback_url: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ListPage<T> {
+    item_count: usize,
+    page_count: usize,
+    items: Vec<T>,
+}
+
+#[derive(Deserialize)]
+struct PathItem {
+    name: String,
+    ready: bool,
+    readers: Vec<Value>,
+    tracks: Vec<Value>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PathConfigItem {
+    name: String,
+    source: String,
+    source_on_demand: bool,
+    record: bool,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -36,9 +62,15 @@ pub struct RecordingSpan {
 }
 
 impl MediaMtxClient {
-    pub fn new(client: Client, api_url: String, playback_url: String) -> Self {
+    pub fn new(
+        client: Client,
+        stream_client: Client,
+        api_url: String,
+        playback_url: String,
+    ) -> Self {
         Self {
             client,
+            stream_client,
             api_url,
             playback_url,
         }
@@ -121,46 +153,20 @@ impl MediaMtxClient {
     }
 
     pub async fn paths(&self) -> Result<HashMap<String, PathSnapshot>> {
-        let response = self
-            .client
-            .get(format!("{}/v3/paths/list", self.api_url))
-            .send()
-            .await
-            .map_err(|_| AppError::UpstreamUnknown("path inventory did not complete".into()))?;
-        if !response.status().is_success() {
-            return Err(AppError::Upstream(format!(
-                "path list returned {}",
-                response.status()
-            )));
-        }
-        let value: Value = response
-            .json()
-            .await
-            .map_err(|_| AppError::Upstream("path inventory response was invalid".into()))?;
+        let items: Vec<PathItem> = self.paginated("v3/paths/list", "path inventory").await?;
         let mut paths = HashMap::new();
-        for item in value
-            .get("items")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-        {
-            let Some(name) = item.get("name").and_then(Value::as_str) else {
-                continue;
-            };
+        for item in items {
+            if item.name.is_empty() || paths.contains_key(&item.name) {
+                return Err(AppError::Upstream(
+                    "path inventory contained an invalid or duplicate name".into(),
+                ));
+            }
             paths.insert(
-                name.to_string(),
+                item.name,
                 PathSnapshot {
-                    ready: item.get("ready").and_then(Value::as_bool).unwrap_or(false),
-                    readers: item
-                        .get("readers")
-                        .and_then(Value::as_array)
-                        .map(Vec::len)
-                        .unwrap_or(0),
-                    tracks: item
-                        .get("tracks")
-                        .and_then(Value::as_array)
-                        .map(Vec::len)
-                        .unwrap_or(0),
+                    ready: item.ready,
+                    readers: item.readers.len(),
+                    tracks: item.tracks.len(),
                 },
             );
         }
@@ -168,50 +174,78 @@ impl MediaMtxClient {
     }
 
     pub async fn path_configs(&self) -> Result<HashMap<String, PathConfigSnapshot>> {
-        let response = self
-            .client
-            .get(format!("{}/v3/config/paths/list", self.api_url))
-            .send()
-            .await
-            .map_err(|_| {
-                AppError::UpstreamUnknown("path configuration inventory did not complete".into())
-            })?;
-        if !response.status().is_success() {
-            return Err(AppError::Upstream(format!(
-                "path configuration inventory returned {}",
-                response.status()
-            )));
-        }
-        let value: Value = response.json().await.map_err(|_| {
-            AppError::Upstream("path configuration inventory response was invalid".into())
-        })?;
+        let items: Vec<PathConfigItem> = self
+            .paginated("v3/config/paths/list", "path configuration inventory")
+            .await?;
         let mut paths = HashMap::new();
-        for item in value
-            .get("items")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-        {
-            let Some(name) = item.get("name").and_then(Value::as_str) else {
-                continue;
-            };
-            let source_digest = item
-                .get("source")
-                .and_then(Value::as_str)
-                .map(source_digest);
+        for item in items {
+            if item.name.is_empty() || paths.contains_key(&item.name) {
+                return Err(AppError::Upstream(
+                    "path configuration inventory contained an invalid or duplicate name".into(),
+                ));
+            }
+            let source_digest = Some(source_digest(&item.source));
             paths.insert(
-                name.to_string(),
+                item.name,
                 PathConfigSnapshot {
                     source_digest,
-                    source_on_demand: item
-                        .get("sourceOnDemand")
-                        .and_then(Value::as_bool)
-                        .unwrap_or(false),
-                    record: item.get("record").and_then(Value::as_bool).unwrap_or(false),
+                    source_on_demand: item.source_on_demand,
+                    record: item.record,
                 },
             );
         }
         Ok(paths)
+    }
+
+    async fn paginated<T: for<'de> Deserialize<'de>>(
+        &self,
+        path: &str,
+        label: &str,
+    ) -> Result<Vec<T>> {
+        const PAGE_SIZE: usize = 100;
+        const MAX_PAGES: usize = 10_000;
+        let mut page = 0_usize;
+        let mut expected = None;
+        let mut items = Vec::new();
+        loop {
+            let response = self
+                .client
+                .get(format!("{}/{path}", self.api_url))
+                .query(&[("page", page), ("itemsPerPage", PAGE_SIZE)])
+                .send()
+                .await
+                .map_err(|_| AppError::UpstreamUnknown(format!("{label} did not complete")))?;
+            if !response.status().is_success() {
+                return Err(AppError::Upstream(format!(
+                    "{label} returned {}",
+                    response.status()
+                )));
+            }
+            let current: ListPage<T> = response
+                .json()
+                .await
+                .map_err(|_| AppError::Upstream(format!("{label} response was invalid")))?;
+            if current.page_count > MAX_PAGES
+                || current.items.len() > PAGE_SIZE
+                || expected.is_some_and(|value| value != (current.item_count, current.page_count))
+            {
+                return Err(AppError::Upstream(format!(
+                    "{label} pagination was inconsistent"
+                )));
+            }
+            expected = Some((current.item_count, current.page_count));
+            items.extend(current.items);
+            if page + 1 >= current.page_count {
+                break;
+            }
+            page += 1;
+        }
+        if expected.is_none_or(|(count, _)| count != items.len()) {
+            return Err(AppError::Upstream(format!(
+                "{label} item count was inconsistent"
+            )));
+        }
+        Ok(items)
     }
 
     pub async fn recordings(
@@ -258,7 +292,7 @@ impl MediaMtxClient {
         range: Option<&str>,
     ) -> Result<Response> {
         let mut request = self
-            .client
+            .stream_client
             .get(format!("{}/get", self.playback_url))
             .bearer_auth(token)
             .query(&[

@@ -21,17 +21,22 @@ import {
   isAuditRows,
   isCameras,
   isMonitorEvents,
+  isOperation,
+  isOperations,
   isRecordingSpans,
   isStreamTicket,
   isSentinelClient,
   isSentinelClients,
+  isSystemStatus,
   isUndefined,
   request,
   type AuditRow,
   type Camera,
   type MonitorEvent,
+  type MediaOperation,
   type RecordingSpan,
   type SentinelClient,
+  type SystemStatus,
 } from "./api";
 import { WhepPlayer } from "./whep";
 
@@ -45,6 +50,9 @@ function Console() {
   const [events, setEvents] = useState<MonitorEvent[]>([]);
   const [audit, setAudit] = useState<AuditRow[] | null>(null);
   const [clients, setClients] = useState<SentinelClient[]>([]);
+  const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
+  const [operations, setOperations] = useState<MediaOperation[] | null>(null);
+  const snapshotInFlight = useRef<Promise<void> | null>(null);
   const [auditFailure, setAuditFailure] = useState<{ requestId?: string } | null>(null);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
@@ -71,11 +79,32 @@ function Console() {
   const loadClients = useCallback(async () => {
     setClients(await request("/clients", isSentinelClients));
   }, []);
+  const loadSystemStatus = useCallback(async () => {
+    setSystemStatus(await request("/system/status", isSystemStatus));
+  }, []);
+  const loadOperations = useCallback(async () => {
+    setOperations(await request("/media/operations?limit=50&offset=0", isOperations));
+  }, []);
+  const refreshSnapshot = useCallback(() => {
+    if (snapshotInFlight.current !== null) return snapshotInFlight.current;
+    const work = Promise.all([loadCameras(), loadEvents(), loadClients(), loadSystemStatus()]).then(() => undefined);
+    snapshotInFlight.current = work;
+    void work.then(
+      () => { if (snapshotInFlight.current === work) snapshotInFlight.current = null; },
+      () => { if (snapshotInFlight.current === work) snapshotInFlight.current = null; },
+    );
+    return work;
+  }, [loadCameras, loadClients, loadEvents, loadSystemStatus]);
 
-  useEffect(() => { void Promise.all([loadCameras(), loadEvents(), loadClients()]).catch((error) => toast(errorText(error), "error")); }, [loadCameras, loadClients, loadEvents, toast]);
-  useEffect(() => { if (view === "logs") void loadAudit().catch((error) => toast(errorText(error), "error")); }, [loadAudit, toast, view]);
+  useEffect(() => { void refreshSnapshot().catch((error) => toast(errorText(error), "error")); }, [refreshSnapshot, toast]);
+  useEffect(() => { if (view === "logs") void Promise.all([loadAudit(), loadOperations()]).catch((error) => toast(errorText(error), "error")); }, [loadAudit, loadOperations, toast, view]);
   useEffect(() => {
     const source = new EventSource(apiPath("/events/stream"));
+    source.addEventListener("open", () => { void refreshSnapshot().catch((error) => toast(errorText(error), "error")); });
+    source.addEventListener("resync-required", () => {
+      toast(t("事件流曾中断，正在重新同步当前状态", "The event stream was interrupted; current state is being resynchronized"), "warning");
+      void refreshSnapshot().catch((error) => toast(errorText(error), "error"));
+    });
     source.addEventListener("system-event", (message) => {
       try {
         const payload: unknown = JSON.parse((message as MessageEvent<string>).data);
@@ -85,10 +114,16 @@ function Console() {
       } catch {
         toast(t("收到无法解析的事件通知", "Received an unreadable event notification"), "warning");
       }
-      void Promise.all([loadCameras(), loadEvents()]).catch((error) => toast(errorText(error), "error"));
+      void refreshSnapshot().catch((error) => toast(errorText(error), "error"));
     });
     return () => source.close();
-  }, [loadCameras, loadEvents, toast]);
+  }, [refreshSnapshot, toast]);
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (!document.hidden) void Promise.all([loadClients(), loadSystemStatus()]).catch(error => toast(errorText(error), "error"));
+    }, 15_000);
+    return () => clearInterval(timer);
+  }, [loadClients, loadSystemStatus, toast]);
 
   const filteredCameras = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -104,12 +139,12 @@ function Console() {
   };
 
   return <div className="sentinel-business sarmg-content-stack">
-    <InstanceHeaderActions create={() => setCreatingClient(true)} refresh={() => void Promise.all([loadCameras(), loadEvents(), loadClients(), ...(view === "logs" ? [loadAudit()] : [])]).catch(error => toast(errorText(error), "error"))} />
+    <InstanceHeaderActions create={() => setCreatingClient(true)} refresh={() => void Promise.all([refreshSnapshot(), ...(view === "logs" ? [loadAudit(), loadOperations()] : [])]).catch(error => toast(errorText(error), "error"))} />
     <InstancePageNavigation page={view} detailsDisabled={!chosen} navigate={value => { window.location.hash = value; }} />
     <h1 className="sarmg-visually-hidden">{viewTitle(view)}</h1>
-    {view === "instances" && <><InstanceStatistics cameras={cameras} clients={clients} /><section className="view active sarmg-content-stack"><h2>{t("实例列表", "Instance list")}</h2><ClientsView clients={clients} cameras={cameras} changed={loadClients} toast={toast} select={id => { setSelected(id); window.location.hash = "details"; }} /></section></>}
+    {view === "instances" && <><InstanceStatistics cameras={cameras} clients={clients} status={systemStatus} /><section className="view active sarmg-content-stack"><h2>{t("实例列表", "Instance list")}</h2><ClientsView clients={clients} cameras={cameras} changed={loadClients} toast={toast} select={id => { setSelected(id); window.location.hash = "details"; }} /></section></>}
     {view === "details" && chosen && <><ClientDetails client={chosen} cameras={clientCameras} /><CameraView cameras={visible} search={search} setSearch={setSearch} inspect={setDrawerCamera} />{recordings.length > 0 && <RecordingsView cameras={recordings} toast={toast} />}</>}
-    {view === "logs" && <><EventsView events={events} cameras={cameras} unacknowledgedOnly={unacknowledgedOnly} setUnacknowledgedOnly={setUnacknowledgedOnly} refresh={() => void loadEvents().catch((error) => toast(errorText(error), "error"))} acknowledge={(id) => void acknowledge(id).catch((error) => toast(errorText(error), "error"))} /><AuditLogView failure={auditFailure} audit={audit} refresh={() => void loadAudit().catch((error) => toast(errorText(error), "error"))} /></>}
+    {view === "logs" && <><EventsView events={events} cameras={cameras} unacknowledgedOnly={unacknowledgedOnly} setUnacknowledgedOnly={setUnacknowledgedOnly} refresh={() => void loadEvents().catch((error) => toast(errorText(error), "error"))} acknowledge={(id) => void acknowledge(id).catch((error) => toast(errorText(error), "error"))} /><MediaOperationsView operations={operations} cameras={cameras} changed={loadOperations} toast={toast} /><AuditLogView failure={auditFailure} audit={audit} refresh={() => void loadAudit().catch((error) => toast(errorText(error), "error"))} /></>}
     {creatingClient && <CreateClientDialog close={() => setCreatingClient(false)} changed={loadClients} toast={toast} />}
     {drawerCamera !== null && <CameraDrawer camera={drawerCamera} close={() => setDrawerCamera(null)} toast={toast} />}
   </div>;
@@ -124,9 +159,11 @@ function CameraView({ cameras, search, setSearch, inspect }: {
     </section>;
 }
 
-function InstanceStatistics({ cameras, clients }: { cameras: Camera[]; clients: SentinelClient[] }) {
+function InstanceStatistics({ cameras, clients, status }: { cameras: Camera[]; clients: SentinelClient[]; status: SystemStatus | null }) {
   return <section className="view active sarmg-content-stack"><h2>{t("统计", "Statistics")}</h2><Table aria-label={t("实例统计", "Instance statistics")}><thead><tr><th>{t("统计项", "Metric")}</th><th>{t("当前值", "Current value")}</th></tr></thead><tbody>
     <tr><th scope="row">{t("实例总数", "Total instances")}</th><td>{clients.length}</td></tr><tr><th scope="row">{t("在线实例", "Online instances")}</th><td>{clients.filter(client => client.status === "online").length}</td></tr><tr><th scope="row">{t("待配对实例", "Instances awaiting pairing")}</th><td>{clients.filter(client => client.status === "pending").length}</td></tr><tr><th scope="row">{t("已上报摄像机", "Reported cameras")}</th><td>{cameras.filter(camera => camera.source_kind === "client").length}</td></tr>
+    <tr><th scope="row">{t("媒体服务", "Media service")}</th><td>{status === null ? t("读取中", "Loading") : status.media_service === "ok" ? t("正常", "Available") : t("不可用", "Unavailable")}</td></tr>
+    <tr><th scope="row">{t("已配置服务器录像", "Server recordings configured")}</th><td>{status?.cameras.recording_configured ?? "—"}</td></tr>
   </tbody></Table></section>;
 }
 
@@ -137,24 +174,73 @@ function LiveVideo({ camera, profile, controls = false }: { camera: Camera; prof
     const element = video.current;
     if (element === null || !camera.enabled) return;
     let closed = false;
-    let close: (() => void) | undefined;
-    void request(`/cameras/${camera.id}/stream-ticket?profile=${profile}`, isStreamTicket).then(async (ticket) => {
+    let generation = 0;
+    let retryTimer: number | undefined;
+    let closeActive: (() => void) | undefined;
+    const maximumAttempts = 3;
+    const retryDelays = [0, 1_000, 3_000];
+    const stopActive = () => {
+      closeActive?.();
+      closeActive = undefined;
+      element.removeAttribute("src");
+      element.srcObject = null;
+    };
+    const schedule = (attempt: number) => {
       if (closed) return;
-      const whep = new WhepPlayer(element, ticket.whep_url, ticket.token); close = () => whep.close();
-      try { await whep.start(); if (!closed) setLabel(""); }
-      catch {
-        whep.close();
-        const retry = await request(`/cameras/${camera.id}/stream-ticket?profile=${profile}`, isStreamTicket);
-        if (closed) return;
-        const { default: Hls } = await import("hls.js");
-        if (closed) return;
-        const hls = new Hls({ lowLatencyMode: true, xhrSetup: (xhr) => xhr.setRequestHeader("Authorization", `Bearer ${retry.token}`) });
-        hls.loadSource(retry.hls_url); hls.attachMedia(element); close = () => hls.destroy();
-        hls.on(Hls.Events.MANIFEST_PARSED, () => { void element.play().catch(() => { if (!closed) setLabel(t("请点击播放", "Click to play")); }); if (!closed) setLabel(""); });
-        hls.on(Hls.Events.ERROR, (_event, data) => { if (data.fatal) setLabel(t("视频暂不可用", "Video temporarily unavailable")); });
+      const current = ++generation;
+      stopActive();
+      if (attempt >= maximumAttempts) {
+        setLabel(t("视频暂不可用", "Video temporarily unavailable"));
+        return;
       }
-    }).catch((error) => { if (!closed) setLabel(errorText(error)); });
-    return () => { closed = true; close?.(); element.removeAttribute("src"); element.srcObject = null; };
+      setLabel(attempt === 0 ? t("正在连接", "Connecting") : t("正在重新连接", "Reconnecting"));
+      retryTimer = window.setTimeout(() => { void connect(attempt, current); }, retryDelays[attempt]);
+    };
+    const connect = async (attempt: number, current: number) => {
+      const currentConnection = () => !closed && generation === current;
+      try {
+        const ticket = await request(`/cameras/${camera.id}/stream-ticket?profile=${profile}`, isStreamTicket);
+        if (!currentConnection()) return;
+        const whep = new WhepPlayer(element, ticket.whep_url, ticket.token, () => {
+          if (currentConnection()) schedule(attempt + 1);
+        });
+        closeActive = () => whep.close();
+        try {
+          await whep.start();
+          if (currentConnection()) setLabel("");
+          return;
+        } catch {
+          whep.close();
+          closeActive = undefined;
+        }
+
+        const fallbackTicket = await request(`/cameras/${camera.id}/stream-ticket?profile=${profile}`, isStreamTicket);
+        if (!currentConnection()) return;
+        const { default: Hls } = await import("hls.js");
+        if (!currentConnection()) return;
+        const hls = new Hls({ lowLatencyMode: true, xhrSetup: (xhr) => xhr.setRequestHeader("Authorization", `Bearer ${fallbackTicket.token}`) });
+        closeActive = () => hls.destroy();
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          if (!currentConnection()) return;
+          setLabel("");
+          void element.play().catch(() => { if (currentConnection()) setLabel(t("请点击播放", "Click to play")); });
+        });
+        hls.on(Hls.Events.ERROR, (_event, data) => {
+          if (data.fatal && currentConnection()) schedule(attempt + 1);
+        });
+        hls.loadSource(fallbackTicket.hls_url);
+        hls.attachMedia(element);
+      } catch {
+        if (currentConnection()) schedule(attempt + 1);
+      }
+    };
+    schedule(0);
+    return () => {
+      closed = true;
+      generation += 1;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+      stopActive();
+    };
   }, [camera.enabled, camera.id, profile]);
   return <div className={controls ? "detail-video" : "video-shell"}><video ref={video} muted autoPlay playsInline controls={controls} />{label !== "" && <div className="video-state">{label}</div>}{!controls && <div className="scanline" />}</div>;
 }
@@ -239,11 +325,15 @@ function RecordingsView({ cameras, toast }: { cameras: Camera[]; toast(message: 
   const [end, setEnd] = useState(() => localDateInput(new Date()));
   const [spans, setSpans] = useState<RecordingSpan[]>([]);
   const [playing, setPlaying] = useState<RecordingSpan | null>(null);
+  const selectedCamera = useRef(cameraId);
   useEffect(() => { if (cameraId === "" && cameras[0] !== undefined) setCameraId(cameras[0].id); }, [cameraId, cameras]);
+  useEffect(() => { selectedCamera.current = cameraId; setSpans([]); setPlaying(null); }, [cameraId]);
   const search = async () => {
     if (cameraId === "") return toast(t("请先添加摄像头", "Add a camera first"), "warning");
-    const query = new URLSearchParams({ camera_id: cameraId, start: new Date(start).toISOString(), end: new Date(end).toISOString() });
-    setSpans(await request(`/recordings?${query}`, isRecordingSpans));
+    const requestedCamera = cameraId;
+    const query = new URLSearchParams({ camera_id: requestedCamera, start: new Date(start).toISOString(), end: new Date(end).toISOString() });
+    const value = await request(`/recordings?${query}`, isRecordingSpans);
+    if (selectedCamera.current === requestedCamera) setSpans(value);
   };
   const playback = playing === null ? "" : apiPath(`/recordings/play?${new URLSearchParams({ camera_id: cameraId, start: playing.start, duration: String(playing.duration), format: "mp4" })}`);
   return <section className="view active sarmg-content-stack"><div className="filter-panel sarmg-content-panel"><label>{t("摄像头", "Camera")}<Select value={cameraId} onChange={(event) => setCameraId(event.target.value)}>{cameras.map((camera) => <option key={camera.id} value={camera.id}>{camera.name}</option>)}</Select></label><label>{t("开始时间", "Start time")}<TextField type="datetime-local" value={start} onChange={(event) => setStart(event.target.value)} /></label><label>{t("结束时间", "End time")}<TextField type="datetime-local" value={end} onChange={(event) => setEnd(event.target.value)} /></label><Button className="button button-primary" onClick={() => void search().catch((error) => toast(errorText(error), "error"))}>{t("查询录像", "Search recordings")}</Button></div><div className="recording-layout sarmg-content-panel"><div><div className="section-heading"><h3>{t("录像时间段", "Recording segments")}</h3><span>{spans.length} {t("条", "segments")}</span></div><div className="record-list">{spans.length === 0 ? <div className="empty-state">{t("所选范围内没有录像", "No recordings in the selected range")}</div> : spans.map((span) => <Button key={`${span.start}-${span.duration}`} className="record-item" onClick={() => setPlaying(span)}><span>{formatDate(span.start)}</span><strong>{formatDuration(span.duration)}</strong><i>{t("播放", "Play")}</i></Button>)}</div></div><div className="playback-stage"><video src={playback || undefined} controls playsInline autoPlay /><div>{playing === null ? t("尚未选择录像", "No recording selected") : `${formatDate(playing.start)} · ${formatDuration(playing.duration)}`}</div></div></div></section>;
@@ -259,9 +349,38 @@ function AuditLogView({ failure, audit, refresh }: { failure: { requestId?: stri
     {failure ? <ErrorState requestId={failure.requestId} onRetry={refresh}>{t("审计日志暂不可用。", "Audit logs are temporarily unavailable.")}</ErrorState>
       : audit === null ? <LoadingState>{t("正在加载审计日志…", "Loading audit logs…")}</LoadingState>
         : <section className="management-block sarmg-content-panel"><div className="section-heading"><h2>{t("审计日志", "Audit logs")}</h2></div>
-          <div className="audit-list">{audit.length === 0 ? <div className="empty-state">{t("暂无审计日志", "No audit logs yet")}</div> : audit.map((row) => <div key={row.id}><span>{displayLabel(row.action)}</span><small>{formatDate(row.created_at)}</small><code>{displayLabel(row.entity_type)}{row.entity_id === null ? "" : " / " + row.entity_id.slice(0, 8)}</code></div>)}</div>
+          <div className="audit-list">{audit.length === 0 ? <div className="empty-state">{t("暂无审计日志", "No audit logs yet")}</div> : audit.map((row) => <details key={row.id}><summary><span>{displayLabel(row.action)}</span> · <small>{formatDate(row.created_at)}</small></summary><dl><dt>{t("操作者", "Actor")}</dt><dd><code>{row.user_id ?? t("系统", "System")}</code></dd><dt>{t("对象", "Entity")}</dt><dd><code>{displayLabel(row.entity_type)}{row.entity_id === null ? "" : ` / ${row.entity_id}`}</code></dd><dt>{t("详情", "Details")}</dt><dd><code>{safeAuditDetails(row.details)}</code></dd></dl></details>)}</div>
         </section>}
   </section>;
+}
+
+function MediaOperationsView({ operations, cameras, changed, toast }: { operations: MediaOperation[] | null; cameras: Camera[]; changed(): Promise<void>; toast(message: string, type?: string): void }) {
+  const [pending, setPending] = useState(false);
+  const [resolution, setResolution] = useState<{ operation: MediaOperation; value: "confirmed_succeeded" | "confirmed_failed" | "unable_to_confirm"; label: string } | null>(null);
+  const names = new Map(cameras.map(camera => [camera.id, camera.name]));
+  const resolve = async (target: NonNullable<typeof resolution>) => {
+    setPending(true);
+    try {
+      await request(`/media/operations/${target.operation.id}/resolve`, isOperation, { method: "POST", body: JSON.stringify({ resolution: target.value }) });
+      await changed();
+      toast(t("人工结论已记录；原媒体操作不会重新执行", "The manual conclusion was recorded; the media operation was not rerun"), "success");
+    } finally { setPending(false); }
+  };
+  const choices = [
+    ["confirmed_succeeded", t("确认已成功", "Confirm success")],
+    ["confirmed_failed", t("确认未成功", "Confirm failure")],
+    ["unable_to_confirm", t("仍无法确认", "Still unable to confirm")],
+  ] as const;
+  return <section className="management-block sarmg-content-panel"><div className="section-heading"><h2>{t("媒体协调操作", "Media reconciliation operations")}</h2><Button onClick={() => void changed().catch(error => toast(errorText(error), "error"))}>{t("刷新", "Refresh")}</Button></div>
+    {operations === null ? <LoadingState>{t("正在加载媒体操作…", "Loading media operations…")}</LoadingState> : <div className="audit-list">{operations.length === 0 ? <div className="empty-state">{t("暂无媒体协调操作", "No media reconciliation operations")}</div> : operations.map(operation => <details key={operation.id}><summary><span>{names.get(operation.camera_id) ?? operation.camera_id} · {displayLabel(operation.state)}</span> · <small>{formatDate(operation.created_at)}</small></summary><dl><dt>{t("操作标识", "Operation ID")}</dt><dd><code>{operation.id}</code></dd><dt>{t("原因", "Reason")}</dt><dd>{displayLabel(operation.reason)}</dd><dt>{t("代际 / 尝试", "Generation / attempts")}</dt><dd>{operation.generation} / {operation.attempt} of {operation.max_attempts}</dd><dt>{t("错误", "Error")}</dt><dd>{operation.error_code ?? "—"}</dd></dl>
+      {(["unknown", "failed", "dead_letter"].includes(operation.state)) && <div className="sarmg-actions">{choices.map(([value, label]) => <Button key={value} disabled={pending} onClick={() => setResolution({ operation, value, label })}>{label}</Button>)}</div>}</details>)}</div>}
+    {resolution && <ConfirmDangerDialog title={resolution.label} description={t("请先核对 MediaMTX 与摄像头的实际状态。此操作只记录人工结论，不会重新执行原媒体操作。", "Check the actual MediaMTX and camera state first. This only records a manual conclusion and does not rerun the media operation.")} pending={pending} onClose={() => { if (!pending) setResolution(null); }} onConfirm={() => { const target = resolution; setResolution(null); void resolve(target).catch(error => toast(errorText(error), "error")); }} />}
+  </section>;
+}
+
+function safeAuditDetails(details: Record<string, unknown>): string {
+  const visible = Object.fromEntries(Object.entries(details).filter(([key]) => !/(password|secret|token|authorization|credential)/i.test(key)));
+  return JSON.stringify(visible);
 }
 
 function CameraDrawer({ camera, close, toast }: { camera: Camera; close(): void; toast(message: string, type?: string): void }) {

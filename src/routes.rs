@@ -63,6 +63,7 @@ pub fn router(state: AppState, runtime: sarmg_server_runtime::RuntimeHandle) -> 
     .map_err(|error| AppError::Internal(error.to_string()))?;
     let api = Router::new()
         .route("/cameras", get(list_cameras))
+        .route("/media/operations", get(list_media_operations))
         .route("/media/operations/{id}", get(media_operation))
         .route(
             "/media/operations/{id}/resolve",
@@ -115,6 +116,25 @@ async fn media_operation(
     Path(id): Path<String>,
 ) -> Result<Json<reconciliation::MediaOperationView>> {
     Ok(Json(reconciliation::get_operation(&state.pool, &id).await?))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MediaOperationQuery {
+    limit: Option<u32>,
+    offset: Option<u32>,
+}
+
+async fn list_media_operations(
+    _user: CurrentUser,
+    State(state): State<AppState>,
+    Query(query): Query<MediaOperationQuery>,
+) -> Result<Json<Vec<reconciliation::MediaOperationView>>> {
+    let limit = query.limit.unwrap_or(50).clamp(1, 100);
+    let offset = query.offset.unwrap_or(0).min(10_000);
+    Ok(Json(
+        reconciliation::list_operations(&state.pool, limit, offset).await?,
+    ))
 }
 
 #[derive(Deserialize)]
@@ -185,7 +205,7 @@ async fn create_client(
         .secrets
         .encrypt_client_authorization(&id.to_string(), &code)?;
     let now = Utc::now();
-    let mut transaction = state.pool.begin().await?;
+    let mut transaction = state.pool.begin_with("BEGIN IMMEDIATE").await?;
     sqlx::query(
         "INSERT INTO sentinel_clients (id, name, authorization_code_enc, authorization_code_hash, \
          created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -253,6 +273,14 @@ async fn update_client_authorization(
     if changed.rows_affected() != 1 {
         return Err(AppError::NotFound("客户端实例不存在".into()));
     }
+    sqlx::query(
+        "UPDATE device_commands SET status = 'expired', finished_at = ? \
+         WHERE client_id = ? AND status = 'pending'",
+    )
+    .bind(now)
+    .bind(id)
+    .execute(&mut *transaction)
+    .await?;
     let cameras = sqlx::query_as::<_, CameraRecord>(&format!(
         "{CAMERA_SELECT} WHERE client_id = ? AND deleted_at IS NULL"
     ))
@@ -301,6 +329,15 @@ async fn update_client_authorization(
 }
 
 fn client_view(state: &AppState, record: SentinelClientRecord) -> Result<SentinelClientView> {
+    let status = if record.status == "online"
+        && record
+            .last_seen_at
+            .is_none_or(|last_seen| last_seen <= Utc::now() - chrono::Duration::seconds(30))
+    {
+        "offline".to_owned()
+    } else {
+        record.status
+    };
     Ok(SentinelClientView {
         id: record.id,
         installation_id: record.installation_id,
@@ -309,7 +346,7 @@ fn client_view(state: &AppState, record: SentinelClientRecord) -> Result<Sentine
         authorization_code: state
             .secrets
             .decrypt_client_authorization(&record.id.to_string(), &record.authorization_code_enc)?,
-        status: record.status,
+        status,
         last_seen_at: record.last_seen_at,
         created_at: record.created_at,
         updated_at: record.updated_at,
@@ -388,7 +425,7 @@ async fn revoke_client(
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode> {
     let now = Utc::now();
-    let mut transaction = state.pool.begin().await?;
+    let mut transaction = state.pool.begin_with("BEGIN IMMEDIATE").await?;
     let status: Option<String> =
         sqlx::query_scalar("SELECT status FROM sentinel_clients WHERE id = ?")
             .bind(id)
@@ -423,6 +460,14 @@ async fn revoke_client(
     if changed.rows_affected() == 0 {
         return Err(AppError::NotFound("客户端不存在".into()));
     }
+    sqlx::query(
+        "UPDATE device_commands SET status = 'expired', finished_at = ? \
+         WHERE client_id = ? AND status = 'pending'",
+    )
+    .bind(now)
+    .bind(id)
+    .execute(&mut *transaction)
+    .await?;
     let cameras = sqlx::query_as::<_, CameraRecord>(&format!(
         "{CAMERA_SELECT} WHERE client_id = ? AND deleted_at IS NULL"
     ))
@@ -545,15 +590,10 @@ async fn client_snapshot(
             "每个授权实例必须且只能上报一台摄像机".into(),
         ));
     }
-    let client_id = authenticate_client(&state, &headers).await?;
+    let token_hash = client_token_hash(&headers)?;
     let mut ids = HashSet::with_capacity(request.cameras.len());
     for camera in &request.cameras {
         validate_client_camera(camera)?;
-        if camera.id != client_id {
-            return Err(AppError::Validation(
-                "摄像机身份必须与授权实例身份一致".into(),
-            ));
-        }
         if !ids.insert(camera.id) {
             return Err(AppError::Validation("客户端快照包含重复摄像头".into()));
         }
@@ -564,29 +604,32 @@ async fn client_snapshot(
 
     let now = Utc::now();
     let mut transaction = state.pool.begin_with("BEGIN IMMEDIATE").await?;
-    sqlx::query(
+    let client_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM sentinel_clients WHERE token_hash = ? AND revoked_at IS NULL",
+    )
+    .bind(token_hash.clone())
+    .fetch_optional(&mut *transaction)
+    .await?
+    .ok_or(AppError::Unauthorized)?;
+    if request.cameras.iter().any(|camera| camera.id != client_id) {
+        return Err(AppError::Validation(
+            "摄像机身份必须与授权实例身份一致".into(),
+        ));
+    }
+    let authenticated = sqlx::query(
         "UPDATE sentinel_clients SET status = 'online', last_seen_at = ?, updated_at = ? \
-         WHERE id = ? AND revoked_at IS NULL",
+         WHERE id = ? AND token_hash = ? AND revoked_at IS NULL",
     )
     .bind(now)
     .bind(now)
     .bind(client_id)
+    .bind(token_hash.clone())
     .execute(&mut *transaction)
     .await?;
-
-    for result in &request.command_results {
-        sqlx::query(
-            "UPDATE device_commands SET status = ?, error = ?, finished_at = ? \
-             WHERE id = ? AND client_id = ? AND status = 'pending'",
-        )
-        .bind(&result.status)
-        .bind(result.error.as_deref())
-        .bind(now)
-        .bind(result.id)
-        .bind(client_id)
-        .execute(&mut *transaction)
-        .await?;
+    if authenticated.rows_affected() != 1 {
+        return Err(AppError::Unauthorized);
     }
+
     sqlx::query(
         "UPDATE device_commands SET status = 'expired', finished_at = ? \
          WHERE client_id = ? AND status = 'pending' AND expires_at <= ?",
@@ -596,6 +639,20 @@ async fn client_snapshot(
     .bind(now)
     .execute(&mut *transaction)
     .await?;
+    for result in &request.command_results {
+        sqlx::query(
+            "UPDATE device_commands SET status = ?, error = ?, finished_at = ? \
+             WHERE id = ? AND client_id = ? AND status = 'pending' AND expires_at > ?",
+        )
+        .bind(&result.status)
+        .bind(result.error.as_deref())
+        .bind(now)
+        .bind(result.id)
+        .bind(client_id)
+        .bind(now)
+        .execute(&mut *transaction)
+        .await?;
+    }
     sqlx::query(
         "DELETE FROM device_commands WHERE client_id = ? AND status != 'pending' \
          AND finished_at < ?",
@@ -624,21 +681,10 @@ async fn client_snapshot(
             .map_err(|_| AppError::Validation("客户端能力模型无效".into()))?;
         let streams_json = serde_json::to_string(&camera.streams)
             .map_err(|_| AppError::Validation("客户端码流模型无效".into()))?;
-        let changed = existing.as_ref().is_none_or(|value| {
-            value.name != camera.name.trim()
-                || value.location != camera.location.trim()
-                || value.adapter_kind != camera.adapter_kind
-                || value.manufacturer.as_deref() != camera.identity.manufacturer.as_deref()
-                || value.model.as_deref() != camera.identity.model.as_deref()
-                || value.firmware_version.as_deref() != camera.identity.firmware_version.as_deref()
-                || value.serial_number.as_deref() != camera.identity.serial_number.as_deref()
-                || value.capabilities_json != capabilities_json
-                || value.streams_json != streams_json
-                || value.health_message.as_deref() != camera.health_message.as_deref()
-                || value.has_sub_stream != camera.has_sub_stream
+        let media_changed = existing.as_ref().is_none_or(|value| {
+            value.has_sub_stream != camera.has_sub_stream
                 || value.enabled != camera.enabled
                 || value.storage_mode != camera.storage_mode
-                || value.device_status != camera.status
         });
         let written = sqlx::query(CLIENT_CAMERA_UPSERT)
             .bind(camera.id)
@@ -667,7 +713,7 @@ async fn client_snapshot(
         if written.rows_affected() != 1 {
             return Err(AppError::Conflict("摄像头身份已由另一个来源使用".into()));
         }
-        if changed {
+        if media_changed {
             let current =
                 sqlx::query_as::<_, CameraRecord>(&format!("{CAMERA_SELECT} WHERE id = ?"))
                     .bind(camera.id)
@@ -720,19 +766,19 @@ async fn client_snapshot(
         publish.push(CameraPublishGrant {
             camera_id: camera.id,
             profile: "main".into(),
-            publish_url: client_publish_url(&state, client_id, camera.id, "main")?,
+            publish_url: client_publish_url(&state, client_id, camera.id, "main", &token_hash)?,
         });
         if camera.has_sub_stream {
             publish.push(CameraPublishGrant {
                 camera_id: camera.id,
                 profile: "sub".into(),
-                publish_url: client_publish_url(&state, client_id, camera.id, "sub")?,
+                publish_url: client_publish_url(&state, client_id, camera.id, "sub", &token_hash)?,
             });
         }
     }
     let retry_before = now - chrono::Duration::seconds(5);
-    let command_rows = sqlx::query_as::<_, (Uuid, Uuid, String, String)>(
-        "SELECT id, camera_id, kind, payload FROM device_commands \
+    let command_rows = sqlx::query_as::<_, (Uuid, Uuid, String, String, DateTime<Utc>)>(
+        "SELECT id, camera_id, kind, payload, expires_at FROM device_commands \
          WHERE client_id = ? AND status = 'pending' AND expires_at > ? \
          AND (delivered_at IS NULL OR delivered_at <= ?) ORDER BY created_at LIMIT 100",
     )
@@ -742,13 +788,14 @@ async fn client_snapshot(
     .fetch_all(&mut *transaction)
     .await?;
     let mut commands = Vec::with_capacity(command_rows.len());
-    for (id, camera_id, kind, payload) in command_rows {
+    for (id, camera_id, kind, payload, expires_at) in command_rows {
         commands.push(DeviceCommand {
             id,
             camera_id,
             kind,
             payload: serde_json::from_str(&payload)
                 .map_err(|_| AppError::Internal("stored device command is invalid".into()))?,
+            expires_at,
         });
         sqlx::query("UPDATE device_commands SET delivered_at = ? WHERE id = ?")
             .bind(now)
@@ -769,21 +816,14 @@ async fn client_snapshot(
         .into_response())
 }
 
-async fn authenticate_client(state: &AppState, headers: &HeaderMap) -> Result<Uuid> {
+fn client_token_hash(headers: &HeaderMap) -> Result<Vec<u8>> {
     let header = headers
         .get(AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.strip_prefix("Bearer "))
         .filter(|value| value.len() == 43)
         .ok_or(AppError::Unauthorized)?;
-    let id = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM sentinel_clients WHERE token_hash = ? AND revoked_at IS NULL",
-    )
-    .bind(hash_secret(header).to_vec())
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or(AppError::Unauthorized)?;
-    Ok(id)
+    Ok(hash_secret(header).to_vec())
 }
 
 fn validate_client_name(value: &str) -> Result<String> {
@@ -882,6 +922,7 @@ fn client_publish_url(
     client_id: Uuid,
     camera_id: Uuid,
     profile: &str,
+    token_hash: &[u8],
 ) -> Result<String> {
     let mut url = Url::parse(&format!(
         "{}/{}",
@@ -894,6 +935,7 @@ fn client_publish_url(
         camera_id,
         camera_path(camera_id, profile),
         vec!["publish".into()],
+        Some(crate::auth::publish_binding(token_hash)),
         &state.config,
     )?;
     url.query_pairs_mut().append_pair("jwt", &token);
@@ -946,6 +988,7 @@ async fn stream_ticket(
         id,
         path.clone(),
         vec!["read".into()],
+        None,
         &state.config,
     )?;
     Ok(Json(StreamTicket {
@@ -983,14 +1026,37 @@ async fn ptz(
     if !capabilities.ptz {
         return Err(AppError::Validation("摄像头不支持PTZ".into()));
     }
-    if camera.device_status != "online" {
-        return Err(AppError::Conflict("摄像头当前不在线".into()));
-    }
     let client_id = camera
         .client_id
         .ok_or_else(|| AppError::Internal("client camera has no owner".into()))?;
     let command_id = Uuid::new_v4();
     let now = Utc::now();
+    let client_last_seen = sqlx::query_scalar::<_, Option<DateTime<Utc>>>(
+        "SELECT last_seen_at FROM sentinel_clients \
+         WHERE id = ? AND token_hash IS NOT NULL AND revoked_at IS NULL",
+    )
+    .bind(client_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| AppError::Conflict("客户端授权当前无效".into()))?;
+    if request.action == "move" {
+        let freshness = i64::try_from(
+            state
+                .config
+                .status_interval
+                .as_secs()
+                .saturating_mul(3)
+                .max(30),
+        )
+        .unwrap_or(i64::MAX);
+        if !camera.enabled
+            || camera.device_status != "online"
+            || client_last_seen
+                .is_none_or(|seen| seen <= now - chrono::Duration::seconds(freshness))
+        {
+            return Err(AppError::Conflict("摄像头或客户端当前不在线".into()));
+        }
+    }
     let expires_at = now + chrono::Duration::seconds(10);
     sqlx::query(
         "INSERT INTO device_commands \
@@ -1058,6 +1124,7 @@ async fn list_recordings(
         camera.id,
         path.clone(),
         vec!["playback".into()],
+        None,
         &state.config,
     )?;
     Ok(Json(
@@ -1104,6 +1171,7 @@ async fn play_recording(
         camera.id,
         path.clone(),
         vec!["playback".into()],
+        None,
         &state.config,
     )?;
     let range = headers.get(RANGE).and_then(|value| value.to_str().ok());
@@ -1111,7 +1179,9 @@ async fn play_recording(
         .media
         .recording_stream(&path, query.start, query.duration, format, &token, range)
         .await?;
-    if !response.status().is_success() {
+    if !response.status().is_success()
+        && response.status() != reqwest::StatusCode::RANGE_NOT_SATISFIABLE
+    {
         return Err(AppError::Upstream(format!(
             "recording playback returned {}",
             response.status()
@@ -1247,7 +1317,7 @@ async fn system_status(_user: CurrentUser, State(state): State<AppState>) -> Res
         "version": env!("CARGO_PKG_VERSION"),
         "database": "ok",
         "media_service": if state.media.health().await { "ok" } else { "unavailable" },
-        "cameras": { "total": total, "online": online, "recording": recording },
+        "cameras": { "total": total, "online": online, "recording_configured": recording },
         "server_time": Utc::now()
     })))
 }
@@ -1297,6 +1367,24 @@ async fn media_auth(
                 .any(|action| action == &request.action)
         {
             return StatusCode::FORBIDDEN;
+        }
+        if request.action == "publish" {
+            let current = sqlx::query_scalar::<_, Vec<u8>>(
+                "SELECT sc.token_hash FROM cameras c \
+                 JOIN sentinel_clients sc ON sc.id = c.client_id \
+                 WHERE c.id = ? AND c.deleted_at IS NULL AND c.enabled = 1 \
+                 AND sc.revoked_at IS NULL AND sc.token_hash IS NOT NULL",
+            )
+            .bind(claims.camera_id)
+            .fetch_optional(&state.pool)
+            .await;
+            let valid = current.ok().flatten().is_some_and(|token_hash| {
+                claims.credential_binding.as_deref()
+                    == Some(crate::auth::publish_binding(&token_hash).as_str())
+            });
+            if !valid {
+                return StatusCode::FORBIDDEN;
+            }
         }
         return StatusCode::OK;
     }

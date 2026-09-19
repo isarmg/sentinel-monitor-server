@@ -60,11 +60,8 @@ struct MediaOperationRequest {
 }
 
 pub(crate) fn removal_operation_matches(payload: &[u8], camera_id: Uuid, generation: i64) -> bool {
-    serde_json::from_slice::<MediaOperationRequest>(payload).is_ok_and(|request| {
-        request.camera_id == camera_id
-            && request.generation == generation
-            && request.reason == "client_revoked"
-    })
+    serde_json::from_slice::<MediaOperationRequest>(payload)
+        .is_ok_and(|request| request.camera_id == camera_id && request.generation == generation)
 }
 
 #[derive(Clone, sqlx::FromRow)]
@@ -148,6 +145,33 @@ pub async fn get_operation(pool: &SqlitePool, id: &str) -> Result<MediaOperation
         .map(operation_view)
         .transpose()?
         .ok_or_else(|| AppError::NotFound("媒体操作不存在".into()))
+}
+
+pub async fn list_operations(
+    pool: &SqlitePool,
+    limit: u32,
+    offset: u32,
+) -> Result<Vec<MediaOperationView>> {
+    let ids: Vec<String> = sqlx::query_scalar(
+        "SELECT operation_id FROM _sarmg_operations WHERE namespace = ? \
+         ORDER BY created_at_micros DESC, operation_id DESC LIMIT ? OFFSET ?",
+    )
+    .bind(OPERATION_NAMESPACE)
+    .bind(i64::from(limit))
+    .bind(i64::from(offset))
+    .fetch_all(pool)
+    .await?;
+    let store = SqliteOperationStore::new(pool.clone());
+    let mut operations = Vec::with_capacity(ids.len());
+    for id in ids {
+        let stored = store
+            .get(&id)
+            .await
+            .map_err(operation_error)?
+            .ok_or_else(|| AppError::Internal("媒体操作列表在读取期间发生不一致".into()))?;
+        operations.push(operation_view(stored)?);
+    }
+    Ok(operations)
 }
 
 pub async fn recover_interrupted_operations(pool: &SqlitePool) -> Result<u64> {

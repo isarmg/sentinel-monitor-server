@@ -3,6 +3,7 @@ use crate::{
     models::{CameraRecord, EventRecord},
     reconciliation, AppState,
 };
+use chrono::Utc;
 use serde_json::{json, Value};
 use tokio::{
     sync::watch,
@@ -112,6 +113,7 @@ pub async fn emit_event(
 
 async fn refresh_statuses(state: &AppState) -> Result<()> {
     reconciliation::validate_stored_camera_credentials(state).await?;
+    let observation_started_at = Utc::now();
     let paths = state.media.paths().await?;
     let cameras = sqlx::query_as::<_, CameraRecord>(CAMERA_SELECT)
         .fetch_all(&state.pool)
@@ -127,22 +129,34 @@ async fn refresh_statuses(state: &AppState) -> Result<()> {
         };
         if new_status == camera.status {
             if new_status == "online" {
-                sqlx::query("UPDATE cameras SET last_seen_at = datetime('now') WHERE id = ?")
-                    .bind(camera.id)
-                    .execute(&state.pool)
-                    .await?;
+                sqlx::query(
+                    "UPDATE cameras SET last_seen_at = datetime('now') WHERE id = ? \
+                    AND enabled = ? AND deleted_at IS NULL AND updated_at <= ?",
+                )
+                .bind(camera.id)
+                .bind(camera.enabled)
+                .bind(observation_started_at)
+                .execute(&state.pool)
+                .await?;
             }
             continue;
         }
 
-        sqlx::query(
-            "UPDATE cameras SET status = ?, last_seen_at = CASE WHEN ? = 'online' THEN datetime('now') ELSE last_seen_at END, updated_at = datetime('now') WHERE id = ?",
+        let updated = sqlx::query(
+            "UPDATE cameras SET status = ?, last_seen_at = CASE WHEN ? = 'online' THEN datetime('now') ELSE last_seen_at END, updated_at = datetime('now') \
+             WHERE id = ? AND enabled = ? AND deleted_at IS NULL AND updated_at <= ?",
         )
         .bind(new_status)
         .bind(new_status)
         .bind(camera.id)
+        .bind(camera.enabled)
+        .bind(observation_started_at)
         .execute(&state.pool)
         .await?;
+
+        if updated.rows_affected() != 1 {
+            continue;
+        }
 
         if camera.status != "pending" && new_status != "disabled" {
             let (severity, message) = if new_status == "online" {

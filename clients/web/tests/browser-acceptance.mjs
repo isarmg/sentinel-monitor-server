@@ -29,6 +29,7 @@ try {
         paths.push(path);
         if (path.endsWith("/auth/session")) return route.fulfill({ json: session });
         if (path.endsWith("/events/stream")) return route.fulfill({ status: 200, contentType: "text/event-stream", body: ": acceptance\n\n" });
+        if (path.endsWith("/system/status")) return route.fulfill({ json: { service: "sentinel-monitor", version: "0.2.11", database: "ok", media_service: "ok", cameras: { total: 1, online: 0, recording_configured: 0 }, server_time: time } });
         if (request.method() !== "GET") assert.equal(request.headers()["x-csrf-token"], session.csrf_token);
         if (path.endsWith("/clients") && request.method() === "GET") return route.fulfill({ json: clients });
         if (path.endsWith("/clients") && request.method() === "POST") {
@@ -44,9 +45,10 @@ try {
         if (path.endsWith("/cameras") && request.method() === "GET") return route.fulfill({ json: [camera] });
         if (path.endsWith("/events/event-1/ack")) { acknowledged = true; return route.fulfill({ status: 204 }); }
         if (path.endsWith("/events")) return route.fulfill({ json: [{ id: "event-1", camera_id: camera.id, kind: "camera.status", severity: "info", message: "验收事件", acknowledged_at: acknowledged ? time : null, created_at: time }] });
+        if (path.endsWith("/media/operations")) return route.fulfill({ json: [] });
         if (path.endsWith("/audit")) {
           if (failAudit) { failAudit = false; return route.fulfill({ status: 500, json: { code: "platform.internal", message: "SECRET database path", retryable: false, request_id: "audit-failure-123" } }); }
-          return route.fulfill({ json: [{ id: "audit-1", action: "camera.updated", entity_type: "camera", entity_id: camera.id, created_at: time }] });
+          return route.fulfill({ json: [{ id: "audit-1", user_id: administratorId, action: "camera.updated", entity_type: "camera", entity_id: camera.id, details: { generation: 1 }, created_at: time }] });
         }
         if (path.endsWith("/recordings")) { assert.equal(url.searchParams.get("camera_id"), camera.id); return route.fulfill({ json: [{ start: time, duration: 60 }] }); }
         throw new Error(`Unexpected API request ${request.method()} ${path}`);
@@ -108,6 +110,7 @@ try {
       await expect(page.locator(".sarmg-instance-sidebar, .sarmg-instance-workspace")).toHaveCount(0);
       await expect(page.getByRole("banner").locator('.sarmg-product-identity')).toHaveText("Sentinel Monitor");
       await expect(page.getByText("更新摄像头", { exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "媒体协调操作", exact: true })).toBeVisible();
       await expect(page.getByRole("table", { name: "系统状态", exact: true })).toHaveCount(0);
       failAudit = true;
       await page.getByRole("group", { name: "全局操作" }).getByRole("button", { name: "刷新", exact: true }).click();
@@ -123,7 +126,8 @@ try {
         assert.deepEqual((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze()).violations, []);
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       }
-      assert.ok(!paths.some(path => path.endsWith("/system/status")));
+      assert.ok(paths.some(path => path.endsWith("/system/status")));
+      assert.ok(paths.some(path => path.endsWith("/media/operations")));
       assert.ok(!paths.some(path => path.includes("/users")));
       await checkWebLanguage(page, {"routes":[["instances","Instance list"],["logs","Logs"]],"names":["验收摄像头","门口摄像机实例","仓库摄像机","测试现场"]});
       assert.deepEqual(errors, []);

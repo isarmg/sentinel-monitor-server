@@ -317,7 +317,6 @@ require_runtime_contract() {
   [[ -n "${APP_JWT_SECRET:-}" && ${#APP_JWT_SECRET} -ge 32 ]] ||
     die "APP_JWT_SECRET must contain at least 32 characters"
   [[ -n "${CREDENTIALS_KEY:-}" ]] || die "CREDENTIALS_KEY is required"
-  [[ -n "${BOOTSTRAP_ADMIN_PASSWORD:-}" ]] || die "BOOTSTRAP_ADMIN_PASSWORD is required"
   [[ "${PUBLIC_RTSP_PUBLISH_BASE_URL:-}" =~ ^rtsps://[^/[:space:]]+/?$ ]] ||
     die "PUBLIC_RTSP_PUBLISH_BASE_URL must be an rtsps origin reachable by paired clients"
   [[ "$PUBLIC_RTSP_PUBLISH_BASE_URL" != *'@'* ]] ||
@@ -333,6 +332,18 @@ require_runtime_contract() {
   validate_absolute_path "${MEDIAMTX_RTSP_KEY:-}" "MEDIAMTX_RTSP_KEY"
   assert_regular_file "$MEDIAMTX_RTSP_CERT" "MediaMTX RTSPS certificate"
   assert_private_file "$MEDIAMTX_RTSP_KEY" "MediaMTX RTSPS private key"
+}
+
+remove_bootstrap_password() {
+  assert_private_file "$SENTINEL_ENV_FILE" "Sentinel environment file"
+  grep -q '^BOOTSTRAP_ADMIN_PASSWORD=' "$SENTINEL_ENV_FILE" || return 0
+  local temporary
+  temporary="$(mktemp "$SENTINEL_CONFIG_DIR/.sentinel-monitor.env.XXXXXX")"
+  (umask 077; awk '!/^BOOTSTRAP_ADMIN_PASSWORD=/' "$SENTINEL_ENV_FILE" >"$temporary")
+  chmod 600 -- "$temporary"
+  assert_private_file "$temporary" "temporary Sentinel environment file"
+  mv -T -- "$temporary" "$SENTINEL_ENV_FILE"
+  unset BOOTSTRAP_ADMIN_PASSWORD
 }
 
 ensure_lock_file() {
