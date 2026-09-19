@@ -8,7 +8,8 @@ use crate::{
 };
 use chrono::{DateTime, Duration, Utc};
 use sarmg_operations::{
-    EnqueueOutcome, NewOperation, OperationState, SqliteOperationStore, StoredOperation, Transition,
+    EnqueueOutcome, NewOperation, Operation, OperationState, SqliteOperationStore, StoredOperation,
+    Transition,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -630,11 +631,12 @@ fn timestamp(micros: i64) -> Result<DateTime<Utc>> {
 async fn complete_owned(
     pool: &SqlitePool,
     operation: &MediaOperationView,
+    claim: &Operation,
     event: Transition,
     result: Option<serde_json::Value>,
 ) -> Result<()> {
     let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
-    complete_owned_in(&mut transaction, operation, event, result).await?;
+    complete_owned_in(&mut transaction, operation, claim, event, result).await?;
     transaction.commit().await?;
     Ok(())
 }
@@ -642,6 +644,7 @@ async fn complete_owned(
 async fn complete_owned_in(
     transaction: &mut Transaction<'_, Sqlite>,
     operation: &MediaOperationView,
+    claim: &Operation,
     event: Transition,
     result: Option<serde_json::Value>,
 ) -> Result<()> {
@@ -661,8 +664,7 @@ async fn complete_owned_in(
         .map_err(|_| AppError::Internal("媒体操作结果无法编码".into()))?;
     SqliteOperationStore::apply_transition_owned_in(
         transaction,
-        &operation.id,
-        owner,
+        claim,
         event,
         payload.as_deref(),
         now.timestamp_micros(),
@@ -688,7 +690,7 @@ async fn apply_claimed_operation(state: &AppState, operation: MediaOperationView
     {
         return Err(AppError::Conflict("媒体操作租约已由其他执行器接管".into()));
     }
-    let result = apply_claimed_operation_inner(state, operation).await;
+    let result = apply_claimed_operation_inner(state, operation, &claim.operation).await;
     if result.is_err() {
         // Local completion failure after remote effects is ambiguous, not retryable.
         // Captured owner/attempt/expiry prevent this marker touching another claim.
@@ -710,11 +712,12 @@ async fn apply_claimed_operation(state: &AppState, operation: MediaOperationView
 async fn apply_claimed_operation_inner(
     state: &AppState,
     operation: MediaOperationView,
+    claim: &Operation,
 ) -> Result<()> {
     renew_claimed_leases(state, &operation).await?;
     let desired = load_desired(&state.pool, operation.camera_id).await?;
     if desired.generation != operation.generation {
-        finish_superseded(&state.pool, &operation).await?;
+        finish_superseded(&state.pool, &operation, claim).await?;
         return Ok(());
     }
     let camera =
@@ -726,8 +729,8 @@ async fn apply_claimed_operation_inner(
 
     let result = apply_desired(state, &camera, &desired).await;
     match result {
-        Ok(applied) => finish_success(&state.pool, &operation, &desired, &applied).await,
-        Err(error) => finish_failure(&state.pool, &operation, &error).await,
+        Ok(applied) => finish_success(&state.pool, &operation, claim, &desired, &applied).await,
+        Err(error) => finish_failure(&state.pool, &operation, claim, &error).await,
     }
 }
 
@@ -784,6 +787,7 @@ async fn apply_desired(
 async fn finish_success(
     pool: &SqlitePool,
     operation: &MediaOperationView,
+    claim: &Operation,
     desired: &DesiredState,
     applied: &AppliedSources,
 ) -> Result<()> {
@@ -799,6 +803,7 @@ async fn finish_success(
         complete_owned_in(
             &mut transaction,
             operation,
+            claim,
             Transition::Succeed,
             Some(json!({ "converged": false, "superseded_after_apply": true })),
         )
@@ -846,6 +851,7 @@ async fn finish_success(
     complete_owned_in(
         &mut transaction,
         operation,
+        claim,
         Transition::Succeed,
         Some(json!({ "generation": desired.generation, "converged": true })),
     )
@@ -898,6 +904,7 @@ async fn persist_applied_path(
 async fn finish_failure(
     pool: &SqlitePool,
     operation: &MediaOperationView,
+    claim: &Operation,
     error: &AppError,
 ) -> Result<()> {
     let (kind, error_code, error_message) = sanitized_failure(error);
@@ -924,6 +931,7 @@ async fn finish_failure(
     complete_owned_in(
         &mut transaction,
         operation,
+        claim,
         event,
         Some(json!({ "error": error_message })),
     )
@@ -975,10 +983,15 @@ fn retry_delay(attempt: i64) -> Duration {
     Duration::seconds((1_i64 << exponent).min(300))
 }
 
-async fn finish_superseded(pool: &SqlitePool, operation: &MediaOperationView) -> Result<()> {
+async fn finish_superseded(
+    pool: &SqlitePool,
+    operation: &MediaOperationView,
+    claim: &Operation,
+) -> Result<()> {
     complete_owned(
         pool,
         operation,
+        claim,
         Transition::Succeed,
         Some(json!({ "converged": false, "superseded": true })),
     )
@@ -1294,21 +1307,28 @@ mod tests {
         assert_eq!(retry_delay(100), Duration::seconds(256));
     }
 
-    async fn claim_for_test(pool: &SqlitePool) -> MediaOperationView {
+    async fn claim_for_test(pool: &SqlitePool) -> (MediaOperationView, Operation) {
         let owner = Uuid::new_v4().to_string();
         sqlx::query("UPDATE media_reconciler_leases SET lease_owner = ?, lease_expires_at = ?, updated_at = ? WHERE singleton = 1")
             .bind(&owner).bind(Utc::now() + Duration::minutes(5)).bind(Utc::now())
             .execute(pool).await.unwrap();
-        claim_next_operation(pool, &owner, StdDuration::from_secs(1))
+        let view = claim_next_operation(pool, &owner, StdDuration::from_secs(1))
+            .await
+            .unwrap()
+            .unwrap();
+        let claim = SqliteOperationStore::new(pool.clone())
+            .get(&view.id)
             .await
             .unwrap()
             .unwrap()
+            .operation;
+        (view, claim)
     }
 
     #[tokio::test]
     async fn success_and_audit_failure_cannot_publish_partial_camera_results() {
         let (_directory, pool, id, _) = lease_test_database().await;
-        let operation = claim_for_test(&pool).await;
+        let (operation, claim) = claim_for_test(&pool).await;
         let desired = load_desired(&pool, operation.camera_id).await.unwrap();
         let applied = AppliedSources {
             main_digest: Some([42; 32]),
@@ -1316,9 +1336,11 @@ mod tests {
         };
         sqlx::raw_sql("CREATE TRIGGER reject_operation_audit BEFORE INSERT ON _sarmg_operation_audit_outbox BEGIN SELECT RAISE(FAIL, 'injected'); END;")
             .execute(&pool).await.unwrap();
-        assert!(finish_success(&pool, &operation, &desired, &applied)
-            .await
-            .is_err());
+        assert!(
+            finish_success(&pool, &operation, &claim, &desired, &applied)
+                .await
+                .is_err()
+        );
         assert_eq!(
             sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM media_actual_paths")
                 .fetch_one(&pool)
@@ -1335,7 +1357,7 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
-        finish_success(&pool, &operation, &desired, &applied)
+        finish_success(&pool, &operation, &claim, &desired, &applied)
             .await
             .unwrap();
         assert_eq!(
@@ -1355,7 +1377,7 @@ mod tests {
     #[tokio::test]
     async fn superseded_global_owner_cannot_publish_success_or_failure() {
         let (_directory, pool, id, _) = lease_test_database().await;
-        let operation = claim_for_test(&pool).await;
+        let (operation, claim) = claim_for_test(&pool).await;
         let desired = load_desired(&pool, operation.camera_id).await.unwrap();
         let initial_status: String = sqlx::query_scalar("SELECT status FROM cameras WHERE id = ?")
             .bind(operation.camera_id)
@@ -1370,6 +1392,7 @@ mod tests {
         assert!(finish_success(
             &pool,
             &operation,
+            &claim,
             &desired,
             &AppliedSources {
                 main_digest: None,
@@ -1378,11 +1401,14 @@ mod tests {
         )
         .await
         .is_err());
-        assert!(
-            finish_failure(&pool, &operation, &AppError::Upstream("rejected".into()))
-                .await
-                .is_err()
-        );
+        assert!(finish_failure(
+            &pool,
+            &operation,
+            &claim,
+            &AppError::Upstream("rejected".into()),
+        )
+        .await
+        .is_err());
         assert_eq!(
             sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM media_actual_paths")
                 .fetch_one(&pool)
@@ -1503,9 +1529,12 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
+        let old_claim = claimed.operation.clone();
         let mut old_operation = operation_view(claimed).unwrap();
         old_operation.lease_owner = Some("old-owner".into());
-        assert!(finish_superseded(&pool, &old_operation).await.is_err());
+        assert!(finish_superseded(&pool, &old_operation, &old_claim)
+            .await
+            .is_err());
         let fenced_state: String =
             sqlx::query_scalar("SELECT state FROM _sarmg_operations WHERE operation_id = ?")
                 .bind(&operation_id)

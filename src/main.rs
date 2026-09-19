@@ -218,7 +218,6 @@ async fn serve(release_root: Option<&std::path::Path>) -> anyhow::Result<()> {
         sarmg_admin_sqlite::SqliteAdministratorStore::new(pool.clone()),
     ));
     use sarmg_admin_core::AdministratorStore as _;
-    administrator.store().validate_all_administrators().await?;
     if administrator.store().administrator_count().await? == 0 {
         administrator
             .bootstrap_administrator(
@@ -233,6 +232,7 @@ async fn serve(release_root: Option<&std::path::Path>) -> anyhow::Result<()> {
             .await
             .map_err(|error| anyhow::anyhow!(error))?;
     }
+    administrator.store().validate_all_administrators().await?;
     let administrator_origin = if config.development_mode {
         sarmg_admin_auth::AdministratorOriginMode::LoopbackDevelopmentHttp
     } else {
