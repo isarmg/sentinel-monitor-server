@@ -1,6 +1,6 @@
 # Sentinel Monitor 完整功能与取舍清单
 
-本文按当前 `0.2.14` 工作树逐项盘点 Sentinel Monitor 的真实能力、保证、交付工具和明确边界。代码、
+本文按当前 `0.2.15` 工作树逐项盘点 Sentinel Monitor 的真实能力、保证、交付工具和明确边界。代码、
 `schema/generated/current_schema.sql`、`web/src/protocol-contract.json`、`config/mediamtx.lock` 与发行 manifest 是
 最终事实源；本文不是未来愿望清单，也不把测试中不存在的行为写成已实现功能。
 
@@ -52,7 +52,7 @@ viewer。摄像头的 RTSP/ONVIF `username`、加密 `password` 和媒体 JWT `a
 | SEN-P-005 | 控制面和媒体面分离；Rust 不代理 RTSP 输入，也不转码视频 | `src/mediamtx.rs`、`deploy/Caddyfile` | 核心 | 高 | 把媒体搬入 Rust 会重写容量、协议和攻击面；删 companion 则无直播/录像 | Rust 路由不存在 RTSP 转发；MediaMTX path 实测 |
 | SEN-P-006 | 当前版本唯一合同；产品不内置数据迁移、备份或恢复命令 | `src/main.rs` CLI、`src/sqlite.rs` | 保障 | 高 | 加入代际 reader 会长期扩大状态和测试矩阵 | CLI 只有 serve/doctor/release 类命令；非当前库零写入拒绝 |
 | SEN-P-007 | Server 端 React 19 + TypeScript strict + Vite 7 控制台位于 `web/` | `web/package.json`、`web/src/main.tsx` | 建议保留 | 高 | API 和媒体能力仍在，但没有内置可操作控制台 | typecheck、Vite build、发行静态树验证 |
-| SEN-P-008 | Server Rust 和八个 Web 包已固定正式 Foundation 0.8.5 的完整 Git revision、Release URL 与 lock integrity，无相邻工作区来源 | Cargo、八个 `@sarmg/*` 依赖、manifest/lock | 保障 | 高 | 平台行为分叉；独立构建通过不代表主分支改动已纳入产品 Release | [独立 CI 与消费者证据](https://github.com/isarmg/sarmg-foundation-server/blob/main/consumers/axum-0.7.0-evidence.md)；后续更新仍须复验锁图和发行身份 |
+| SEN-P-008 | Server Rust 和八个 Web 包已固定正式 Foundation 0.8.8 的完整 Git revision、Release URL 与 lock integrity，无相邻工作区来源 | Cargo、八个 `@sarmg/*` 依赖、manifest/lock | 保障 | 高 | 平台行为分叉；独立构建通过不代表主分支改动已纳入产品 Release | [独立 CI 与消费者证据](https://github.com/isarmg/sarmg-foundation-server/blob/main/consumers/axum-0.7.0-evidence.md)；后续更新仍须复验锁图和发行身份 |
 | SEN-P-009 | `config/` 只存可提交样例和受审 companion 合同；真实 Secret 不进仓库 | `config/sentinel-monitor.env.example`、`.gitignore` | 开发运维 | 低 | Secret 容易误提交，或部署字段缺少审查入口 | Secret 扫描；样例字段与 parser 对照 |
 | SEN-P-010 | 本仓库刻意不发布 systemd unit，生命周期只由 release 内单一公开入口实现；内部动作模块为只读且不可执行 | `native/sentinelctl`、`native/.*-action.sh` | 开发运维 | 中 | 运维方需自行重建锁序和失败回滚，容易启动半套服务 | 生命周期测试；发行树中无 unit；仅统一命令可执行且可重定位 |
 
@@ -172,7 +172,7 @@ viewer。摄像头的 RTSP/ONVIF `username`、加密 `password` 和媒体 JWT `a
 | SEN-W-001 | 共享 Shell 负责登录、恢复、退出、导航、主题、诊断、通知和安全错误；产品只传身份和业务页面 | createSarmgAdminApplication | 保障 | 高 | 产品复制平台状态机 | Foundation 10 项浏览器验收及消费者浏览器回归 |
 | SEN-W-002 | 页面只在内存持有 Session/CSRF；Cookie 由浏览器 HttpOnly 管理 | `@sarmg/admin-web`、`@sarmg/http-client` | 保障 | 高 | 把 Secret 放 local/sessionStorage 会扩大 XSS 泄漏 | storage 扫描、刷新、401 清理 |
 | SEN-W-003 | 所有业务响应经过 TypeScript runtime guard 检查必需字段/类型，不只依赖静态类型 | `web/src/api.ts` | 保障 | 高 | 异常或漂移 JSON 会在组件深处被错误使用 | 缺失/错误类型、数组成员；产品 guard 当前容忍额外响应字段 |
-| SEN-W-004 | Camera 页面支持搜索、分页、添加、编辑、删除和卡片直播 | `CameraView`、`CameraEditor` | 核心 | 高 | 失去主要管理旅程 | 空态、搜索、翻页、mutation operation |
+| SEN-W-004 | Camera 页面支持搜索、分页、添加、编辑、删除和卡片直播；授权实例列表独立地按账户名一次返回全部记录 | `CameraView`、`CameraEditor`、`list_clients` | 核心 | 高 | 失去主要管理旅程或实例选择不完整 | 空态、搜索、摄像机翻页、完整有序实例列表、mutation operation |
 | SEN-W-005 | 详情使用共享 Dialog，主码流及鼠标/键盘 PTZ；move/stop 串行，松开、取消、失焦及关闭均触发停止 | CameraDrawer | 可选 | 中 | 缺少精细控制或停止竞态 | pointer cancel、Space/Enter、窗口 blur、关闭清理 |
 | SEN-W-006 | Recordings 页面按摄像头和时间范围查询并播放 | `RecordingsView` | 建议保留 | 中 | API 尚在但普通用户难以回放 | 无摄像头、无结果、播放 URL 清理 |
 | SEN-W-007 | Events 页面筛选未确认、手动刷新和确认事件 | `EventsView`、SSE effect | 建议保留 | 中 | 事件 API 无内置操作界面 | SSE resync、确认、camera name 映射 |
@@ -200,7 +200,7 @@ viewer。摄像头的 RTSP/ONVIF `username`、加密 `password` 和媒体 JWT `a
 | SEN-R-010 | release identity 绑定产品、版本、source revision、target、API、Schema、Web、credential 与 MediaMTX | `src/release.rs::ReleaseIdentity` | 保障 | 高 | 可把不同提交/协议/companion 拼成同名发行物 | identity JSON 与 manifest header 一致 |
 | SEN-R-011 | 全树 manifest 精确验证 path/type/mode/size/SHA，拒绝额外条目 | `verify_release`、`static_assets.rs` | 保障 | 高 | 攻击者或误部署可插入/替换资产而仍启动 | missing/extra/tamper/mode/symlink/hardlink |
 | SEN-R-012 | release root 必须是规范物理版本路径，正式父目录 root-owned | `validate_release_root`、`PRODUCTION_RELEASE_ROOT` | 保障 | 高 | 可通过 alias 或可写父目录替换已验证内容 | symlink parent、相对路径、错误 suffix、ownership |
-| SEN-R-013 | `native/build.sh` 要求 clean checkout、annotated `v0.2.14` 指向 HEAD 和 Linux AMD64 | `native/build.sh` | 开发运维 | 中 | 无法把制品稳定追溯到源码与版本 | dirty tree、lightweight/wrong tag、wrong host |
+| SEN-R-013 | `native/build.sh` 要求 clean checkout、annotated `v0.2.15` 指向 HEAD 和 Linux AMD64 | `native/build.sh` | 开发运维 | 中 | 无法把制品稳定追溯到源码与版本 | dirty tree、lightweight/wrong tag、wrong host |
 | SEN-R-014 | build 在同一文件系统 stage，验证后 no-clobber 安装固定发行目录 | `native/build.sh` | 保障 | 高 | 半写 release 或同版本覆盖会让重启内容不可预测 | 中途失败、并发 build、第二次 build |
 | SEN-R-015 | lifecycle test 使用临时根覆盖 no-clobber、Secret、锁、失败回滚和链接防御 | `native/lifecycle-test.sh` | 开发运维 | 高 | 脚本安全语义容易在普通单元测试外回归 | 临时根运行；不得访问真实 `/var/lib` |
 | SEN-R-016 | relocated smoke 使用真实 Rust/Vite/SQLite/MediaMTX 制品验证重定位和篡改拒绝 | `native/relocated-smoke-test.sh` | 开发运维 | 高 | 静态脚本检查无法证明真实发行闭包 | 真实启动、hashed assets、字节篡改、source-bound binary |

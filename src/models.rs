@@ -174,7 +174,7 @@ pub struct UpdateAuthorizationCodeRequest {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CreateSentinelClientRequest {
-    pub name: String,
+    pub name: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -326,6 +326,8 @@ mod tests {
 
     #[test]
     fn required_public_request_fields_cannot_be_omitted() {
+        let create = serde_json::from_value::<CreateSentinelClientRequest>(json!({})).unwrap();
+        assert!(create.name.is_none());
         assert!(serde_json::from_value::<PtzRequest>(json!({})).is_err());
         assert!(serde_json::from_value::<ClientSnapshotRequest>(json!({
             "protocol": CLIENT_PAIRING_PROTOCOL,

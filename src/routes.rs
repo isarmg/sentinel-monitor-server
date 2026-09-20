@@ -178,14 +178,15 @@ async fn resolve_media_operation(
     Ok(Json(reconciliation::get_operation(&state.pool, &id).await?))
 }
 
+const CLIENT_LIST_SELECT: &str =
+    "SELECT id, installation_id, name, client_version, authorization_code_enc, status, \
+     last_seen_at, created_at, updated_at \
+     FROM sentinel_clients ORDER BY name COLLATE NOCASE, name, id";
+
 async fn list_clients(_user: CurrentUser, State(state): State<AppState>) -> Result<Response> {
-    let rows = sqlx::query_as::<_, SentinelClientRecord>(
-        "SELECT id, installation_id, name, client_version, authorization_code_enc, status, \
-         last_seen_at, created_at, updated_at \
-         FROM sentinel_clients ORDER BY name, created_at",
-    )
-    .fetch_all(&state.pool)
-    .await?;
+    let rows = sqlx::query_as::<_, SentinelClientRecord>(CLIENT_LIST_SELECT)
+        .fetch_all(&state.pool)
+        .await?;
     let views = rows
         .into_iter()
         .map(|record| client_view(&state, record))
@@ -198,7 +199,7 @@ async fn create_client(
     State(state): State<AppState>,
     Json(request): Json<CreateSentinelClientRequest>,
 ) -> Result<Response> {
-    let name = validate_client_name(&request.name)?;
+    let name = validate_client_name(request.name.as_deref().unwrap_or("新实例"))?;
     let id = Uuid::new_v4();
     let code = random_authorization_code();
     let encoded = state
@@ -361,7 +362,7 @@ async fn pair_client(
         return Err(AppError::Validation("客户端配对协议或产品不受支持".into()));
     }
     if request.installation_id.is_nil()
-        || validate_authorization_code(&request.authorization_code).is_err()
+        || validate_pairing_authorization_code(&request.authorization_code).is_err()
         || request.client_version.is_empty()
         || request.client_version.len() > 64
         || request.client_version.chars().any(char::is_control)
@@ -947,22 +948,47 @@ fn hash_secret(value: &str) -> [u8; 32] {
 }
 
 fn random_authorization_code() -> String {
-    let mut bytes = [0_u8; 32];
-    rand::rngs::OsRng.fill_bytes(&mut bytes);
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    const ALPHABET: &[u8; 36] = b"abcdefghijklmnopqrstuvwxyz0123456789";
+    let mut value = String::with_capacity(32);
+    let mut bytes = [0_u8; 64];
+    while value.len() < 32 {
+        rand::rngs::OsRng.fill_bytes(&mut bytes);
+        for byte in bytes {
+            if byte < 252 {
+                value.push(ALPHABET[usize::from(byte % 36)] as char);
+                if value.len() == 32 {
+                    break;
+                }
+            }
+        }
+    }
+    value
 }
 
 fn validate_authorization_code(value: &str) -> Result<()> {
-    if value.len() != 64
+    if value.len() != 32
         || !value
             .bytes()
-            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+            .all(|byte| byte.is_ascii_digit() || byte.is_ascii_lowercase())
     {
         return Err(AppError::Validation(
-            "授权码必须是 64 个小写十六进制字符".into(),
+            "授权码必须是 32 个小写英文字母或数字".into(),
         ));
     }
     Ok(())
+}
+
+fn validate_pairing_authorization_code(value: &str) -> Result<()> {
+    if validate_authorization_code(value).is_ok()
+        || (value.len() == 64
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f')))
+    {
+        Ok(())
+    } else {
+        Err(AppError::Validation("授权码格式无效".into()))
+    }
 }
 
 async fn stream_ticket(
@@ -1455,6 +1481,18 @@ async fn write_audit_in(
 mod request_contract_tests {
     use super::*;
 
+    #[test]
+    fn generated_authorization_codes_have_the_shared_format() {
+        for _ in 0..64 {
+            let value = random_authorization_code();
+            assert_eq!(value.len(), 32);
+            assert!(value
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || byte.is_ascii_lowercase()));
+            validate_authorization_code(&value).unwrap();
+        }
+    }
+
     async fn insert_test_client(pool: &sqlx::SqlitePool, id: Uuid, name: &str) {
         let now = Utc::now();
         sqlx::query(
@@ -1470,6 +1508,26 @@ mod request_contract_tests {
         .execute(pool)
         .await
         .unwrap();
+    }
+
+    #[tokio::test]
+    async fn client_list_returns_every_instance_in_case_insensitive_name_order() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = directory.path().join("client-list.sqlite3");
+        let pool = crate::sqlite::open_pool(&format!("sqlite://{}", database.display()))
+            .await
+            .unwrap();
+        for name in ["zulu", "Bravo", "alpha"] {
+            insert_test_client(&pool, Uuid::new_v4(), name).await;
+        }
+        let names = sqlx::query_as::<_, SentinelClientRecord>(CLIENT_LIST_SELECT)
+            .fetch_all(&pool)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|client| client.name)
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["alpha", "Bravo", "zulu"]);
     }
 
     async fn upsert_test_camera(

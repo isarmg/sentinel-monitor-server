@@ -67,7 +67,7 @@ fn authorization_binding(client_id: &str) -> Vec<u8> {
 
 pub(crate) fn credential_contract_sha256() -> String {
     let contract = format!(
-        "format=sarmg-secret-envelope\nproduct={PRODUCT}\napplication_version={APPLICATION_VERSION}\nenvelope_revision={CREDENTIAL_ENVELOPE_REVISION}\ndomain={}\nbinding=client_instance_id\nfield=authorization_code_enc\nmax_envelope_bytes={MAX_AUTHORIZATION_ENVELOPE_BYTES}\nauthorization_code=64-lowercase-hex\n",
+        "format=sarmg-secret-envelope\nproduct={PRODUCT}\napplication_version={APPLICATION_VERSION}\nenvelope_revision={CREDENTIAL_ENVELOPE_REVISION}\ndomain={}\nbinding=client_instance_id\nfield=authorization_code_enc\nmax_envelope_bytes={MAX_AUTHORIZATION_ENVELOPE_BYTES}\nauthorization_code=current:32-lowercase-alphanumeric;legacy-pairing:64-lowercase-hex\n",
         String::from_utf8_lossy(ClientAuthorizationEnvelope::DOMAIN),
     );
     format!("{:x}", Sha256::digest(contract.as_bytes()))
@@ -111,7 +111,7 @@ mod tests {
         let secrets = box_under_test();
         let first = uuid::Uuid::new_v4().to_string();
         let second = uuid::Uuid::new_v4().to_string();
-        let code = "a".repeat(64);
+        let code = "a".repeat(32);
         let encoded = secrets.encrypt_client_authorization(&first, &code).unwrap();
         let another = secrets.encrypt_client_authorization(&first, &code).unwrap();
         assert_ne!(encoded, another);
@@ -134,7 +134,7 @@ mod tests {
     fn malformed_and_tampered_values_fail_without_secret_disclosure() {
         let secrets = box_under_test();
         let client_id = uuid::Uuid::new_v4().to_string();
-        let secret = "b".repeat(64);
+        let secret = "b".repeat(32);
         let mut tampered = secrets
             .encrypt_client_authorization(&client_id, &secret)
             .unwrap();
@@ -155,7 +155,7 @@ mod tests {
         let secrets = box_under_test();
         let first = uuid::Uuid::new_v4().to_string();
         let second = uuid::Uuid::new_v4().to_string();
-        let code = "a".repeat(64);
+        let code = "a".repeat(32);
         let encrypted = secrets.encrypt_client_authorization(&first, &code).unwrap();
         assert!(!encrypted
             .windows(code.len())

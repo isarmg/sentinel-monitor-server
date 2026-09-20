@@ -77,11 +77,11 @@ cargo run -- serve
 
 ## 5. 实例授权码为什么是 envelope
 
-每个摄像机实例的 64 位授权码以 Foundation secret envelope 的认证密文保存。专用
+每个摄像机实例的 32 位小写英文字母数字授权码以 Foundation secret envelope 的认证密文保存。专用
 key 从 `CREDENTIALS_KEY` 派生；AAD 绑定授权实例 ID，因此密文不能复制到另一实例。设备
 RTSP/ONVIF URL、用户名和密码只属于 Client，Server Schema 不存储这些字段。
 
-当前 key ID 固定为 `sentinel-credentials-0.2.14-key-1`。产品没有 previous key/keyring，不接受旧
+当前 key ID 固定为 `sentinel-credentials-0.2.15-key-1`。产品没有 previous key/keyring，不接受旧
 `nonce || ciphertext` 或宽松 Base64。`CREDENTIALS_KEY` 丢失意味着密文不可恢复。
 
 ## 6. 一次摄像机实例变更
@@ -111,7 +111,7 @@ inventory 表或逐文件 Hash 索引。Web 不应直连 9996/9997/9998 管理/�
 文件、非当前身份、额外列、非法租约或 Schema drift 都只读拒绝，不自动补表/补行。
 
 Schema fingerprint framing、`product_metadata` DDL/列形状和 exact-current identity 比较来自 Foundation
-`sarmg-schema-identity 0.8.5`；Sentinel 只保留 rusqlite 私有 generation adapter、文件安全和媒体租约等
+`sarmg-schema-identity 0.8.8`；Sentinel 只保留 rusqlite 私有 generation adapter、文件安全和媒体租约等
 产品不变量。这样多个产品不会复制同一 fingerprint 算法，也不会引入旧 Schema reader。
 
 ## 9. 修改代码的方法

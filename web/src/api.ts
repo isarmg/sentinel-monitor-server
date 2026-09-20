@@ -259,6 +259,7 @@ export const isSystemStatus: JsonGuard<SystemStatus> = (
 export const isSentinelClient: JsonGuard<SentinelClient> = (value): value is SentinelClient =>
   isRecord(value) &&
   ["id", "name", "authorization_code", "status", "created_at", "updated_at"].every((key) => isString(value[key])) &&
+  (/^[a-z0-9]{32}$/.test(value.authorization_code as string) || /^[a-f0-9]{64}$/.test(value.authorization_code as string)) &&
   isNullableString(value.installation_id) && isNullableString(value.client_version) &&
   isNullableString(value.last_seen_at) && ["pending", "online", "offline", "revoked"].includes(value.status as string);
 export const isSentinelClients = arrayOf(isSentinelClient);

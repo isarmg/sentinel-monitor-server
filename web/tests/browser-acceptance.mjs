@@ -26,8 +26,8 @@ const session = { authenticated: true, user_id: administratorId, username: "admi
 const activeId = "018f1f4b-7a5d-7b5f-8d31-123456789abc";
 const pendingId = "018f1f4b-7a5d-7b5f-8d31-123456789abd";
 const camera = { id: activeId, name: "验收摄像头", location: "测试现场", has_sub_stream: false, source_kind: "client", client_id: activeId, adapter_kind: "onvif", manufacturer: "Acme", model: "IPC-1", firmware_version: null, serial_number: null, capabilities: { video: true, main_stream: true, sub_stream: false, local_recording: false, server_recording: true, ptz: true, events: false, audio_input: false, audio_output: false }, streams: [{ profile: "main", video_codec: null, audio_codec: null, width: null, height: null, frame_rate: null }], health_message: null, device_status: "disabled", storage_mode: "server", enabled: false, record_enabled: false, status: "disabled", last_seen_at: null, created_at: time, updated_at: time };
-const activeInstance = { id: activeId, installation_id: "018f1f4b-7a5d-7b5f-8d31-123456789abe", name: "门口摄像机实例", client_version: "0.3.0", authorization_code: "a".repeat(64), status: "online", last_seen_at: time, created_at: time, updated_at: time };
-const pendingInstance = { id: pendingId, installation_id: null, name: "待配对摄像机", client_version: null, authorization_code: "s".repeat(64), status: "pending", last_seen_at: null, created_at: time, updated_at: time };
+const activeInstance = { id: activeId, installation_id: "018f1f4b-7a5d-7b5f-8d31-123456789abe", name: "门口摄像机实例", client_version: "0.3.0", authorization_code: "a".repeat(32), status: "online", last_seen_at: time, created_at: time, updated_at: time };
+const pendingInstance = { id: pendingId, installation_id: null, name: "待配对摄像机", client_version: null, authorization_code: "s".repeat(32), status: "pending", last_seen_at: null, created_at: time, updated_at: time };
 const server = await preview({ preview: { host: "127.0.0.1", port: 0, strictPort: true } });
 const address = server.httpServer.address();
 assert.ok(address && typeof address === "object");
@@ -47,12 +47,13 @@ try {
         if (path.endsWith("/events/stream")) return route.fulfill({ status: 200, contentType: "text/event-stream", body: ": acceptance\n\n" });
         if (path.endsWith("/system/status")) {
           if (holdSystem) { holdSystem = false; await new Promise(resolve => { releaseSystem = resolve; }); releaseSystem = null; }
-          return route.fulfill({ json: { service: "sentinel-monitor", version: "0.2.14", database: "ok", media_service: "ok", cameras: { recording_configured: 0 }, server_time: time } });
+          return route.fulfill({ json: { service: "sentinel-monitor", version: "0.2.15", database: "ok", media_service: "ok", cameras: { recording_configured: 0 }, server_time: time } });
         }
         if (request.method() !== "GET") assert.equal(request.headers()["x-csrf-token"], session.csrf_token);
         if (path.endsWith("/clients") && request.method() === "GET") return route.fulfill({ json: clients });
         if (path.endsWith("/clients") && request.method() === "POST") {
-          const created = { ...pendingInstance, id: "018f1f4b-7a5d-7b5f-8d31-123456789abf", name: request.postDataJSON().name, authorization_code: "n".repeat(64) };
+          assert.deepEqual(request.postDataJSON(), {});
+          const created = { ...pendingInstance, id: "018f1f4b-7a5d-7b5f-8d31-123456789abf", name: "新实例", authorization_code: "n".repeat(32) };
           clients.push(created); return route.fulfill({ status: 201, json: created });
         }
         if (path.endsWith(`/clients/${pendingId}`) && request.method() === "DELETE") {
@@ -82,7 +83,7 @@ try {
       await expect(statistics).not.toContainText("待配对实例");
       await expect(statistics.getByRole("row").nth(1).locator("th, td")).toHaveText(["总数", "2 / 1"]);
       await expect(instanceTable.getByRole("link", { name: `选择实例 ${activeInstance.name}`, exact: true })).toBeVisible();
-      await expect(instanceTable.getByRole("columnheader")).toHaveText(["名称", "配对状态", "摄像机状态", "厂商 / 型号", "永久授权码", "操作", "删除"]);
+      await expect(instanceTable.getByRole("columnheader")).toHaveText(["账户名", "账户", "密码", "配对状态", "摄像机状态", "厂商 / 型号", "操作", "删除"]);
       assert.ok((await instanceTable.locator("th, td").evaluateAll(elements => elements.map(element => getComputedStyle(element).textAlign))).every(value => value === "left"));
       await assertColumnContentAlignment(instanceTable);
       assert.ok((await instanceTable.locator(".sarmg-actions").evaluateAll(elements => elements.map(element => getComputedStyle(element).justifyContent))).every(value => value === "flex-start"));
@@ -107,17 +108,10 @@ try {
       await expect(instanceTable.locator("tbody tr")).toHaveCount(1);
       await expect(page.getByRole("main").getByRole("button", { name: "新建实例", exact: true })).toHaveCount(0);
       await page.getByRole("banner").getByRole("button", { name: "新建实例", exact: true }).click();
-      const editor = page.getByRole("dialog", { name: "新建摄像机实例", exact: true });
-      await editor.getByLabel("实例名称", { exact: true }).fill("仓库摄像机");
-      await editor.getByRole("button", { name: "创建实例", exact: true }).click();
-      await expect(editor).toHaveCount(0);
+      await expect(instanceTable.getByRole("link", { name: "选择实例 新实例", exact: true })).toBeVisible();
       const dismissNotifications = page.getByRole("button", { name: "关闭通知", exact: true });
       await expect(dismissNotifications.first()).toBeVisible();
       await expect(dismissNotifications).toHaveCount(0, { timeout: 7_000 });
-      await page.getByRole("banner").getByRole("button", { name: "新建实例", exact: true }).click();
-      const focusDialog = page.getByRole("dialog", { name: "新建摄像机实例", exact: true });
-      for (let i = 0; i < 4; i++) { await page.keyboard.press("Tab"); assert.ok(await focusDialog.evaluate(element => element.contains(document.activeElement))); }
-      await page.keyboard.press("Escape");
       await instanceTable.getByRole("link", { name: `选择实例 ${activeInstance.name}`, exact: true }).click();
       await expect(page.getByRole("button", { name: "详细信息", exact: true })).toHaveAttribute("aria-pressed", "true");
       await expect(page.getByRole("complementary")).toHaveCount(0);
@@ -174,7 +168,7 @@ try {
       assert.ok(paths.some(path => path.endsWith("/system/status")));
       assert.ok(paths.some(path => path.endsWith("/media/operations")));
       assert.ok(!paths.some(path => path.includes("/users")));
-      await checkWebLanguage(page, {"routes":[["instances","Instance list"],["logs","Logs"]],"names":["验收摄像头","门口摄像机实例","仓库摄像机","测试现场"]});
+      await checkWebLanguage(page, {"routes":[["instances","Instance list"],["logs","Logs"]],"names":["新实例","验收摄像头","门口摄像机实例","仓库摄像机","测试现场"]});
       assert.deepEqual(errors, []);
       console.log(`${engine.name()}: camera-instance list/details/recordings/logs, PTZ stop, modal focus and mobile WCAG AA passed`);
       await context.close();
