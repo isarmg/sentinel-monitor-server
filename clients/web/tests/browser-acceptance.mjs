@@ -21,15 +21,18 @@ try {
     try {
       const context = await browser.newContext({ locale: "zh-CN",  viewport: { width: 360, height: 740 } });
       const page = await context.newPage();
-      const errors = [], paths = [], ptz = [];
-      let acknowledged = false, failAudit = false, clients = [{ ...activeInstance }, { ...pendingInstance }];
+      const errors = [], paths = [], ptz = [], eventQueries = [];
+      let acknowledged = false, failAudit = false, holdSystem = false, releaseSystem = null, clients = [{ ...activeInstance }, { ...pendingInstance }];
       page.on("pageerror", error => errors.push(error.message));
       await page.route("**/api/v2/**", async route => {
         const request = route.request(), url = new URL(request.url()), path = url.pathname;
         paths.push(path);
         if (path.endsWith("/auth/session")) return route.fulfill({ json: session });
         if (path.endsWith("/events/stream")) return route.fulfill({ status: 200, contentType: "text/event-stream", body: ": acceptance\n\n" });
-        if (path.endsWith("/system/status")) return route.fulfill({ json: { service: "sentinel-monitor", version: "0.2.12", database: "ok", media_service: "ok", cameras: { total: 1, online: 0, recording_configured: 0 }, server_time: time } });
+        if (path.endsWith("/system/status")) {
+          if (holdSystem) { holdSystem = false; await new Promise(resolve => { releaseSystem = resolve; }); releaseSystem = null; }
+          return route.fulfill({ json: { service: "sentinel-monitor", version: "0.2.13", database: "ok", media_service: "ok", cameras: { total: 1, online: 0, recording_configured: 0 }, server_time: time } });
+        }
         if (request.method() !== "GET") assert.equal(request.headers()["x-csrf-token"], session.csrf_token);
         if (path.endsWith("/clients") && request.method() === "GET") return route.fulfill({ json: clients });
         if (path.endsWith("/clients") && request.method() === "POST") {
@@ -44,7 +47,10 @@ try {
         if (path.endsWith("/ptz")) { ptz.push(request.postDataJSON().action); return route.fulfill({ status: 204 }); }
         if (path.endsWith("/cameras") && request.method() === "GET") return route.fulfill({ json: [camera] });
         if (path.endsWith("/events/event-1/ack")) { acknowledged = true; return route.fulfill({ status: 204 }); }
-        if (path.endsWith("/events")) return route.fulfill({ json: [{ id: "event-1", camera_id: camera.id, kind: "camera.status", severity: "info", message: "验收事件", acknowledged_at: acknowledged ? time : null, created_at: time }] });
+        if (path.endsWith("/events")) {
+          const unacknowledged = url.searchParams.get("unacknowledged"); eventQueries.push(unacknowledged);
+          return route.fulfill({ json: unacknowledged === "true" && acknowledged ? [] : [{ id: "event-1", camera_id: camera.id, kind: "camera.status", severity: "info", message: "验收事件", acknowledged_at: acknowledged ? time : null, created_at: time }] });
+        }
         if (path.endsWith("/media/operations")) return route.fulfill({ json: [] });
         if (path.endsWith("/audit")) {
           if (failAudit) { failAudit = false; return route.fulfill({ status: 500, json: { code: "platform.internal", message: "SECRET database path", retryable: false, request_id: "audit-failure-123" } }); }
@@ -102,9 +108,18 @@ try {
       const filter = page.getByRole("checkbox", { name: "仅显示未确认事件", exact: true });
       const filterBox = await filter.boundingBox();
       assert.ok(filterBox.width <= 24 && filterBox.height <= 24);
-      await filter.check(); await expect(filter).toBeChecked();
-      await filter.uncheck();
       await page.getByRole("button", { name: "确认", exact: true }).click();
+      await expect(page.getByRole("cell", { name: "已确认", exact: true })).toBeVisible();
+      holdSystem = true;
+      await page.getByRole("group", { name: "全局操作" }).getByRole("button", { name: "刷新", exact: true }).click();
+      await expect.poll(() => typeof releaseSystem).toBe("function");
+      await filter.check(); await expect(filter).toBeChecked();
+      releaseSystem();
+      await expect.poll(() => eventQueries.includes("true")).toBe(true);
+      await expect(page.getByText("没有事件", { exact: true })).toBeVisible();
+      const queriesBeforeUncheck = eventQueries.length;
+      await filter.uncheck();
+      await expect.poll(() => eventQueries.slice(queriesBeforeUncheck).includes(null), { timeout: 10_000 }).toBe(true);
       await expect(page.getByRole("cell", { name: "已确认", exact: true })).toBeVisible();
       await expect(page.getByRole("complementary")).toHaveCount(0);
       await expect(page.locator(".sarmg-instance-sidebar, .sarmg-instance-workspace")).toHaveCount(0);

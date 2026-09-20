@@ -52,7 +52,8 @@ function Console() {
   const [clients, setClients] = useState<SentinelClient[]>([]);
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [operations, setOperations] = useState<MediaOperation[] | null>(null);
-  const snapshotInFlight = useRef<Promise<void> | null>(null);
+  const snapshotRefresh = useRef<{ inFlight: Promise<void> | null; queued: boolean }>({ inFlight: null, queued: false });
+  const snapshotLoaders = useRef<Array<() => Promise<void>>>([]);
   const [auditFailure, setAuditFailure] = useState<{ requestId?: string } | null>(null);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
@@ -85,16 +86,31 @@ function Console() {
   const loadOperations = useCallback(async () => {
     setOperations(await request("/media/operations?limit=50&offset=0", isOperations));
   }, []);
+  snapshotLoaders.current = [loadCameras, loadEvents, loadClients, loadSystemStatus];
   const refreshSnapshot = useCallback(() => {
-    if (snapshotInFlight.current !== null) return snapshotInFlight.current;
-    const work = Promise.all([loadCameras(), loadEvents(), loadClients(), loadSystemStatus()]).then(() => undefined);
-    snapshotInFlight.current = work;
-    void work.then(
-      () => { if (snapshotInFlight.current === work) snapshotInFlight.current = null; },
-      () => { if (snapshotInFlight.current === work) snapshotInFlight.current = null; },
-    );
+    const state = snapshotRefresh.current;
+    if (state.inFlight !== null) {
+      state.queued = true;
+      return state.inFlight;
+    }
+    const run = async () => {
+      let lastError: unknown;
+      do {
+        state.queued = false;
+        lastError = undefined;
+        try {
+          await Promise.all(snapshotLoaders.current.map(load => load()));
+        } catch (error) {
+          lastError = error;
+        }
+      } while (state.queued);
+      if (lastError !== undefined) throw lastError;
+    };
+    const work = run();
+    state.inFlight = work;
+    void work.finally(() => { if (state.inFlight === work) state.inFlight = null; }).catch(() => undefined);
     return work;
-  }, [loadCameras, loadClients, loadEvents, loadSystemStatus]);
+  }, []);
 
   useEffect(() => { void refreshSnapshot().catch((error) => toast(errorText(error), "error")); }, [refreshSnapshot, toast]);
   useEffect(() => { if (view === "logs") void Promise.all([loadAudit(), loadOperations()]).catch((error) => toast(errorText(error), "error")); }, [loadAudit, loadOperations, toast, view]);
