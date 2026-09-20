@@ -5,6 +5,22 @@ import AxeBuilder from "@axe-core/playwright";
 import { preview } from "vite";
 
 const time = "2026-09-04T00:00:00Z";
+async function assertColumnContentAlignment(table) {
+  const offsets = await table.evaluate(element => {
+    const textStart = cell => {
+      const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT); let text;
+      while ((text = walker.nextNode()) && !text.textContent.trim()) {}
+      if (!text) throw new Error("table cell has no visible text");
+      const range = document.createRange(); range.selectNodeContents(text);
+      return range.getBoundingClientRect().left;
+    };
+    const contentStart = cell => cell.firstElementChild?.getBoundingClientRect().left ?? textStart(cell);
+    const headings = [...element.querySelectorAll("thead th")], values = [...element.querySelector("tbody tr").children];
+    if (headings.length !== values.length) throw new Error("table column count mismatch");
+    return headings.map((heading, index) => Math.abs(textStart(heading) - contentStart(values[index])));
+  });
+  assert.ok(offsets.every(offset => offset < 0.5), `column content offsets: ${JSON.stringify(offsets)}`);
+}
 const administratorId = "A".repeat(43);
 const session = { authenticated: true, user_id: administratorId, username: "admin", role: "admin", csrf_token: "A".repeat(43) };
 const activeId = "018f1f4b-7a5d-7b5f-8d31-123456789abc";
@@ -65,9 +81,10 @@ try {
       await expect(statistics.getByRole("columnheader")).toHaveText(["统计项", "总数 / 在线"]);
       await expect(statistics).not.toContainText("待配对实例");
       await expect(statistics.getByRole("row").nth(1).locator("th, td")).toHaveText(["总数", "2 / 1"]);
-      await expect(instanceTable.getByRole("button", { name: `选择实例 ${activeInstance.name}`, exact: true })).toBeVisible();
+      await expect(instanceTable.getByRole("link", { name: `选择实例 ${activeInstance.name}`, exact: true })).toBeVisible();
       await expect(instanceTable.getByRole("columnheader")).toHaveText(["名称", "配对状态", "摄像机状态", "厂商 / 型号", "永久授权码", "操作", "删除"]);
       assert.ok((await instanceTable.locator("th, td").evaluateAll(elements => elements.map(element => getComputedStyle(element).textAlign))).every(value => value === "left"));
+      await assertColumnContentAlignment(instanceTable);
       assert.ok((await instanceTable.locator(".sarmg-actions").evaluateAll(elements => elements.map(element => getComputedStyle(element).justifyContent))).every(value => value === "flex-start"));
       await expect(page.getByRole("complementary")).toHaveCount(0);
       await expect(page.locator(".sarmg-instance-sidebar, .sarmg-instance-workspace")).toHaveCount(0);
@@ -101,7 +118,7 @@ try {
       const focusDialog = page.getByRole("dialog", { name: "新建摄像机实例", exact: true });
       for (let i = 0; i < 4; i++) { await page.keyboard.press("Tab"); assert.ok(await focusDialog.evaluate(element => element.contains(document.activeElement))); }
       await page.keyboard.press("Escape");
-      await instanceTable.getByRole("button", { name: `选择实例 ${activeInstance.name}`, exact: true }).click();
+      await instanceTable.getByRole("link", { name: `选择实例 ${activeInstance.name}`, exact: true }).click();
       await expect(page.getByRole("button", { name: "详细信息", exact: true })).toHaveAttribute("aria-pressed", "true");
       await expect(page.getByRole("complementary")).toHaveCount(0);
       await expect(page.locator(".sarmg-instance-sidebar, .sarmg-instance-workspace")).toHaveCount(0);
