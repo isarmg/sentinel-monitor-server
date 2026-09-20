@@ -113,7 +113,7 @@ export type SystemStatus = {
   version: string;
   database: string;
   media_service: string;
-  cameras: { total: number; online: number; recording_configured: number };
+  cameras: { recording_configured: number };
   server_time: string;
 };
 
@@ -253,8 +253,6 @@ export const isSystemStatus: JsonGuard<SystemStatus> = (
     isString(value[key]),
   ) &&
   isRecord(value.cameras) &&
-  isNumber(value.cameras.total) &&
-  isNumber(value.cameras.online) &&
   isNumber(value.cameras.recording_configured);
 
 

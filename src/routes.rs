@@ -1305,10 +1305,9 @@ async fn list_audit(
 
 async fn system_status(_user: CurrentUser, State(state): State<AppState>) -> Result<Json<Value>> {
     reconciliation::validate_stored_camera_credentials(&state).await?;
-    let (total, online, recording): (i64, i64, i64) = sqlx::query_as(
-        "SELECT COUNT(*), COUNT(*) FILTER (WHERE status = 'online'), \
-         COUNT(*) FILTER (WHERE record_enabled AND enabled) \
-         FROM cameras WHERE deleted_at IS NULL",
+    let recording: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM cameras \
+         WHERE deleted_at IS NULL AND record_enabled AND enabled",
     )
     .fetch_one(&state.pool)
     .await?;
@@ -1317,7 +1316,7 @@ async fn system_status(_user: CurrentUser, State(state): State<AppState>) -> Res
         "version": env!("CARGO_PKG_VERSION"),
         "database": "ok",
         "media_service": if state.media.health().await { "ok" } else { "unavailable" },
-        "cameras": { "total": total, "online": online, "recording_configured": recording },
+        "cameras": { "recording_configured": recording },
         "server_time": Utc::now()
     })))
 }

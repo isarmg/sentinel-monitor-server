@@ -31,7 +31,7 @@ try {
         if (path.endsWith("/events/stream")) return route.fulfill({ status: 200, contentType: "text/event-stream", body: ": acceptance\n\n" });
         if (path.endsWith("/system/status")) {
           if (holdSystem) { holdSystem = false; await new Promise(resolve => { releaseSystem = resolve; }); releaseSystem = null; }
-          return route.fulfill({ json: { service: "sentinel-monitor", version: "0.2.14", database: "ok", media_service: "ok", cameras: { total: 1, online: 0, recording_configured: 0 }, server_time: time } });
+          return route.fulfill({ json: { service: "sentinel-monitor", version: "0.2.14", database: "ok", media_service: "ok", cameras: { recording_configured: 0 }, server_time: time } });
         }
         if (request.method() !== "GET") assert.equal(request.headers()["x-csrf-token"], session.csrf_token);
         if (path.endsWith("/clients") && request.method() === "GET") return route.fulfill({ json: clients });
@@ -61,8 +61,14 @@ try {
       });
       await page.goto(`http://127.0.0.1:${address.port}/#instances`);
       const instanceTable = page.getByRole("table", { name: "摄像机实例列表" });
-      await expect(page.getByRole("table", { name: "实例统计" })).toBeVisible();
-      await expect(instanceTable.getByRole("button", { name: activeInstance.name, exact: true })).toBeVisible();
+      const statistics = page.getByRole("table", { name: "实例统计" });
+      await expect(statistics.getByRole("columnheader")).toHaveText(["统计项", "总数 / 在线"]);
+      await expect(statistics).not.toContainText("待配对实例");
+      await expect(statistics.getByRole("row").nth(1).locator("th, td")).toHaveText(["总数", "2 / 1"]);
+      await expect(instanceTable.getByRole("button", { name: `选择实例 ${activeInstance.name}`, exact: true })).toBeVisible();
+      await expect(instanceTable.getByRole("columnheader")).toHaveText(["名称", "配对状态", "摄像机状态", "厂商 / 型号", "永久授权码", "操作", "删除"]);
+      assert.ok((await instanceTable.locator("th, td").evaluateAll(elements => elements.map(element => getComputedStyle(element).textAlign))).every(value => value === "left"));
+      assert.ok((await instanceTable.locator(".sarmg-actions").evaluateAll(elements => elements.map(element => getComputedStyle(element).justifyContent))).every(value => value === "flex-start"));
       await expect(page.getByRole("complementary")).toHaveCount(0);
       await expect(page.locator(".sarmg-instance-sidebar, .sarmg-instance-workspace")).toHaveCount(0);
       const menuToFirst = await page.evaluate(() => {
@@ -75,8 +81,12 @@ try {
       await page.getByRole("button", { name: "取消配对", exact: true }).click();
       await page.getByRole("button", { name: "确认", exact: true }).click();
       await expect(page.getByRole("cell", { name: "已撤销", exact: true })).toBeVisible();
-      await page.getByRole("button", { name: "删除实例", exact: true }).click();
-      await page.getByRole("button", { name: "确认", exact: true }).click();
+      const pendingRow = instanceTable.locator("tbody tr").filter({ hasText: pendingInstance.name });
+      await pendingRow.getByRole("button", { name: "删除", exact: true }).click();
+      await pendingRow.getByRole("button", { name: "取消", exact: true }).click();
+      await expect(pendingRow.getByRole("button", { name: "确认删除", exact: true })).toHaveCount(0);
+      await pendingRow.getByRole("button", { name: "删除", exact: true }).click();
+      await pendingRow.getByRole("button", { name: "确认删除", exact: true }).click();
       await expect(instanceTable.locator("tbody tr")).toHaveCount(1);
       await expect(page.getByRole("main").getByRole("button", { name: "新建实例", exact: true })).toHaveCount(0);
       await page.getByRole("banner").getByRole("button", { name: "新建实例", exact: true }).click();
@@ -84,11 +94,14 @@ try {
       await editor.getByLabel("实例名称", { exact: true }).fill("仓库摄像机");
       await editor.getByRole("button", { name: "创建实例", exact: true }).click();
       await expect(editor).toHaveCount(0);
+      const dismissNotifications = page.getByRole("button", { name: "关闭通知", exact: true });
+      await expect(dismissNotifications.first()).toBeVisible();
+      await expect(dismissNotifications).toHaveCount(0, { timeout: 7_000 });
       await page.getByRole("banner").getByRole("button", { name: "新建实例", exact: true }).click();
       const focusDialog = page.getByRole("dialog", { name: "新建摄像机实例", exact: true });
       for (let i = 0; i < 4; i++) { await page.keyboard.press("Tab"); assert.ok(await focusDialog.evaluate(element => element.contains(document.activeElement))); }
       await page.keyboard.press("Escape");
-      await instanceTable.getByRole("button", { name: activeInstance.name, exact: true }).click();
+      await instanceTable.getByRole("button", { name: `选择实例 ${activeInstance.name}`, exact: true }).click();
       await expect(page.getByRole("button", { name: "详细信息", exact: true })).toHaveAttribute("aria-pressed", "true");
       await expect(page.getByRole("complementary")).toHaveCount(0);
       await expect(page.locator(".sarmg-instance-sidebar, .sarmg-instance-workspace")).toHaveCount(0);

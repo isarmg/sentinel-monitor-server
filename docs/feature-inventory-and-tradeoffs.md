@@ -52,7 +52,7 @@ viewer。摄像头的 RTSP/ONVIF `username`、加密 `password` 和媒体 JWT `a
 | SEN-P-005 | 控制面和媒体面分离；Rust 不代理 RTSP 输入，也不转码视频 | `src/mediamtx.rs`、`deploy/Caddyfile` | 核心 | 高 | 把媒体搬入 Rust 会重写容量、协议和攻击面；删 companion 则无直播/录像 | Rust 路由不存在 RTSP 转发；MediaMTX path 实测 |
 | SEN-P-006 | 当前版本唯一合同；产品不内置数据迁移、备份或恢复命令 | `src/main.rs` CLI、`src/sqlite.rs` | 保障 | 高 | 加入代际 reader 会长期扩大状态和测试矩阵 | CLI 只有 serve/doctor/release 类命令；非当前库零写入拒绝 |
 | SEN-P-007 | Server 端 React 19 + TypeScript strict + Vite 7 控制台位于 `web/` | `web/package.json`、`web/src/main.tsx` | 建议保留 | 高 | API 和媒体能力仍在，但没有内置可操作控制台 | typecheck、Vite build、发行静态树验证 |
-| SEN-P-008 | Server Rust 和八个 Web 包已固定正式 Foundation 0.8.2 的完整 Git revision、Release URL 与 lock integrity，无相邻工作区来源 | Cargo、八个 `@sarmg/*` 依赖、manifest/lock | 保障 | 高 | 平台行为分叉；独立构建通过不代表主分支改动已纳入产品 Release | [独立 CI 与消费者证据](https://github.com/isarmg/sarmg-foundation-server/blob/main/consumers/axum-0.7.0-evidence.md)；后续更新仍须复验锁图和发行身份 |
+| SEN-P-008 | Server Rust 和八个 Web 包已固定正式 Foundation 0.8.3 的完整 Git revision、Release URL 与 lock integrity，无相邻工作区来源 | Cargo、八个 `@sarmg/*` 依赖、manifest/lock | 保障 | 高 | 平台行为分叉；独立构建通过不代表主分支改动已纳入产品 Release | [独立 CI 与消费者证据](https://github.com/isarmg/sarmg-foundation-server/blob/main/consumers/axum-0.7.0-evidence.md)；后续更新仍须复验锁图和发行身份 |
 | SEN-P-009 | `config/` 只存可提交样例和受审 companion 合同；真实 Secret 不进仓库 | `config/sentinel-monitor.env.example`、`.gitignore` | 开发运维 | 低 | Secret 容易误提交，或部署字段缺少审查入口 | Secret 扫描；样例字段与 parser 对照 |
 | SEN-P-010 | 本仓库刻意不发布 systemd unit，生命周期只由 release 内单一公开入口实现；内部动作模块为只读且不可执行 | `native/sentinelctl`、`native/.*-action.sh` | 开发运维 | 中 | 运维方需自行重建锁序和失败回滚，容易启动半套服务 | 生命周期测试；发行树中无 unit；仅统一命令可执行且可重定位 |
 
@@ -163,7 +163,7 @@ viewer。摄像头的 RTSP/ONVIF `username`、加密 `password` 和媒体 JWT `a
 | SEN-E-006 | 审计表记录用户、动作、实体、细节和时间；查询最多 500 条 | `audit_logs`、`list_audit` | 建议保留 | 中 | 敏感变更追溯能力下降 | client create/pair/rotate/revoke/delete、PTZ queue、login；limit clamp |
 | SEN-E-007 | 摄像头/用户持久变更审计与业务同事务；PTZ/登录审计当前 best-effort | `write_audit_in`、`write_audit` | 保障 | 高 | 若把两类语义混同，运维会错误承诺审计不丢 | DB 故障注入；两类语义分别说明 |
 | SEN-E-008 | 当前没有审计 outbox、独立 sink 或后台重投表 | Schema 与生产模块不存在该表/worker | 核心 | 高 | 若未来需要“必达外部审计”，必须新增状态机，不能把当前表描述为 outbox | 文档、Schema 和代码搜索一致 |
-| SEN-E-009 | system status 汇总数据库、MediaMTX 与摄像头 total/online/recording | `/system/status` | 建议保留 | 低 | 控制台缺少一页式运行概况 | companion 不可达、坏 credential、空设备 |
+| SEN-E-009 | system status 汇总数据库、MediaMTX 与已配置服务器录像数；实例总数和在线数由实例列表统一计算 | `/system/status` | 建议保留 | 低 | 控制台缺少一页式运行概况 | companion 不可达、坏 credential、空设备 |
 
 ## 9. React/Vite 管理 Web
 
