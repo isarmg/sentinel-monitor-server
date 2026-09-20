@@ -175,7 +175,7 @@ npm run build
 `build` 已把 `check:foundation` 设为硬前置，因此不能通过直接执行 Vite 跳过共享边界。构建产物完全自包含；
 浏览器运行时不解析 npm 包，也不访问 npm registry、Foundation 仓库或远程 CSS。
 构建期八个 Web 包来自 Foundation `v0.8.2` GitHub Release 归档，并由 lockfile integrity 锁定字节；
-Rust crate 由版本 `=0.7.0` 和 revision `77e7ad7af8e1bf62432bd6bdd8fa9aff54cb39d1` 双重锁定。两者都不读取
+Rust crate 由版本 `=0.8.2` 和 revision `e349d8a3b63b6d9f2c41d1515a4909ce8e9821a5` 双重锁定。两者都不读取
 共同父目录或 sibling checkout，也不提供旧来源 fallback。
 
 ## 10. Foundation 共享层与产品层调用树
@@ -199,10 +199,10 @@ web/src/main.tsx
    └─ 纸张/墨色/警示色、布局、组件和响应式品牌样式
 
 Rust/Axum
-├─ sarmg-contracts 0.3.1 -> Administrator 认证 DTO/路径和跨语言合同
-├─ sarmg-error 0.3.1 -> 严格 ErrorEnvelope/ErrorCode
-├─ sarmg-schema-identity 0.3.1 -> metadata DDL/列、指纹 framing 与 exact identity
-├─ sarmg-server-target 0.3.1 -> 编译期 x86_64-unknown-linux-gnu 门禁
+├─ sarmg-contracts 0.8.2 -> Administrator 认证 DTO/路径和跨语言合同
+├─ sarmg-error 0.8.2 -> 严格 ErrorEnvelope/ErrorCode
+├─ sarmg-schema-identity 0.8.2 -> metadata DDL/列、指纹 framing 与 exact identity
+├─ sarmg-server-target 0.8.2 -> 编译期 x86_64-unknown-linux-gnu 门禁
 └─ Sentinel 产品代码 -> 私有 SQLite generation、Schema DDL、Cookie、Session、媒体、审计与运维
 ```
 
