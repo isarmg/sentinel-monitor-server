@@ -81,7 +81,7 @@ cargo run -- serve
 key 从 `CREDENTIALS_KEY` 派生；AAD 绑定授权实例 ID，因此密文不能复制到另一实例。设备
 RTSP/ONVIF URL、用户名和密码只属于 Client，Server Schema 不存储这些字段。
 
-当前 key ID 固定为 `sentinel-credentials-0.2.13-key-1`。产品没有 previous key/keyring，不接受旧
+当前 key ID 固定为 `sentinel-credentials-0.2.14-key-1`。产品没有 previous key/keyring，不接受旧
 `nonce || ciphertext` 或宽松 Base64。`CREDENTIALS_KEY` 丢失意味着密文不可恢复。
 
 ## 6. 一次摄像机实例变更

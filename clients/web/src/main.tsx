@@ -13,7 +13,6 @@ import "@sarmg/admin-ui/styles.css";
 import "@sarmg/design-tokens/reset.css";
 import "@sarmg/design-tokens/accessibility.css";
 import "./styles.css";
-import "../appearance/content-blocks.css";
 
 import {
   administratorApi,

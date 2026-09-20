@@ -24,7 +24,7 @@ Browser -> Sentinel API -> SQLite + operation reconciler
 
 ## 1.3 当前版本整体
 
-`0.2.13` binary、API、Schema revision 7、固定 Schema SHA、credential envelope、MediaMTX binary/config
+`0.2.14` binary、API、Schema revision 7、固定 Schema SHA、credential envelope、MediaMTX binary/config
 合同和发行 manifest 必须精确匹配。不读取其他代数据库或密文，不注册旧 API，也不在运行时迁移。
 
 ## 1.4 期望与实际
