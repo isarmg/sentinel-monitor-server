@@ -1,7 +1,7 @@
 # Sentinel Monitor 完整功能与取舍清单
 
 本文按当前 `0.2.14` 工作树逐项盘点 Sentinel Monitor 的真实能力、保证、交付工具和明确边界。代码、
-`schema/generated/current_schema.sql`、`clients/web/src/protocol-contract.json`、`config/mediamtx.lock` 与发行 manifest 是
+`schema/generated/current_schema.sql`、`web/src/protocol-contract.json`、`config/mediamtx.lock` 与发行 manifest 是
 最终事实源；本文不是未来愿望清单，也不把测试中不存在的行为写成已实现功能。
 
 本清单帮助开发人员回答四个问题：某段代码保护什么；删除后哪条用户旅程或安全不变量会消失；删除
@@ -51,7 +51,7 @@ viewer。摄像头的 RTSP/ONVIF `username`、加密 `password` 和媒体 JWT `a
 | SEN-P-004 | MediaMTX companion 固定为 `v1.20.0 linux_amd64` 和精确 SHA-256 | `config/mediamtx.lock`、`native/build.sh`、`native/sentinelctl start` | 保障 | 高 | API、配置和媒体行为不可复现，发行身份失去意义 | version 输出、platform、binary SHA 三者同时匹配 |
 | SEN-P-005 | 控制面和媒体面分离；Rust 不代理 RTSP 输入，也不转码视频 | `src/mediamtx.rs`、`deploy/Caddyfile` | 核心 | 高 | 把媒体搬入 Rust 会重写容量、协议和攻击面；删 companion 则无直播/录像 | Rust 路由不存在 RTSP 转发；MediaMTX path 实测 |
 | SEN-P-006 | 当前版本唯一合同；产品不内置数据迁移、备份或恢复命令 | `src/main.rs` CLI、`src/sqlite.rs` | 保障 | 高 | 加入代际 reader 会长期扩大状态和测试矩阵 | CLI 只有 serve/doctor/release 类命令；非当前库零写入拒绝 |
-| SEN-P-007 | Server 端 React 19 + TypeScript strict + Vite 7 控制台位于 `clients/web/` | `clients/web/package.json`、`clients/web/src/main.tsx` | 建议保留 | 高 | API 和媒体能力仍在，但没有内置可操作控制台 | typecheck、Vite build、发行静态树验证 |
+| SEN-P-007 | Server 端 React 19 + TypeScript strict + Vite 7 控制台位于 `web/` | `web/package.json`、`web/src/main.tsx` | 建议保留 | 高 | API 和媒体能力仍在，但没有内置可操作控制台 | typecheck、Vite build、发行静态树验证 |
 | SEN-P-008 | Server Rust 和八个 Web 包已固定正式 Foundation 0.8.2 的完整 Git revision、Release URL 与 lock integrity，无相邻工作区来源 | Cargo、八个 `@sarmg/*` 依赖、manifest/lock | 保障 | 高 | 平台行为分叉；独立构建通过不代表主分支改动已纳入产品 Release | [独立 CI 与消费者证据](https://github.com/isarmg/sarmg-foundation-server/blob/main/consumers/axum-0.7.0-evidence.md)；后续更新仍须复验锁图和发行身份 |
 | SEN-P-009 | `config/` 只存可提交样例和受审 companion 合同；真实 Secret 不进仓库 | `config/sentinel-monitor.env.example`、`.gitignore` | 开发运维 | 低 | Secret 容易误提交，或部署字段缺少审查入口 | Secret 扫描；样例字段与 parser 对照 |
 | SEN-P-010 | 本仓库刻意不发布 systemd unit，生命周期只由 release 内单一公开入口实现；内部动作模块为只读且不可执行 | `native/sentinelctl`、`native/.*-action.sh` | 开发运维 | 中 | 运维方需自行重建锁序和失败回滚，容易启动半套服务 | 生命周期测试；发行树中无 unit；仅统一命令可执行且可重定位 |
@@ -141,7 +141,7 @@ viewer。摄像头的 RTSP/ONVIF `username`、加密 `password` 和媒体 JWT `a
 | SEN-M-002 | 媒体 JWT 使用 HS256 key，经 HKDF 从 `APP_JWT_SECRET` 派生 | `issue_media_token`、`media_signing_key` | 保障 | 高 | 直接复用根 Secret 或弱 key 会扩大泄漏影响 | key 派生确定性、错 Secret、算法固定 |
 | SEN-M-003 | 浏览器读取与 Client 发布都使用短时 JWT；严格绑定 protocol、issuer、audience、kind、subject、camera、path、actions、jti、iat/nbf/exp，长期 Client API Token 不进入媒体 URL | `client_publish_url`、`MediaClaims`、`decode_media_token` | 保障 | 高 | Token 可跨产品、跨摄像头、跨用途重放，或媒体链路泄漏扩大到控制面 | 每字段篡改、未知字段、read/publish 隔离、时间窗、jti |
 | SEN-M-004 | MediaMTX HTTP auth callback 有 4 KiB/字段上限并核对 path 与 action | `/internal/v2/media/auth`、`MediaAuthRequest` | 保障 | 高 | callback 可被超大字段耗尽，或 Token 越权到其他 path | 超限、错 path/action、过期、额外字段 |
-| SEN-M-005 | WHEP 浏览器播放器生成 recvonly offer、等待 ICE、设置 answer 并 DELETE resource | `clients/web/src/whep.ts` | 核心 | 高 | 失去低延迟直播或遗留服务端 WHEP Session | 成功连接、12 秒 timeout、close、unmount |
+| SEN-M-005 | WHEP 浏览器播放器生成 recvonly offer、等待 ICE、设置 answer 并 DELETE resource | `web/src/whep.ts` | 核心 | 高 | 失去低延迟直播或遗留服务端 WHEP Session | 成功连接、12 秒 timeout、close、unmount |
 | SEN-M-006 | WHEP OPTIONS/POST 与资源 DELETE 携带短时 Bearer；ticket runtime guard 当前只验证 URL 是字符串 | `WhepPlayer`、`isStreamTicket` | 保障 | 高 | 媒体入口可能未授权或把 Token 发往意外 origin | 生产 `PUBLIC_WEBRTC_BASE_URL` 必须保持同源相对路径；当前播放器接受绝对 ticket/Location 且会携带 Bearer，尚无 same-origin 强制 |
 | SEN-M-007 | 录像列表通过 MediaMTX playback API，查询可选 start/end 和指定 camera/profile | `list_recordings`、`MediaMtxClient::recordings` | 建议保留 | 高 | 直播保留，但无法定位历史片段 | 时间范围、main/sub、无录像、上游错误 |
 | SEN-M-008 | 录像播放只允许 mp4/fmp4，单次 0.1 秒至 6 小时 | `play_recording` | 保障 | 中 | 无边界请求可放大上游和带宽资源消耗 | duration 边界、format、非法时间 |
@@ -171,14 +171,14 @@ viewer。摄像头的 RTSP/ONVIF `username`、加密 `password` 和媒体 JWT `a
 |---|---|---|---|---|---|---|
 | SEN-W-001 | 共享 Shell 负责登录、恢复、退出、导航、主题、诊断、通知和安全错误；产品只传身份和业务页面 | createSarmgAdminApplication | 保障 | 高 | 产品复制平台状态机 | Foundation 10 项浏览器验收及消费者浏览器回归 |
 | SEN-W-002 | 页面只在内存持有 Session/CSRF；Cookie 由浏览器 HttpOnly 管理 | `@sarmg/admin-web`、`@sarmg/http-client` | 保障 | 高 | 把 Secret 放 local/sessionStorage 会扩大 XSS 泄漏 | storage 扫描、刷新、401 清理 |
-| SEN-W-003 | 所有业务响应经过 TypeScript runtime guard 检查必需字段/类型，不只依赖静态类型 | `clients/web/src/api.ts` | 保障 | 高 | 异常或漂移 JSON 会在组件深处被错误使用 | 缺失/错误类型、数组成员；产品 guard 当前容忍额外响应字段 |
+| SEN-W-003 | 所有业务响应经过 TypeScript runtime guard 检查必需字段/类型，不只依赖静态类型 | `web/src/api.ts` | 保障 | 高 | 异常或漂移 JSON 会在组件深处被错误使用 | 缺失/错误类型、数组成员；产品 guard 当前容忍额外响应字段 |
 | SEN-W-004 | Camera 页面支持搜索、分页、添加、编辑、删除和卡片直播 | `CameraView`、`CameraEditor` | 核心 | 高 | 失去主要管理旅程 | 空态、搜索、翻页、mutation operation |
 | SEN-W-005 | 详情使用共享 Dialog，主码流及鼠标/键盘 PTZ；move/stop 串行，松开、取消、失焦及关闭均触发停止 | CameraDrawer | 可选 | 中 | 缺少精细控制或停止竞态 | pointer cancel、Space/Enter、窗口 blur、关闭清理 |
 | SEN-W-006 | Recordings 页面按摄像头和时间范围查询并播放 | `RecordingsView` | 建议保留 | 中 | API 尚在但普通用户难以回放 | 无摄像头、无结果、播放 URL 清理 |
 | SEN-W-007 | Events 页面筛选未确认、手动刷新和确认事件 | `EventsView`、SSE effect | 建议保留 | 中 | 事件 API 无内置操作界面 | SSE resync、确认、camera name 映射 |
 | SEN-W-008 | 系统页组合媒体状态与业务审计；管理员账号仅由 Foundation Shell 右上角人物图标设置；不请求 /users | SystemView、Foundation AccountSettings | 建议保留 | 中 | 业务状态缺失或账号入口分散 | 系统状态、业务审计、账号设置、无管理员列表 |
 | SEN-W-009 | Foundation design tokens、scoped reset、focus/reduced-motion/forced-colors 基线 | CSS imports、`data-sarmg-scope` | 保障 | 中 | 基础交互和可访问性在项目间漂移 | CSS 摘要、键盘焦点、减弱动态、高对比度 |
-| SEN-W-010 | 产品 CSS 仅维护业务布局，颜色/字体/控件来自 Foundation；视频黑底属于媒体业务 | clients/web/src/styles.css | 建议保留 | 中 | 私有平台样式导致主题和可访问性漂移 | 无 token 覆盖、无私有字体、移动明暗主题 WCAG AA |
+| SEN-W-010 | 产品 CSS 仅维护业务布局，颜色/字体/控件来自 Foundation；视频黑底属于媒体业务 | web/src/styles.css | 建议保留 | 中 | 私有平台样式导致主题和可访问性漂移 | 无 token 覆盖、无私有字体、移动明暗主题 WCAG AA |
 | SEN-W-011 | WHEP player 在 component cleanup、profile/camera 变化时关闭 peer/resource | `LiveVideo` effect、`WhepPlayer.close` | 保障 | 高 | 切页后仍保留媒体连接和资源 | mount/unmount、快速切换、失败重试 |
 | SEN-W-012 | 精确 Node 26.7.0、React/DOM 19.2.8、TS 5.8.3、Vite 7.3.6 工具链 | `.node-version`、`package.json`、lockfile | 开发运维 | 中 | CI/开发/发行 bundle 不可复现 | clean `npm ci`、engine、lock 来源、typecheck |
 | SEN-W-013 | `build` 强制先执行 `check:foundation`，再 strict typecheck 与 Vite build | `package.json`、`tests/design-foundation.test.mjs` | 开发运维 | 中 | 共享依赖或 CSS 漂移时仍可能生成表面可用 bundle | 故意改版本/import/scope 后 build 在 bundling 前失败 |
@@ -206,7 +206,7 @@ viewer。摄像头的 RTSP/ONVIF `username`、加密 `password` 和媒体 JWT `a
 | SEN-R-016 | relocated smoke 使用真实 Rust/Vite/SQLite/MediaMTX 制品验证重定位和篡改拒绝 | `native/relocated-smoke-test.sh` | 开发运维 | 高 | 静态脚本检查无法证明真实发行闭包 | 真实启动、hashed assets、字节篡改、source-bound binary |
 | SEN-R-017 | CI 同时门禁 Rust fmt/check/clippy/test、Web、native 生命周期与 Caddy 当前代理合同 | `.github/workflows/ci.yml` | 开发运维 | 高 | 任一语言或交付层可独立漂移进入 main；代理可能重新指向不存在的容器 | clean checkout 全 job；锁文件模式；根级 Caddyfile/容器上游负例；三个 loopback 上游精确一次 |
 | SEN-R-018 | Rust 固定 1.98.0，Cargo.lock 与 npm package-lock 都纳入提交 | `rust-toolchain.toml`、lockfiles | 开发运维 | 中 | 依赖解析随时间变化，构建结果不可复现 | `--locked`、`npm ci`、工具链版本 |
-| SEN-R-019 | 源配置统一为 `config/`，主机部署资产为 `deploy/`，客户端为 `clients/web/`，生命周期为 `native/`；根目录不放散落部署文件 | 仓库目录结构、CI proxy gate | 开发运维 | 低 | 配置、客户端和部署资产散落，开发者难以判断事实源；双份代理模板会漂移 | 目录清单；根级 `Caddyfile` 不存在；脚本/文档不引用已移除位置 |
+| SEN-R-019 | 源配置统一为 `config/`，主机部署资产为 `deploy/`，客户端为 `web/`，生命周期为 `native/`；根目录不放散落部署文件 | 仓库目录结构、CI proxy gate | 开发运维 | 低 | 配置、客户端和部署资产散落，开发者难以判断事实源；双份代理模板会漂移 | 目录清单；根级 `Caddyfile` 不存在；脚本/文档不引用已移除位置 |
 | SEN-R-020 | 当前 Schema identity 为 application `sentinel-monitor`、version 0.2.2、revision 7、SHA `bb64805d1434fa953b5a215c636c086d98bce467825f7e9b6d3a5c1c0bd359c4`；`_sarmg_administrators` 使用 username，不保存 email/role | `schema/generated/current_schema.sql`、`src/sqlite.rs`、`native/lifecycle-test.sh` | 保障 | 高 | 发行物、运行库和运维文档可能各自接受不同管理身份 DDL | code-owned fingerprint 重算、metadata/现场 schema、列清单、lifecycle identity 一致 |
 
 ## 11. 可观测性、容量和故障边界

@@ -9,7 +9,7 @@ cargo +1.98.0 fmt --all -- --check
 cargo +1.98.0 check --locked --all-targets
 cargo +1.98.0 clippy --locked --all-targets -- -D warnings
 cargo +1.98.0 test --locked
-cd clients/web
+cd web
 npm ci
 npm run check:foundation
 npm run typecheck

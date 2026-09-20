@@ -30,7 +30,7 @@ release_root="$TEMPORARY/archive/opt/isarmg/sentinel-monitor/releases/$SENTINEL_
 verify_release "$release_root"
 install -m 0444 "$TEMPORARY/LICENSE" "$TEMPORARY/archive/licenses/MediaMTX-LICENSE"
 for name in OFL.txt CJK-LICENSE.txt NORMAL-LICENSE.txt; do
-  install -m 0444 "$SOURCE_ROOT/clients/web/fonts/$name" "$TEMPORARY/archive/licenses/$name"
+  install -m 0444 "$SOURCE_ROOT/web/fonts/$name" "$TEMPORARY/archive/licenses/$name"
 done
 install -m 0444 "$SOURCE_ROOT/docs/releases/$SENTINEL_VERSION.md" "$TEMPORARY/archive/README.md"
 epoch="$(git -C "$SOURCE_ROOT" show -s --format=%ct HEAD)"

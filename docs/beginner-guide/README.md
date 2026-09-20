@@ -36,7 +36,7 @@ IP Camera --RTSP/ONVIF--> MediaMTX --WHEP/HLS--> Caddy --> Browser
 
 ## 2. 目录阅读顺序
 
-1. `clients/web/src/protocol-contract.json`：浏览器、Rust 路由和 MediaMTX 回调共享的当前协议身份。
+1. `web/src/protocol-contract.json`：浏览器、Rust 路由和 MediaMTX 回调共享的当前协议身份。
 2. `src/main.rs`、`config.rs`、`routes.rs`：CLI、配置和 `/api/v2` 入口。
 3. `auth.rs`、`login_security.rs`：用户 Session、CSRF、媒体 JWT 和登录保护。
 4. `crypto.rs`：摄像机实例永久授权码的唯一当前 envelope。
@@ -48,7 +48,7 @@ IP Camera --RTSP/ONVIF--> MediaMTX --WHEP/HLS--> Caddy --> Browser
 需要 Rust `1.98`、Node/npm，以及可供集成测试使用的 Linux 工具。Web：
 
 ```bash
-cd clients/web
+cd web
 npm ci
 npm run build
 ```

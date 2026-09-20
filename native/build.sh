@@ -145,8 +145,8 @@ if [[ -n "$WEB_SOURCE" ]]; then
   cp -a -- "$WEB_SOURCE/." "$WEB_STAGE/"
 else
   require_command npm
-  npm ci --prefix "$SOURCE_ROOT/clients/web"
-  npm run build --prefix "$SOURCE_ROOT/clients/web" -- --outDir "$WEB_STAGE" --emptyOutDir
+  npm ci --prefix "$SOURCE_ROOT/web"
+  npm run build --prefix "$SOURCE_ROOT/web" -- --outDir "$WEB_STAGE" --emptyOutDir
 fi
 find -P "$WEB_STAGE" -type d -exec chmod 0555 -- {} +
 find -P "$WEB_STAGE" -type f -exec chmod 0444 -- {} +

@@ -2,7 +2,7 @@ use serde::Deserialize;
 use std::sync::LazyLock;
 
 // 浏览器客户端与 Rust 服务端读取同一份协议常量，避免各自手写 API 路径。
-const CONTRACT_SOURCE: &str = include_str!("../clients/web/src/protocol-contract.json");
+const CONTRACT_SOURCE: &str = include_str!("../web/src/protocol-contract.json");
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -37,10 +37,10 @@ mod tests {
     fn rust_web_and_mediamtx_share_the_current_protocol_contract() {
         assert_eq!(CONTRACT.media_jwt_issuer, "sentinel-monitor/0.2.2");
 
-        let web = include_str!("../clients/web/src/api.ts");
+        let web = include_str!("../web/src/api.ts");
         assert!(web.contains("export function apiPath"));
         assert!(!web.contains("\"/api/"));
-        let vite = include_str!("../clients/web/vite.config.ts");
+        let vite = include_str!("../web/vite.config.ts");
         assert!(vite.contains("\"/api/v2\": \"http://127.0.0.1:8080\""));
         assert!(!vite.contains("\"/api\":"));
 

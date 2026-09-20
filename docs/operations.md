@@ -231,7 +231,7 @@ web-fonts、web-toolchain 八个构建期包，不是生产运行服务。Node �
 - 已通过独立 CI，见[消费者证据](https://github.com/isarmg/sarmg-foundation-server/blob/main/consumers/axum-0.7.0-evidence.md)。后续更新仍须统一 manifest、lockfile、发布身份并复验；独立构建不等于主分支改动已进入现有产品 Release，不改写已发布 tag 或资产，不保留双路径。
 
 ```bash
-cd clients/web
+cd web
 npm ci
 npm run check:foundation
 npm run build

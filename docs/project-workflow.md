@@ -166,7 +166,7 @@ package.json + package-lock.json 精确锁定 Foundation 0.8.2 和工具链
 开发期命令：
 
 ```bash
-cd clients/web
+cd web
 npm ci
 npm run check:foundation
 npm run build
@@ -181,7 +181,7 @@ Rust crate 由版本 `=0.7.0` 和 revision `77e7ad7af8e1bf62432bd6bdd8fa9aff54cb
 ## 10. Foundation 共享层与产品层调用树
 
 ```text
-clients/web/src/main.tsx
+web/src/main.tsx
 ├─ @sarmg/admin-web
 │  ├─ createAdministratorApiClient
 │  ├─ /react: useAdministratorSession

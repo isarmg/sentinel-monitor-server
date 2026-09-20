@@ -27,14 +27,14 @@ jobs:
         run: |
           node --version
           npm --version
-          npm ci --prefix clients/web
-          npm run check:foundation --prefix clients/web
-          npm run build --prefix clients/web
+          npm ci --prefix web
+          npm run check:foundation --prefix web
+          npm run build --prefix web
       - name: Install acceptance browsers
-        working-directory: clients/web
+        working-directory: web
         run: npx playwright install --with-deps chromium firefox
       - name: Verify business UI and shared platform integration
-        working-directory: clients/web
+        working-directory: web
         run: npm run test:browser
 
   rust:

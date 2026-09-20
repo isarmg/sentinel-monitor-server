@@ -14,7 +14,7 @@ Client 使用可扩展设备适配器统一不同品牌：当前 `rtsp` 适配�
 密文、runtime 或配置，也不提供迁移、备份和恢复命令。稳定版本形成后的代际变更才会交给
 `sarmg-upgrade`；当前开发阶段没有历史升级 edge。
 
-浏览器源码统一位于 `clients/web/`；可提交的环境样例和受审 MediaMTX 配置统一位于 `config/`；主机侧
+浏览器源码统一位于 `web/`；可提交的环境样例和受审 MediaMTX 配置统一位于 `config/`；主机侧
 代理模板统一位于 `deploy/`。真实 credentials、运行环境文件和录像不进入源码仓库。生产环境文件唯一位置是
 `/etc/isarmg/sentinel-monitor.env`。本仓库刻意不提供 systemd unit；正式生命周期由不可变发行树内的
 `native/sentinelctl bootstrap|start|status|stop` 统一管理；内部动作模块不可直接执行。
@@ -32,7 +32,7 @@ cargo +1.98.0 fmt --all -- --check
 cargo +1.98.0 check --locked --all-targets
 cargo +1.98.0 clippy --locked --all-targets -- -D warnings
 cargo +1.98.0 test --locked --all-features
-(cd clients/web && npm ci && npm run check:foundation && npm run build)
+(cd web && npm ci && npm run check:foundation && npm run build)
 ./native/lifecycle-test.sh
 ./native/relocated-smoke-test.sh
 ```
