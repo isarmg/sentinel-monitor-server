@@ -53,7 +53,7 @@ struct Cli {
 enum Command {
     /// Serve the HTTP control plane (the default command).
     Serve,
-    /// Serve only after verifying this exact physical 0.2.15 release tree.
+    /// Serve only after verifying this exact physical 0.2.16 release tree.
     ServeRelease { release_root: PathBuf },
     /// Check database read/write, credential, storage, readiness and companion contracts.
     Doctor(DoctorArgs),
@@ -62,7 +62,7 @@ enum Command {
     StaticContract,
     /// Print the complete identity compiled into this binary.
     ReleaseIdentity,
-    /// Verify a complete physical 0.2.15 release with its own binary.
+    /// Verify a complete physical 0.2.16 release with its own binary.
     VerifyRelease { release_root: PathBuf },
     /// Print the canonical release-manifest identity header.
     #[command(hide = true)]

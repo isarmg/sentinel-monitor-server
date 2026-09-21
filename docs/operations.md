@@ -18,7 +18,7 @@ Node `26.7.0`。
 ## 1. 唯一生产布局
 
 ```text
-/opt/isarmg/sentinel-monitor/releases/0.2.15/
+/opt/isarmg/sentinel-monitor/releases/0.2.16/
 ├─ RELEASE-MANIFEST
 ├─ bin/{sentinel-monitor,mediamtx}
 ├─ web/{index.html,assets/...}
@@ -43,11 +43,11 @@ Node `26.7.0`。
 export SENTINEL_MEDIAMTX_SOURCE=/absolute/path/to/mediamtx
 ./native/build.sh
 
-/opt/isarmg/sentinel-monitor/releases/0.2.15/native/sentinelctl bootstrap
+/opt/isarmg/sentinel-monitor/releases/0.2.16/native/sentinelctl bootstrap
 sudoedit /etc/isarmg/sentinel-monitor.env
-/opt/isarmg/sentinel-monitor/releases/0.2.15/native/sentinelctl bootstrap --confirm-config
-/opt/isarmg/sentinel-monitor/releases/0.2.15/native/sentinelctl start
-/opt/isarmg/sentinel-monitor/releases/0.2.15/native/sentinelctl status
+/opt/isarmg/sentinel-monitor/releases/0.2.16/native/sentinelctl bootstrap --confirm-config
+/opt/isarmg/sentinel-monitor/releases/0.2.16/native/sentinelctl start
+/opt/isarmg/sentinel-monitor/releases/0.2.16/native/sentinelctl status
 ```
 
 构建机必须是 Linux x86_64，并安装 Rust `1.98.0` 的 `rustfmt`、`clippy` 组件及
@@ -57,7 +57,7 @@ sudoedit /etc/isarmg/sentinel-monitor.env
 停止：
 
 ```bash
-/opt/isarmg/sentinel-monitor/releases/0.2.15/native/sentinelctl stop
+/opt/isarmg/sentinel-monitor/releases/0.2.16/native/sentinelctl stop
 ```
 
 同版本第二次 build/bootstrap 不覆盖既有 release 或环境文件。bootstrap 不启动服务，只读取固定的平面
@@ -144,9 +144,9 @@ set -a
 source /etc/isarmg/sentinel-monitor.env
 set +a
 
-"/opt/isarmg/sentinel-monitor/releases/0.2.15/bin/sentinel-monitor" doctor --offline
-/opt/isarmg/sentinel-monitor/releases/0.2.15/native/sentinelctl start
-"/opt/isarmg/sentinel-monitor/releases/0.2.15/bin/sentinel-monitor" doctor
+"/opt/isarmg/sentinel-monitor/releases/0.2.16/bin/sentinel-monitor" doctor --offline
+/opt/isarmg/sentinel-monitor/releases/0.2.16/native/sentinelctl start
+"/opt/isarmg/sentinel-monitor/releases/0.2.16/bin/sentinel-monitor" doctor
 ```
 
 offline 检查 Schema、SQLite integrity/foreign keys、回滚写探针、录像目录、全量凭据解密、MediaMTX
