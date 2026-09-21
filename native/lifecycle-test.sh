@@ -54,7 +54,7 @@ install -m 0644 -- "$REPOSITORY_ROOT/config/mediamtx.yml" "$SOURCE_FIXTURE/confi
 printf '%s\n' \
   '[package]' \
   'name = "sentinel-monitor"' \
-  'version = "0.2.16"' \
+  'version = "0.2.17"' \
   >"$SOURCE_FIXTURE/Cargo.toml"
 printf '%s\n' '<!doctype html><script type="module" src="/assets/app.js"></script><link rel="stylesheet" href="/assets/app.css">' \
   >"$SOURCE_FIXTURE/web-dist/index.html"
@@ -93,7 +93,7 @@ cat >"$FAKE_APP" <<'EOF'
 set -euo pipefail
 case "${1:-serve}" in
   --version)
-    echo 'sentinel-monitor 0.2.16'
+    echo 'sentinel-monitor 0.2.17'
     ;;
   static-contract)
     printf '%s\n' "${FAKE_STATIC_CONTRACT:?}"
@@ -102,7 +102,7 @@ case "${1:-serve}" in
     cat <<HEADER
 format=sentinel-release-v2
 application=sentinel-monitor
-application_version=0.2.16
+application_version=0.2.17
 source_revision=${FAKE_SOURCE_REVISION:?}
 target=x86_64-unknown-linux-gnu
 wire_protocol=sentinel-wire-v2
@@ -194,40 +194,40 @@ run_operation() {
 
 refresh_static_contract
 run_build >/dev/null
-[[ -d "$INSTALL_ROOT/releases/0.2.16" && ! -L "$INSTALL_ROOT/releases/0.2.16" ]] ||
+[[ -d "$INSTALL_ROOT/releases/0.2.17" && ! -L "$INSTALL_ROOT/releases/0.2.17" ]] ||
   fail "physical release directory is missing"
 [[ ! -e "$INSTALL_ROOT/current" && ! -L "$INSTALL_ROOT/current" ]] ||
   fail "publisher created a mutable current alias"
-[[ -x "$INSTALL_ROOT/releases/0.2.16/native/sentinelctl" ]] || fail "release lifecycle command is missing"
-[[ ! -x "$INSTALL_ROOT/releases/0.2.16/native/.start-action.sh" ]] ||
+[[ -x "$INSTALL_ROOT/releases/0.2.17/native/sentinelctl" ]] || fail "release lifecycle command is missing"
+[[ ! -x "$INSTALL_ROOT/releases/0.2.17/native/.start-action.sh" ]] ||
   fail "internal lifecycle modules must not be executable"
 [[ "$(find "$INSTALL_ROOT/releases" -maxdepth 1 -name '.0.2.1.stage.*' -print -quit)" == "" ]] ||
   fail "physical release publication left a staging directory"
-[[ -z "$(find -P "$INSTALL_ROOT/releases/0.2.16" -perm /222 -print -quit)" ]] ||
+[[ -z "$(find -P "$INSTALL_ROOT/releases/0.2.17" -perm /222 -print -quit)" ]] ||
   fail "published release contains writable entries"
 
 # Neither a mutable alias nor an ordinary source-bound serve command is a
 # valid way to enter the current product.
-ln -s -- releases/0.2.16 "$INSTALL_ROOT/current"
+ln -s -- releases/0.2.17 "$INSTALL_ROOT/current"
 if run_operation "$INSTALL_ROOT/current/native/sentinelctl" status >"$TEST_ROOT/alias-status.out" 2>&1; then
   fail "an operational script accepted a mutable release alias"
 fi
 rm -- "$INSTALL_ROOT/current"
-if run_operation "$INSTALL_ROOT/releases/0.2.16/bin/sentinel-monitor" serve \
+if run_operation "$INSTALL_ROOT/releases/0.2.17/bin/sentinel-monitor" serve \
   >"$TEST_ROOT/ordinary-serve.out" 2>&1; then
   fail "a source-bound Sentinel binary accepted ordinary serve"
 fi
 
 # A physical version is a one-shot destination even when all supplied bytes
 # are identical. Rejection must not change the installed tree.
-FIRST_MANIFEST="$(sha256sum "$INSTALL_ROOT/releases/0.2.16/RELEASE-MANIFEST" | awk '{print $1}')"
+FIRST_MANIFEST="$(sha256sum "$INSTALL_ROOT/releases/0.2.17/RELEASE-MANIFEST" | awk '{print $1}')"
 FIRST_LAYOUT="$(find -P "$INSTALL_ROOT" -printf '%P %y %m %s\n' | LC_ALL=C sort | sha256sum | awk '{print $1}')"
 if run_build >"$TEST_ROOT/second-build.out" 2>&1; then
-  fail "publisher accepted a second Sentinel 0.2.16 publication"
+  fail "publisher accepted a second Sentinel 0.2.17 publication"
 fi
 grep -q 'one-shot' "$TEST_ROOT/second-build.out" ||
   fail "second publication did not identify the one-shot boundary"
-[[ "$(sha256sum "$INSTALL_ROOT/releases/0.2.16/RELEASE-MANIFEST" | awk '{print $1}')" == "$FIRST_MANIFEST" ]] ||
+[[ "$(sha256sum "$INSTALL_ROOT/releases/0.2.17/RELEASE-MANIFEST" | awk '{print $1}')" == "$FIRST_MANIFEST" ]] ||
   fail "rejected second publication changed the release manifest"
 [[ "$(find -P "$INSTALL_ROOT" -printf '%P %y %m %s\n' | LC_ALL=C sort | sha256sum | awk '{print $1}')" == "$FIRST_LAYOUT" ]] ||
   fail "rejected second publication changed the installed layout"
@@ -258,7 +258,7 @@ if env \
   SENTINEL_NATIVE_CONFIG_DIR="$TEST_ROOT/bad-config-link" \
   SENTINEL_NATIVE_STATE_DIR="$STATE_ROOT" \
   SENTINEL_NATIVE_RUNTIME_DIR="$RUNTIME_ROOT" \
-  "$INSTALL_ROOT/releases/0.2.16/native/sentinelctl" bootstrap >"$TEST_ROOT/symlink-config.out" 2>&1; then
+  "$INSTALL_ROOT/releases/0.2.17/native/sentinelctl" bootstrap >"$TEST_ROOT/symlink-config.out" 2>&1; then
   fail "bootstrap accepted a symlinked configuration path"
 fi
 
@@ -274,15 +274,15 @@ if env \
   SENTINEL_NATIVE_CONFIG_DIR="$BAD_FINAL_CONFIG" \
   SENTINEL_NATIVE_STATE_DIR="$STATE_ROOT" \
   SENTINEL_NATIVE_RUNTIME_DIR="$RUNTIME_ROOT" \
-  "$INSTALL_ROOT/releases/0.2.16/native/sentinelctl" bootstrap >"$TEST_ROOT/symlink-env.out" 2>&1; then
+  "$INSTALL_ROOT/releases/0.2.17/native/sentinelctl" bootstrap >"$TEST_ROOT/symlink-env.out" 2>&1; then
   fail "bootstrap accepted a symbolic-link environment file"
 fi
 
 BOOTSTRAP_OUTPUT="$TEST_ROOT/bootstrap.out"
-run_operation "$INSTALL_ROOT/releases/0.2.16/native/sentinelctl" bootstrap >"$BOOTSTRAP_OUTPUT"
+run_operation "$INSTALL_ROOT/releases/0.2.17/native/sentinelctl" bootstrap >"$BOOTSTRAP_OUTPUT"
 ENV_FILE="$CONFIG_ROOT/sentinel-monitor.env"
 [[ "$(stat -c '%a' "$ENV_FILE")" == "600" ]] || fail "environment file is not mode 0600"
-grep -q '^STATIC_DIR=.*/releases/0.2.16/web$' "$ENV_FILE" || fail "STATIC_DIR is not release-pinned"
+grep -q '^STATIC_DIR=.*/releases/0.2.17/web$' "$ENV_FILE" || fail "STATIC_DIR is not release-pinned"
 grep -q '^PUBLIC_RTSP_PUBLISH_BASE_URL=REPLACE_WITH_PUBLIC_RTSPS_ORIGIN$' "$ENV_FILE" ||
   fail "bootstrap did not require an explicit public RTSPS publish origin"
 JWT_VALUE="$(sed -n 's/^APP_JWT_SECRET=//p' "$ENV_FILE")"
@@ -295,21 +295,21 @@ for secret in "$JWT_VALUE" "$KEY_VALUE" "$PASSWORD_VALUE"; do
 done
 
 ENV_DIGEST="$(sha256sum "$ENV_FILE" | awk '{print $1}')"
-run_operation "$INSTALL_ROOT/releases/0.2.16/native/sentinelctl" bootstrap >/dev/null
+run_operation "$INSTALL_ROOT/releases/0.2.17/native/sentinelctl" bootstrap >/dev/null
 [[ "$(sha256sum "$ENV_FILE" | awk '{print $1}')" == "$ENV_DIGEST" ]] ||
   fail "bootstrap overwrote an existing environment file"
-if run_operation "$INSTALL_ROOT/releases/0.2.16/native/sentinelctl" start >"$TEST_ROOT/unconfirmed.out" 2>&1; then
+if run_operation "$INSTALL_ROOT/releases/0.2.17/native/sentinelctl" start >"$TEST_ROOT/unconfirmed.out" 2>&1; then
   fail "start accepted an unconfirmed generated administrator password"
 fi
 
-sed -i 's/^BOOTSTRAP_ADMIN_PASSWORD=.*/BOOTSTRAP_ADMIN_PASSWORD=operator-reviewed-password-0.2.16/' "$ENV_FILE"
+sed -i 's/^BOOTSTRAP_ADMIN_PASSWORD=.*/BOOTSTRAP_ADMIN_PASSWORD=operator-reviewed-password-0.2.17/' "$ENV_FILE"
 sed -i 's|^PUBLIC_RTSP_PUBLISH_BASE_URL=.*|PUBLIC_RTSP_PUBLISH_BASE_URL=rtsps://sentinel.example:8322|' "$ENV_FILE"
 printf '%s\n' 'test certificate' >"$CONFIG_ROOT/sentinel-rtsp.crt"
 printf '%s\n' 'test private key' >"$CONFIG_ROOT/sentinel-rtsp.key"
 chmod 0644 -- "$CONFIG_ROOT/sentinel-rtsp.crt"
 chmod 0600 -- "$CONFIG_ROOT/sentinel-rtsp.key"
 chmod 0600 -- "$ENV_FILE"
-run_operation "$INSTALL_ROOT/releases/0.2.16/native/sentinelctl" bootstrap --confirm-config >/dev/null
+run_operation "$INSTALL_ROOT/releases/0.2.17/native/sentinelctl" bootstrap --confirm-config >/dev/null
 [[ ! -e "$CONFIG_ROOT/sentinel-monitor.REVIEW-SECRETS-BEFORE-START" ]] || fail "review marker was not cleared"
 
 # Failure after spawning the companion rolls back only this invocation and
@@ -318,7 +318,7 @@ FAILED_MEDIA_PID_AUDIT="$TEST_ROOT/failed-media.pid"
 if run_operation env \
   SENTINEL_TEST_CURL_FAILURE=1 \
   FAKE_MEDIA_PID_AUDIT="$FAILED_MEDIA_PID_AUDIT" \
-  "$INSTALL_ROOT/releases/0.2.16/native/sentinelctl" start >"$TEST_ROOT/readiness-failure.out" 2>&1; then
+  "$INSTALL_ROOT/releases/0.2.17/native/sentinelctl" start >"$TEST_ROOT/readiness-failure.out" 2>&1; then
   fail "start succeeded while its readiness probe failed"
 fi
 [[ -s "$FAILED_MEDIA_PID_AUDIT" ]] || fail "failed start never launched the companion fixture"
@@ -348,7 +348,7 @@ for _ in {1..20}; do
 done
 [[ "$OPERATION_LOCK_HELD" == true ]] || fail "operation-lock fixture did not acquire its lock"
 START_IGNORED_OPERATION_LOCK=false
-if run_operation "$INSTALL_ROOT/releases/0.2.16/native/sentinelctl" start >"$TEST_ROOT/operation-lock.out" 2>&1; then
+if run_operation "$INSTALL_ROOT/releases/0.2.17/native/sentinelctl" start >"$TEST_ROOT/operation-lock.out" 2>&1; then
   START_IGNORED_OPERATION_LOCK=true
 fi
 kill "$OPERATION_LOCK_PID" 2>/dev/null || true
@@ -359,27 +359,27 @@ OPERATION_LOCK_PID=""
 # Runtime entries and artifacts must remain complete after the source fixture disappears.
 chmod -R u+w -- "$SOURCE_FIXTURE"
 rm -rf -- "$SOURCE_FIXTURE"
-run_operation "$INSTALL_ROOT/releases/0.2.16/native/sentinelctl" start >/dev/null
+run_operation "$INSTALL_ROOT/releases/0.2.17/native/sentinelctl" start >/dev/null
 for _ in {1..40}; do
   [[ -s "$RUNTIME_ROOT/app.pid" && -s "$RUNTIME_ROOT/mediamtx.pid" ]] && break
   sleep 0.05
 done
 [[ -s "$RUNTIME_ROOT/app.pid" && -s "$RUNTIME_ROOT/mediamtx.pid" ]] ||
   fail "release processes did not publish their PID files"
-STATUS_OUTPUT="$(run_operation "$INSTALL_ROOT/releases/0.2.16/native/sentinelctl" status)"
+STATUS_OUTPUT="$(run_operation "$INSTALL_ROOT/releases/0.2.17/native/sentinelctl" status)"
 [[ "$STATUS_OUTPUT" == *'Rust application: running'* ]] || fail "status missed the application"
 [[ "$STATUS_OUTPUT" == *'MediaMTX: running'* ]] || fail "status missed MediaMTX"
-run_operation "$INSTALL_ROOT/releases/0.2.16/native/sentinelctl" stop >/dev/null
-STATUS_OUTPUT="$(run_operation "$INSTALL_ROOT/releases/0.2.16/native/sentinelctl" status)"
+run_operation "$INSTALL_ROOT/releases/0.2.17/native/sentinelctl" stop >/dev/null
+STATUS_OUTPUT="$(run_operation "$INSTALL_ROOT/releases/0.2.17/native/sentinelctl" status)"
 [[ "$STATUS_OUTPUT" == *'Rust application: stopped'* ]] || fail "application did not stop"
 [[ "$STATUS_OUTPUT" == *'MediaMTX: stopped'* ]] || fail "MediaMTX did not stop"
 
 # Existing release files with hard-link aliases fail closed.
-RELEASE_ROOT="$INSTALL_ROOT/releases/0.2.16"
+RELEASE_ROOT="$INSTALL_ROOT/releases/0.2.17"
 chmod 0755 -- "$RELEASE_ROOT" "$RELEASE_ROOT/web" "$RELEASE_ROOT/web/assets"
 ln -- "$RELEASE_ROOT/web/assets/app.js" "$TEST_ROOT/release-hardlink-alias"
 chmod 0555 -- "$RELEASE_ROOT/web/assets" "$RELEASE_ROOT/web" "$RELEASE_ROOT"
-if run_operation "$INSTALL_ROOT/releases/0.2.16/native/sentinelctl" status >"$TEST_ROOT/hardlink.out" 2>&1; then
+if run_operation "$INSTALL_ROOT/releases/0.2.17/native/sentinelctl" status >"$TEST_ROOT/hardlink.out" 2>&1; then
   fail "release verification accepted a hard-linked asset"
 fi
 
