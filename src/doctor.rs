@@ -474,7 +474,7 @@ mod tests {
         let user = Uuid::new_v4().to_string();
         let camera_id = Uuid::new_v4();
         let secret_box = SecretBox::new(&key);
-        let authorization_code = "a".repeat(32);
+        let authorization_code = "a".repeat(36);
         let encrypted = secret_box
             .encrypt_client_authorization(&camera_id.to_string(), &authorization_code)
             .unwrap();

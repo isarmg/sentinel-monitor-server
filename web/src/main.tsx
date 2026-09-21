@@ -2,8 +2,8 @@ import { displayLabel } from "./display-labels";
 import { t, getLocale } from "@sarmg/admin-ui/i18n";
 import { StrictMode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { createSarmgAdminApplication, errorRequestId, useAdminApplication, InstancePageNavigation, InstanceHeaderActions, type InstancePage } from "@sarmg/admin-shell";
-import { Button, Checkbox, ConfirmDangerDialog, Dialog, ErrorState, LoadingState, Select, Table, TextField } from "@sarmg/admin-ui";
+import { createSarmgAdminApplication, errorRequestId, useAdminApplication, InstanceNameField, InstancePageNavigation, InstanceHeaderActions, type InstancePage } from "@sarmg/admin-shell";
+import { Button, Checkbox, ConfirmDangerDialog, Dialog, ErrorState, FormField, LoadingState, Select, Table, TextField } from "@sarmg/admin-ui";
 
 import "@sarmg/design-tokens/tokens.css";
 import "@sarmg/design-tokens/tokens.dark.css";
@@ -156,7 +156,7 @@ function Console() {
     if (creatingClient) return;
     setCreatingClient(true); setCreateFailure(null); window.location.hash = "instances";
     try {
-      await request("/clients", isSentinelClient, { method: "POST", body: "{}" });
+      await request("/clients", isSentinelClient, { method: "POST", body: JSON.stringify({ name: t("新实例", "New instance") }) });
       await loadClients();
       toast(t("客户端实例已创建", "Client instance created"), "success");
     } catch (error) { setCreateFailure({ requestId: errorRequestId(error) }); }
@@ -169,7 +169,7 @@ function Console() {
     <h1 className="sarmg-visually-hidden">{viewTitle(view)}</h1>
     {createFailure && <ErrorState requestId={createFailure.requestId}>{t("实例未能创建，请刷新列表核对后重试。", "The instance could not be created. Refresh the list before retrying.")}</ErrorState>}
     {view === "instances" && <><InstanceStatistics cameras={cameras} clients={clients} status={systemStatus} /><section className="view active sarmg-content-stack"><h2>{t("实例列表", "Instance list")}</h2><ClientsView clients={clients} cameras={cameras} changed={loadClients} toast={toast} select={id => { setSelected(id); window.location.hash = "details"; }} /></section></>}
-    {view === "details" && chosen && <><ClientDetails client={chosen} cameras={clientCameras} /><CameraView cameras={visible} search={search} setSearch={setSearch} inspect={setDrawerCamera} />{recordings.length > 0 && <RecordingsView cameras={recordings} toast={toast} />}</>}
+    {view === "details" && chosen && <><ClientDetails client={chosen} cameras={clientCameras} changed={loadClients} toast={toast} /><CameraView cameras={visible} search={search} setSearch={setSearch} inspect={setDrawerCamera} />{recordings.length > 0 && <RecordingsView cameras={recordings} toast={toast} />}</>}
     {view === "logs" && <><EventsView events={events} cameras={cameras} unacknowledgedOnly={unacknowledgedOnly} setUnacknowledgedOnly={setUnacknowledgedOnly} refresh={() => void loadEvents().catch((error) => toast(errorText(error), "error"))} acknowledge={(id) => void acknowledge(id).catch((error) => toast(errorText(error), "error"))} /><MediaOperationsView operations={operations} cameras={cameras} changed={loadOperations} toast={toast} /><AuditLogView failure={auditFailure} audit={audit} refresh={() => void loadAudit().catch((error) => toast(errorText(error), "error"))} /></>}
     {drawerCamera !== null && <CameraDrawer camera={drawerCamera} close={() => setDrawerCamera(null)} toast={toast} />}
   </div>;
@@ -285,10 +285,10 @@ function ClientsView({ clients, cameras, changed, toast, select }: {
   const randomCode = () => {
     const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
     let value = "";
-    while (value.length < 32) {
+    while (value.length < 36) {
       for (const byte of crypto.getRandomValues(new Uint8Array(64))) {
         if (byte < 252) value += alphabet[byte % alphabet.length];
-        if (value.length === 32) break;
+        if (value.length === 36) break;
       }
     }
     return value;
@@ -311,18 +311,51 @@ function ClientsView({ clients, cameras, changed, toast, select }: {
   };
   const cameraByInstance = new Map(cameras.filter(camera => camera.client_id !== null).map(camera => [camera.client_id, camera]));
   return <div className="sarmg-content-stack">
-    <p>{t("一个实例对应一台摄像机和一个永久授权码；同一客户端安装可使用多个授权码分别连接多台摄像机。", "Each instance represents one camera and one permanent authorization code. One client installation may use multiple codes for separate cameras.")}</p>
     {deleteFailure && <ErrorState requestId={deleteFailure.requestId}>{t("删除未能确认，请刷新实例列表核对。", "Deletion could not be confirmed. Refresh and check the instance list.")}</ErrorState>}
-    <Table aria-label={t("摄像机实例列表", "Camera instance list")}><thead><tr><th>{t("账户名", "Account name")}</th><th>{t("账户", "Account")}</th><th>{t("密码", "Password")}</th><th>{t("配对状态", "Pairing status")}</th><th>{t("摄像机状态", "Camera status")}</th><th>{t("厂商 / 型号", "Make / model")}</th><th>{t("操作", "Actions")}</th><th>{t("删除", "Delete")}</th></tr></thead><tbody>
-      {clients.length === 0 ? <tr><td colSpan={8} className="empty-state">{t("尚无摄像机实例", "No camera instances")}</td></tr> : clients.map(client => { const camera = cameraByInstance.get(client.id); return <tr key={client.id}><th scope="row"><a aria-label={t("选择实例 {0}", "Select instance {0}", [client.name])} href="#details" onClick={() => select(client.id)}>{client.name}</a></th><td><code>{client.id}</code></td><td><code>{client.authorization_code}</code></td><td>{displayLabel(client.status)}</td><td>{camera ? statusLabel(effectiveStatus(camera)) : t("尚未上报", "Not yet reported")}</td><td>{camera ? [camera.manufacturer, camera.model].filter(Boolean).join(" / ") || camera.adapter_kind.toUpperCase() : "—"}</td><td><div className="sarmg-actions">{client.status !== "revoked" && <><Button disabled={pending} onClick={() => setRotating(client)}>{t("更换密码", "Change password")}</Button><Button disabled={pending} onClick={() => setRemoving(client)}>{client.status === "pending" ? t("取消配对", "Cancel pairing") : t("撤销实例", "Revoke instance")}</Button></>}</div></td><td><div className="sarmg-actions">{deleteCandidate === client.id ? <><Button disabled={pending} onClick={() => setDeleteCandidate(null)}>{t("取消", "Cancel")}</Button><Button className="sarmg-danger" disabled={pending} onClick={() => void remove(client).then(() => { setDeleteCandidate(null); setDeleteFailure(null); }).catch(error => setDeleteFailure({ requestId: errorRequestId(error) }))}>{pending ? t("正在删除…", "Deleting…") : t("确认删除", "Confirm delete")}</Button></> : <Button disabled={pending} onClick={() => { setDeleteFailure(null); setDeleteCandidate(client.id); }}>{t("删除", "Delete")}</Button>}</div></td></tr>; })}
+    <Table aria-label={t("摄像机实例列表", "Camera instance list")}><thead><tr><th>{t("实例名称", "Instance name")}</th><th>{t("配对状态", "Pairing status")}</th><th>{t("摄像机状态", "Camera status")}</th><th>{t("厂商 / 型号", "Make / model")}</th><th>{t("操作", "Actions")}</th><th>{t("删除", "Delete")}</th></tr></thead><tbody>
+      {clients.length === 0 ? <tr><td colSpan={6} className="empty-state">{t("尚无摄像机实例", "No camera instances")}</td></tr> : clients.map(client => { const camera = cameraByInstance.get(client.id); return <tr key={client.id}><th scope="row"><a className="sarmg-instance-link" aria-label={t("选择实例 {0}", "Select instance {0}", [client.name])} href="#details" onClick={() => select(client.id)}>{client.name}</a></th><td>{displayLabel(client.status)}</td><td>{camera ? statusLabel(effectiveStatus(camera)) : t("尚未上报", "Not yet reported")}</td><td>{camera ? [camera.manufacturer, camera.model].filter(Boolean).join(" / ") || camera.adapter_kind.toUpperCase() : "—"}</td><td><div className="sarmg-actions">{client.status !== "revoked" && <><Button disabled={pending} onClick={() => setRotating(client)}>{t("更换密码", "Change password")}</Button><Button disabled={pending} onClick={() => setRemoving(client)}>{client.status === "pending" ? t("取消配对", "Cancel pairing") : t("撤销实例", "Revoke instance")}</Button></>}</div></td><td><div className="sarmg-actions">{deleteCandidate === client.id ? <><Button disabled={pending} onClick={() => setDeleteCandidate(null)}>{t("取消", "Cancel")}</Button><Button className="sarmg-danger" disabled={pending} onClick={() => void remove(client).then(() => { setDeleteCandidate(null); setDeleteFailure(null); }).catch(error => setDeleteFailure({ requestId: errorRequestId(error) }))}>{pending ? t("正在删除…", "Deleting…") : t("确认删除", "Confirm delete")}</Button></> : <Button disabled={pending} onClick={() => { setDeleteFailure(null); setDeleteCandidate(client.id); }}>{t("删除", "Delete")}</Button>}</div></td></tr>; })}
     </tbody></Table>
     {rotating && <ConfirmDangerDialog title={t("更换实例授权码", "Change instance authorization code")} description={t("这会立即撤销当前客户端凭据并停用它管理的摄像头。客户端必须使用新授权码重新配对并重新上报摄像头。", "This immediately revokes the current client credential and disables its cameras. The client must pair again with the new authorization code and report its cameras again.")} pending={pending} onClose={() => { if (!pending) setRotating(null); }} onConfirm={() => { const target = rotating; setRotating(null); void rotate(target).catch(error => toast(errorText(error), "error")); }} />}
     {removing && <ConfirmDangerDialog title={removing.status === "revoked" ? t("删除实例", "Delete instance") : removing.status === "pending" ? t("取消配对", "Cancel pairing") : t("撤销实例", "Revoke instance")} description={removing.status === "revoked" ? t("媒体路径清理确认完成后，永久删除该摄像机状态和授权实例；若清理尚未收敛，服务端会拒绝并要求稍后重试。", "Permanently delete the camera state and authorization instance after media-path removal is confirmed. If cleanup has not converged, the server rejects the request and asks you to retry later.") : t("当前授权码和客户端凭据将失效；服务端会先清理媒体路径，完成后可再永久删除该实例。", "The authorization code and client credential will be invalidated. The server first removes media paths; after cleanup, the instance can be permanently deleted.")} pending={pending} onClose={() => { if (!pending) setRemoving(null); }} onConfirm={() => { const target = removing; setRemoving(null); void remove(target).catch(error => toast(errorText(error), "error")); }} />}
   </div>;
 }
 
-function ClientDetails({ client, cameras }: { client: SentinelClient; cameras: Camera[] }) {
-  return <section className="view active sarmg-content-stack"><h2>{t("实例详细信息", "Instance details")}</h2><Table aria-label={t("实例详细信息", "Instance details")}><thead><tr><th>{t("名称", "Name")}</th><th>{t("状态", "Status")}</th><th>{t("版本", "Version")}</th><th>{t("最后在线", "Last online")}</th><th>{t("摄像头", "Cameras")}</th></tr></thead><tbody><tr><th scope="row">{client.name}</th><td>{displayLabel(client.status)}</td><td>{client.client_version ?? "—"}</td><td>{client.last_seen_at === null ? "—" : formatDate(client.last_seen_at)}</td><td>{cameras.length}</td></tr></tbody></Table></section>;
+function ClientDetails({ client, cameras, changed, toast }: { client: SentinelClient; cameras: Camera[]; changed(): Promise<void>; toast(message: string, type?: string): void }) {
+  const [name, setName] = useState(client.name);
+  const [pending, setPending] = useState(false);
+  const [failure, setFailure] = useState<{ requestId?: string } | null>(null);
+  useEffect(() => { setName(client.name); setFailure(null); }, [client.id, client.name]);
+  async function saveName() {
+    if (pending) return;
+    setPending(true); setFailure(null);
+    try {
+      await request(`/clients/${client.id}`, isSentinelClient, { method: "PATCH", body: JSON.stringify({ name: name.trim() }) });
+      await changed();
+      toast(t("实例名称已保存", "Instance name saved"), "success");
+    } catch (error) { setFailure({ requestId: errorRequestId(error) }); }
+    finally { setPending(false); }
+  }
+  return <section className="view active sarmg-content-stack">
+    <section className="sarmg-content-panel" aria-label={t("配对账户信息", "Pairing account information")}><h2>{client.name}</h2><dl className="sentinel-detail-list">
+      <dt>{t("账户名", "Account name")}</dt><dd>{client.name}</dd>
+      <dt>{t("账户", "Account")}</dt><dd><code>{client.id}</code></dd>
+      <dt>{t("密码", "Password")}</dt><dd><code>{client.authorization_code}</code></dd>
+      <dt>{t("配对状态", "Pairing status")}</dt><dd>{client.status === "pending" ? t("待配对", "Awaiting pairing") : client.status === "revoked" ? t("已撤销", "Revoked") : t("已配对", "Paired")}</dd>
+    </dl></section>
+    <section className="sarmg-content-panel" aria-label={t("实例设置", "Instance settings")}><h2>{t("实例设置", "Instance settings")}</h2>
+      <form onSubmit={event => { event.preventDefault(); void saveName(); }} aria-busy={pending}>
+        <FormField label={t("实例名称", "Instance name")}><InstanceNameField name="name" value={name} onChange={event => setName(event.target.value)} required readOnly={pending} /></FormField>
+        {failure && <ErrorState requestId={failure.requestId}>{t("实例名称未能保存，请重试。", "The instance name could not be saved. Please retry.")}</ErrorState>}
+        <div className="sarmg-actions"><Button type="submit" disabled={pending || name.trim() === client.name}>{pending ? t("正在保存…", "Saving…") : t("保存名称", "Save name")}</Button></div>
+      </form>
+    </section>
+    <section className="sarmg-content-panel" aria-label={t("摄像机状态", "Camera status")}><h2>{t("摄像机状态", "Camera status")}</h2><dl className="sentinel-detail-list">
+      <dt>{t("在线状态", "Online status")}</dt><dd>{client.status === "online" ? t("在线", "Online") : t("离线", "Offline")}</dd>
+      <dt>{t("版本", "Version")}</dt><dd>{client.client_version ?? "—"}</dd>
+      <dt>{t("最后在线", "Last online")}</dt><dd>{client.last_seen_at === null ? "—" : formatDate(client.last_seen_at)}</dd>
+      <dt>{t("摄像头", "Cameras")}</dt><dd>{cameras.length}</dd>
+    </dl></section>
+  </section>;
 }
 
 function RecordingsView({ cameras, toast }: { cameras: Camera[]; toast(message: string, type?: string): void }) {

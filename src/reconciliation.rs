@@ -1,5 +1,6 @@
 use crate::{
     background::camera_path,
+    crypto::is_current_authorization_code,
     error::{AppError, Result},
     mediamtx::{source_digest, PathConfigSnapshot, PathSnapshot},
     models::CameraRecord,
@@ -212,10 +213,7 @@ pub async fn validate_stored_camera_credentials(state: &AppState) -> Result<()> 
         let code = state
             .secrets
             .decrypt_client_authorization(&id.to_string(), &encrypted)?;
-        if code.len() != 64
-            || !code
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+        if !is_current_authorization_code(&code)
             || Sha256::digest(code.as_bytes()).as_slice() != stored_hash
         {
             return Err(AppError::Internal(

@@ -1,6 +1,7 @@
 use crate::{
     auth::{decode_media_token, issue_media_token, CurrentUser},
     background::camera_path,
+    crypto::is_current_authorization_code,
     error::{AppError, Result},
     models::*,
     protocol::CONTRACT,
@@ -18,7 +19,7 @@ use axum::{
         HeaderMap, StatusCode,
     },
     response::{sse::Event, IntoResponse, Response, Sse},
-    routing::{get, post, put},
+    routing::{get, patch, post, put},
     Json, Router,
 };
 use chrono::{DateTime, Utc};
@@ -76,7 +77,10 @@ pub fn router(state: AppState, runtime: sarmg_server_runtime::RuntimeHandle) -> 
             "/clients/{id}/authorization",
             put(update_client_authorization),
         )
-        .route("/clients/{id}", axum::routing::delete(revoke_client))
+        .route(
+            "/clients/{id}",
+            patch(update_client_name).delete(revoke_client),
+        )
         .route("/client/pair", post(pair_client))
         .route("/client/snapshot", put(client_snapshot))
         .route("/recordings", get(list_recordings))
@@ -312,6 +316,51 @@ async fn update_client_authorization(
         "client",
         Some(id),
         json!({}),
+    )
+    .await?;
+    transaction.commit().await?;
+    let record = sqlx::query_as::<_, SentinelClientRecord>(
+        "SELECT id, installation_id, name, client_version, authorization_code_enc, status, \
+         last_seen_at, created_at, updated_at FROM sentinel_clients WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_one(&state.pool)
+    .await?;
+    Ok((
+        [("cache-control", "no-store")],
+        Json(client_view(&state, record)?),
+    )
+        .into_response())
+}
+
+async fn update_client_name(
+    user: CurrentUser,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Json(request): Json<UpdateSentinelClientRequest>,
+) -> Result<Response> {
+    let name = validate_client_name(&request.name)?;
+    let now = Utc::now();
+    let mut transaction = state.pool.begin_with("BEGIN IMMEDIATE").await?;
+    let changed = sqlx::query(
+        "UPDATE sentinel_clients SET name = ?, updated_at = ? \
+         WHERE id = ? AND revoked_at IS NULL",
+    )
+    .bind(&name)
+    .bind(now)
+    .bind(id)
+    .execute(&mut *transaction)
+    .await?;
+    if changed.rows_affected() != 1 {
+        return Err(AppError::NotFound("客户端实例不存在".into()));
+    }
+    write_audit_in(
+        &mut transaction,
+        Some(&user.id),
+        "client.rename",
+        "client",
+        Some(id),
+        json!({ "name": name }),
     )
     .await?;
     transaction.commit().await?;
@@ -949,14 +998,14 @@ fn hash_secret(value: &str) -> [u8; 32] {
 
 fn random_authorization_code() -> String {
     const ALPHABET: &[u8; 36] = b"abcdefghijklmnopqrstuvwxyz0123456789";
-    let mut value = String::with_capacity(32);
+    let mut value = String::with_capacity(36);
     let mut bytes = [0_u8; 64];
-    while value.len() < 32 {
+    while value.len() < 36 {
         rand::rngs::OsRng.fill_bytes(&mut bytes);
         for byte in bytes {
             if byte < 252 {
                 value.push(ALPHABET[usize::from(byte % 36)] as char);
-                if value.len() == 32 {
+                if value.len() == 36 {
                     break;
                 }
             }
@@ -966,25 +1015,16 @@ fn random_authorization_code() -> String {
 }
 
 fn validate_authorization_code(value: &str) -> Result<()> {
-    if value.len() != 32
-        || !value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || byte.is_ascii_lowercase())
-    {
+    if !is_current_authorization_code(value) {
         return Err(AppError::Validation(
-            "授权码必须是 32 个小写英文字母或数字".into(),
+            "授权码必须是 36 个小写英文字母或数字".into(),
         ));
     }
     Ok(())
 }
 
 fn validate_pairing_authorization_code(value: &str) -> Result<()> {
-    if validate_authorization_code(value).is_ok()
-        || (value.len() == 64
-            && value
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f')))
-    {
+    if validate_authorization_code(value).is_ok() {
         Ok(())
     } else {
         Err(AppError::Validation("授权码格式无效".into()))
@@ -1485,7 +1525,7 @@ mod request_contract_tests {
     fn generated_authorization_codes_have_the_shared_format() {
         for _ in 0..64 {
             let value = random_authorization_code();
-            assert_eq!(value.len(), 32);
+            assert_eq!(value.len(), 36);
             assert!(value
                 .bytes()
                 .all(|byte| byte.is_ascii_digit() || byte.is_ascii_lowercase()));

@@ -173,6 +173,12 @@ pub struct UpdateAuthorizationCodeRequest {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct UpdateSentinelClientRequest {
+    pub name: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateSentinelClientRequest {
     pub name: Option<String>,
 }
@@ -313,6 +319,9 @@ mod tests {
         rejects_unknown::<EventQuery>(json!({ "unknown": true }));
         rejects_unknown::<UpdateAuthorizationCodeRequest>(
             json!({ "authorization_code": "secret", "unknown": true }),
+        );
+        rejects_unknown::<UpdateSentinelClientRequest>(
+            json!({ "name": "renamed", "unknown": true }),
         );
         rejects_unknown::<PairClientRequest>(json!({
             "protocol": CLIENT_PAIRING_PROTOCOL, "product": "sentinel-monitor",

@@ -77,7 +77,7 @@ cargo run -- serve
 
 ## 5. 实例授权码为什么是 envelope
 
-每个摄像机实例的 32 位小写英文字母数字授权码以 Foundation secret envelope 的认证密文保存。专用
+每个摄像机实例的 36 位小写英文字母数字授权码以 Foundation secret envelope 的认证密文保存。专用
 key 从 `CREDENTIALS_KEY` 派生；AAD 绑定授权实例 ID，因此密文不能复制到另一实例。设备
 RTSP/ONVIF URL、用户名和密码只属于 Client，Server Schema 不存储这些字段。
 
