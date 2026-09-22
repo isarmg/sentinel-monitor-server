@@ -47,6 +47,26 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Verify the pinned Foundation product manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          readarray -t foundation_identity < <(python3 - <<'PY'
+          import tomllib
+          with open("sarmg-product.toml", "rb") as stream:
+              foundation = tomllib.load(stream)["foundation"]
+          print(foundation["version"])
+          print(foundation["git_rev"])
+          PY
+          )
+          foundation_root="$RUNNER_TEMP/sarmg-foundation-server"
+          git clone --quiet --filter=blob:none --depth=1 \
+            --branch "v${foundation_identity[0]}" \
+            https://github.com/isarmg/sarmg-foundation-server.git \
+            "$foundation_root"
+          test "$(git -C "$foundation_root" rev-parse HEAD)" = "${foundation_identity[1]}"
+          python3 "$foundation_root/scripts/sarmg-conformance.py" \
+            verify-manifest --product-root "$GITHUB_WORKSPACE"
       - name: Install Rust 1.98
         run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt,clippy
       - name: Check formatting
