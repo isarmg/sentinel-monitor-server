@@ -22,10 +22,10 @@ use axum::{
     routing::{get, patch, post, put},
     Json, Router,
 };
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local, NaiveDate, TimeZone, Utc};
 use futures_util::Stream;
 use rand::RngCore;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
@@ -35,6 +35,58 @@ use url::Url;
 use uuid::Uuid;
 
 const CAMERA_SELECT: &str = "SELECT id, name, location, source_kind, client_id, adapter_kind, manufacturer, model, firmware_version, serial_number, capabilities_json, streams_json, health_message, device_status, has_sub_stream, enabled, record_enabled, storage_mode, status, last_seen_at, created_at, updated_at FROM cameras";
+
+#[derive(Serialize)]
+struct ServerDated<T: Serialize> {
+    #[serde(flatten)]
+    record: T,
+    server_created_at: String,
+}
+
+impl<T: Serialize> ServerDated<T> {
+    fn new(record: T, created_at: DateTime<Utc>) -> Self {
+        Self {
+            record,
+            server_created_at: created_at
+                .with_timezone(&Local)
+                .format("%Y-%m-%d %H:%M:%S %:z")
+                .to_string(),
+        }
+    }
+}
+
+fn local_day_start(date: NaiveDate) -> Result<DateTime<Local>> {
+    // A local midnight can be skipped or repeated when the server clock changes.
+    // Pick the first existing instant in that calendar day.
+    for minute in 0..24 * 60 {
+        let local = date
+            .and_hms_opt(minute / 60, minute % 60, 0)
+            .ok_or_else(|| AppError::Validation("无效的服务器日期".into()))?;
+        if let Some(start) = Local.from_local_datetime(&local).earliest() {
+            return Ok(start);
+        }
+    }
+    Err(AppError::Validation("该日期在服务器时区中不存在".into()))
+}
+
+fn server_day_bounds(value: &str) -> Result<(DateTime<Utc>, DateTime<Utc>)> {
+    let date = NaiveDate::parse_from_str(value, "%Y-%m-%d")
+        .map_err(|_| AppError::Validation("日期必须为 YYYY-MM-DD".into()))?;
+    if date.format("%Y-%m-%d").to_string() != value {
+        return Err(AppError::Validation("日期必须为 YYYY-MM-DD".into()));
+    }
+    let next = date
+        .succ_opt()
+        .ok_or_else(|| AppError::Validation("日期超出有效范围".into()))?;
+    Ok((
+        local_day_start(date)?.with_timezone(&Utc),
+        local_day_start(next)?.with_timezone(&Utc),
+    ))
+}
+
+async fn log_calendar(_user: CurrentUser) -> Json<Value> {
+    Json(json!({ "today": Local::now().date_naive().format("%Y-%m-%d").to_string() }))
+}
 const CLIENT_CAMERA_UPSERT: &str =
     "INSERT INTO cameras (id, name, location, source_kind, client_id, client_camera_id, \
      adapter_kind, manufacturer, model, firmware_version, serial_number, capabilities_json, \
@@ -86,9 +138,11 @@ pub fn router(state: AppState, runtime: sarmg_server_runtime::RuntimeHandle) -> 
         .route("/recordings", get(list_recordings))
         .route("/recordings/play", get(play_recording))
         .route("/events", get(list_events))
+        .route("/events/logs", get(list_event_logs))
         .route("/events/stream", get(event_stream))
         .route("/events/{id}/ack", post(ack_event))
         .route("/audit", get(list_audit))
+        .route("/logs/calendar", get(log_calendar))
         .route("/system/status", get(system_status));
 
     let product = Router::new()
@@ -125,19 +179,29 @@ async fn media_operation(
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct MediaOperationQuery {
-    limit: Option<u32>,
-    offset: Option<u32>,
+    date: String,
 }
 
 async fn list_media_operations(
     _user: CurrentUser,
     State(state): State<AppState>,
     Query(query): Query<MediaOperationQuery>,
-) -> Result<Json<Vec<reconciliation::MediaOperationView>>> {
-    let limit = query.limit.unwrap_or(50).clamp(1, 100);
-    let offset = query.offset.unwrap_or(0).min(10_000);
+) -> Result<Json<Vec<ServerDated<reconciliation::MediaOperationView>>>> {
+    let (start, end) = server_day_bounds(&query.date)?;
+    let operations = reconciliation::list_operations(
+        &state.pool,
+        start.timestamp_micros(),
+        end.timestamp_micros(),
+    )
+    .await?;
     Ok(Json(
-        reconciliation::list_operations(&state.pool, limit, offset).await?,
+        operations
+            .into_iter()
+            .map(|operation| {
+                let created_at = operation.created_at;
+                ServerDated::new(operation, created_at)
+            })
+            .collect(),
     ))
 }
 
@@ -1297,6 +1361,60 @@ async fn list_events(
     Ok(Json(events))
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EventLogQuery {
+    date: String,
+    unacknowledged: Option<bool>,
+}
+
+async fn list_event_logs(
+    _user: CurrentUser,
+    State(state): State<AppState>,
+    Query(query): Query<EventLogQuery>,
+) -> Result<Json<Vec<ServerDated<EventRecord>>>> {
+    let (start, end) = server_day_bounds(&query.date)?;
+    let events = event_logs_for_day(
+        &state.pool,
+        start,
+        end,
+        query.unacknowledged.unwrap_or(false),
+    )
+    .await?;
+    Ok(Json(
+        events
+            .into_iter()
+            .map(|event| {
+                let created_at = event.created_at;
+                ServerDated::new(event, created_at)
+            })
+            .collect(),
+    ))
+}
+
+async fn event_logs_for_day(
+    pool: &sqlx::SqlitePool,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+    unacknowledged: bool,
+) -> Result<Vec<EventRecord>> {
+    let mut builder = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+        "SELECT id, camera_id, kind, severity, message, details, acknowledged_at, acknowledged_by, created_at FROM events WHERE created_at >= ",
+    );
+    builder
+        .push_bind(start)
+        .push(" AND created_at < ")
+        .push_bind(end);
+    if unacknowledged {
+        builder.push(" AND acknowledged_at IS NULL");
+    }
+    builder.push(" ORDER BY created_at DESC, id DESC");
+    Ok(builder
+        .build_query_as::<EventRecord>()
+        .fetch_all(pool)
+        .await?)
+}
+
 async fn ack_event(
     user: CurrentUser,
     State(state): State<AppState>,
@@ -1352,21 +1470,40 @@ async fn event_stream(
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct AuditQuery {
-    limit: Option<i64>,
+    date: String,
 }
 
 async fn list_audit(
     _user: CurrentUser,
     State(state): State<AppState>,
     Query(query): Query<AuditQuery>,
-) -> Result<Json<Vec<AuditRecord>>> {
+) -> Result<Json<Vec<ServerDated<AuditRecord>>>> {
+    let (start, end) = server_day_bounds(&query.date)?;
+    let rows = audit_logs_for_day(&state.pool, start, end).await?;
+    Ok(Json(
+        rows.into_iter()
+            .map(|row| {
+                let created_at = row.created_at;
+                ServerDated::new(row, created_at)
+            })
+            .collect(),
+    ))
+}
+
+async fn audit_logs_for_day(
+    pool: &sqlx::SqlitePool,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+) -> Result<Vec<AuditRecord>> {
     let rows = sqlx::query_as::<_, AuditRecord>(
-        "SELECT id, user_id, action, entity_type, entity_id, details, created_at FROM audit_logs ORDER BY created_at DESC LIMIT ?",
+        "SELECT id, user_id, action, entity_type, entity_id, details, created_at FROM audit_logs \
+         WHERE created_at >= ? AND created_at < ? ORDER BY created_at DESC, id DESC",
     )
-    .bind(query.limit.unwrap_or(100).clamp(1, 500))
-    .fetch_all(&state.pool)
+    .bind(start)
+    .bind(end)
+    .fetch_all(pool)
     .await?;
-    Ok(Json(rows))
+    Ok(rows)
 }
 
 async fn system_status(_user: CurrentUser, State(state): State<AppState>) -> Result<Json<Value>> {
@@ -1520,6 +1657,146 @@ async fn write_audit_in(
 #[cfg(test)]
 mod request_contract_tests {
     use super::*;
+
+    #[test]
+    fn server_day_uses_each_local_midnight_across_clock_changes() {
+        for value in ["2026-03-08", "2026-11-01"] {
+            let (start, end) = server_day_bounds(value).unwrap();
+            let selected = NaiveDate::parse_from_str(value, "%Y-%m-%d").unwrap();
+            assert_eq!(start.with_timezone(&Local).date_naive(), selected);
+            assert_eq!(
+                end.with_timezone(&Local).date_naive(),
+                selected.succ_opt().unwrap()
+            );
+            assert!(end > start);
+        }
+        if std::env::var("TZ").as_deref() == Ok("America/New_York") {
+            let (spring_start, spring_end) = server_day_bounds("2026-03-08").unwrap();
+            let (fall_start, fall_end) = server_day_bounds("2026-11-01").unwrap();
+            assert_eq!((spring_end - spring_start).num_hours(), 23);
+            assert_eq!((fall_end - fall_start).num_hours(), 25);
+        }
+    }
+
+    #[tokio::test]
+    async fn server_date_logs_include_all_rows_with_half_open_utc_bounds() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = directory.path().join("daily-logs.sqlite3");
+        let pool = crate::sqlite::open_pool(&format!("sqlite://{}", database.display()))
+            .await
+            .unwrap();
+        let (start, end) = server_day_bounds("2026-09-23").unwrap();
+        let samples = [
+            (start - chrono::Duration::microseconds(1), true),
+            (start, true),
+            (start, false),
+            (end - chrono::Duration::microseconds(1), true),
+            (end - chrono::Duration::microseconds(1), false),
+            (end, true),
+            (end, false),
+        ];
+        for (index, (instant, zulu)) in samples.into_iter().enumerate() {
+            let timestamp = instant.to_rfc3339_opts(chrono::SecondsFormat::Micros, zulu);
+            let acknowledged_at = (index == 2).then_some(&timestamp);
+            sqlx::query(
+                "INSERT INTO events (id, kind, severity, message, details, acknowledged_at, created_at) \
+                 VALUES (?, 'test', 'info', 'test', '{}', ?, ?)",
+            )
+            .bind(Uuid::new_v4())
+            .bind(acknowledged_at)
+            .bind(&timestamp)
+            .execute(&pool)
+            .await
+            .unwrap();
+            sqlx::query(
+                "INSERT INTO audit_logs (id, action, entity_type, details, created_at) \
+                 VALUES (?, 'test', 'test', '{}', ?)",
+            )
+            .bind(Uuid::new_v4())
+            .bind(&timestamp)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        assert_eq!(
+            event_logs_for_day(&pool, start, end, false)
+                .await
+                .unwrap()
+                .len(),
+            4
+        );
+        assert_eq!(
+            event_logs_for_day(&pool, start, end, true)
+                .await
+                .unwrap()
+                .len(),
+            3
+        );
+        assert_eq!(
+            audit_logs_for_day(&pool, start, end).await.unwrap().len(),
+            4
+        );
+        for value in ["2026-02-30", "2026-9-23", "2026-09-23T00:00:00", ""] {
+            assert!(server_day_bounds(value).is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn server_date_media_operations_return_every_row_in_one_batch() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = directory.path().join("daily-operations.sqlite3");
+        let pool = crate::sqlite::open_pool(&format!("sqlite://{}", database.display()))
+            .await
+            .unwrap();
+        let (start, end) = server_day_bounds("2026-09-23").unwrap();
+        let camera_id = Uuid::new_v4();
+        let request_payload = serde_json::to_vec(&serde_json::json!({
+            "camera_id": camera_id,
+            "generation": 1,
+            "reason": "test",
+            "requested_by": null
+        }))
+        .unwrap();
+        for index in 0_u16..122 {
+            let created_at_micros = match index {
+                120 => start.timestamp_micros() - 1,
+                121 => end.timestamp_micros(),
+                _ => start.timestamp_micros() + i64::from(index),
+            };
+            let mut digest = [0_u8; 32];
+            digest[..2].copy_from_slice(&index.to_le_bytes());
+            sqlx::query(
+                "INSERT INTO _sarmg_operations (operation_id, namespace, target_key, action, \
+                 idempotency_digest, request_fingerprint, request_payload, state, attempt, \
+                 max_attempts, not_before_micros, created_at_micros, updated_at_micros) \
+                 VALUES (?, ?, ?, 'reconcile_camera', ?, ?, ?, 'succeeded', 1, 3, ?, ?, ?)",
+            )
+            .bind(Uuid::new_v4().to_string())
+            .bind(reconciliation::OPERATION_NAMESPACE)
+            .bind(camera_id.to_string())
+            .bind(digest.to_vec())
+            .bind(vec![1_u8; 32])
+            .bind(&request_payload)
+            .bind(created_at_micros)
+            .bind(created_at_micros)
+            .bind(created_at_micros)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+        let operations = reconciliation::list_operations(
+            &pool,
+            start.timestamp_micros(),
+            end.timestamp_micros(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(operations.len(), 120);
+        assert_eq!(
+            operations[0].created_at.timestamp_micros(),
+            start.timestamp_micros() + 119
+        );
+    }
 
     #[test]
     fn generated_authorization_codes_have_the_shared_format() {
@@ -1804,7 +2081,9 @@ mod request_contract_tests {
             "duration": 1.0,
             "unknown": true
         }));
-        rejects_unknown::<AuditQuery>(json!({ "unknown": true }));
+        rejects_unknown::<AuditQuery>(json!({ "date": "2026-09-23", "unknown": true }));
+        rejects_unknown::<EventLogQuery>(json!({ "date": "2026-09-23", "unknown": true }));
+        rejects_unknown::<MediaOperationQuery>(json!({ "date": "2026-09-23", "unknown": true }));
         rejects_unknown::<ResolveMediaOperation>(
             json!({ "resolution": "confirmed_succeeded", "retry": true }),
         );
@@ -1829,6 +2108,9 @@ mod request_contract_tests {
         assert!(serde_json::from_value::<ResolveMediaOperation>(json!({})).is_err());
         assert!(serde_json::from_value::<RecordingQuery>(json!({})).is_err());
         assert!(serde_json::from_value::<PlayRecordingQuery>(json!({})).is_err());
+        assert!(serde_json::from_value::<AuditQuery>(json!({})).is_err());
+        assert!(serde_json::from_value::<EventLogQuery>(json!({})).is_err());
+        assert!(serde_json::from_value::<MediaOperationQuery>(json!({})).is_err());
         assert!(serde_json::from_value::<MediaAuthRequest>(json!({
             "user": "",
             "password": "",

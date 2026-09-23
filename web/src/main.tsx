@@ -17,6 +17,7 @@ import {
   administratorApi,
   apiPath,
   isAuditRows,
+  isLogCalendar,
   isCameras,
   isMonitorEvents,
   isOperation,
@@ -28,10 +29,11 @@ import {
   isSystemStatus,
   isUndefined,
   request,
+  requestLog,
   type AuditRow,
   type Camera,
   type MonitorEvent,
-  type MediaOperation,
+  type LoggedMediaOperation,
   type RecordingSpan,
   type SentinelClient,
   type SystemStatus,
@@ -50,13 +52,17 @@ function Console() {
   const toast = useCallback((message: string, _type = "info") => notify(message), [notify]);
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [events, setEvents] = useState<MonitorEvent[]>([]);
-  const [audit, setAudit] = useState<AuditRow[] | null>(null);
+  const [audit, setAudit] = useState<AuditRow[]>([]);
   const [clients, setClients] = useState<SentinelClient[]>([]);
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
-  const [operations, setOperations] = useState<MediaOperation[] | null>(null);
+  const [operations, setOperations] = useState<LoggedMediaOperation[]>([]);
   const snapshotLoaders = useRef<Array<() => Promise<void>>>([]);
   const [refreshSnapshot] = useState(() => createSnapshotRefresh(() => snapshotLoaders.current));
-  const [auditFailure, setAuditFailure] = useState<{ requestId?: string } | null>(null);
+  const [logFailure, setLogFailure] = useState<{ requestId?: string } | null>(null);
+  const [logDate, setLogDate] = useState<string | null>(null);
+  const [loadedLogDate, setLoadedLogDate] = useState<string | null>(null);
+  const logRequestId = useRef(0);
+  const refreshVisibleLogs = useRef<() => void>(() => {});
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [unacknowledgedOnly, setUnacknowledgedOnly] = useState(false);
@@ -66,18 +72,33 @@ function Console() {
   const loadCameras = useCallback(async () => {
     setCameras(await request("/cameras", isCameras));
   }, []);
-  const loadEvents = useCallback(async () => {
-    const suffix = unacknowledgedOnly ? "?unacknowledged=true" : "";
-    setEvents(await request(`/events${suffix}`, isMonitorEvents));
-  }, [unacknowledgedOnly]);
-  const loadAudit = useCallback(async () => {
-    setAudit(null);
-    setAuditFailure(null);
+  const loadLogs = useCallback(async () => {
+    const generation = ++logRequestId.current;
+    setLoadedLogDate(null);
+    setLogFailure(null);
+    if (logDate === null || !/^\d{4}-\d{2}-\d{2}$/.test(logDate)) return;
+    const date = encodeURIComponent(logDate);
     try {
-      setAudit(await request("/audit?limit=30", isAuditRows));
+      const [nextEvents, nextOperations, nextAudit] = await Promise.all([
+        requestLog(`/events/logs?date=${date}${unacknowledgedOnly ? "&unacknowledged=true" : ""}`, isMonitorEvents),
+        requestLog(`/media/operations?date=${date}`, isOperations),
+        requestLog(`/audit?date=${date}`, isAuditRows),
+      ]);
+      if (generation !== logRequestId.current) return;
+      setEvents(nextEvents); setOperations(nextOperations); setAudit(nextAudit);
+      setLoadedLogDate(logDate);
     } catch (error) {
-      setAudit(null); setAuditFailure({ requestId: errorRequestId(error) });
-      throw error;
+      if (generation === logRequestId.current) setLogFailure({ requestId: errorRequestId(error) });
+    }
+  }, [logDate, unacknowledgedOnly]);
+  refreshVisibleLogs.current = () => { if (view === "logs" && logDate) void loadLogs(); };
+  const loadLogCalendar = useCallback(async () => {
+    setLogFailure(null);
+    try {
+      const calendar = await request("/logs/calendar", isLogCalendar);
+      setLogDate(current => current ?? calendar.today);
+    } catch (error) {
+      setLogFailure({ requestId: errorRequestId(error) });
     }
   }, []);
   const loadClients = useCallback(async () => {
@@ -86,18 +107,20 @@ function Console() {
   const loadSystemStatus = useCallback(async () => {
     setSystemStatus(await request("/system/status", isSystemStatus));
   }, []);
-  const loadOperations = useCallback(async () => {
-    setOperations(await request("/media/operations?limit=50&offset=0", isOperations));
-  }, []);
-  snapshotLoaders.current = [loadCameras, loadEvents, loadClients, loadSystemStatus];
-  useEffect(() => { void refreshSnapshot().catch((error) => toast(errorText(error), "error")); }, [loadEvents, refreshSnapshot, toast]);
-  useEffect(() => { if (view === "logs") void Promise.all([loadAudit(), loadOperations()]).catch((error) => toast(errorText(error), "error")); }, [loadAudit, loadOperations, toast, view]);
+  snapshotLoaders.current = [loadCameras, loadClients, loadSystemStatus];
+  useEffect(() => { void refreshSnapshot().catch((error) => toast(errorText(error), "error")); }, [refreshSnapshot, toast]);
+  useEffect(() => {
+    if (view !== "logs" || logDate !== null) return;
+    void loadLogCalendar();
+  }, [loadLogCalendar, logDate, view]);
+  useEffect(() => { if (view === "logs" && logDate !== null) void loadLogs(); }, [loadLogs, logDate, view]);
   useEffect(() => {
     const source = new EventSource(apiPath("/events/stream"));
     source.addEventListener("open", () => { void refreshSnapshot().catch((error) => toast(errorText(error), "error")); });
     source.addEventListener("resync-required", () => {
       toast(t("事件流曾中断，正在重新同步当前状态", "The event stream was interrupted; current state is being resynchronized"), "warning");
       void refreshSnapshot().catch((error) => toast(errorText(error), "error"));
+      refreshVisibleLogs.current();
     });
     source.addEventListener("system-event", (message) => {
       try {
@@ -109,6 +132,7 @@ function Console() {
         toast(t("收到无法解析的事件通知", "Received an unreadable event notification"), "warning");
       }
       void refreshSnapshot().catch((error) => toast(errorText(error), "error"));
+      refreshVisibleLogs.current();
     });
     return () => source.close();
   }, [refreshSnapshot, toast]);
@@ -129,7 +153,7 @@ function Console() {
   const recordings = clientCameras.filter(camera => camera.storage_mode === "server");
   const acknowledge = async (id: string) => {
     await request(`/events/${id}/ack`, isUndefined, { method: "POST" });
-    await loadEvents();
+    await loadLogs();
   };
   const createClient = async () => {
     if (creatingClient) return;
@@ -143,13 +167,13 @@ function Console() {
   };
 
   return <div className="sentinel-business sarmg-content-stack">
-    <InstanceHeaderActions create={() => void createClient()} refresh={() => void Promise.all([refreshSnapshot(), ...(view === "logs" ? [loadAudit(), loadOperations()] : [])]).catch(error => toast(errorText(error), "error"))} refreshing={creatingClient} />
+    <InstanceHeaderActions create={() => void createClient()} refresh={() => void Promise.all([refreshSnapshot(), ...(view === "logs" ? [loadLogs()] : [])]).catch(error => toast(errorText(error), "error"))} refreshing={creatingClient} />
     <InstancePageNavigation page={view} detailsDisabled={!chosen} navigate={value => { window.location.hash = value; }} />
     <h1 className="sarmg-visually-hidden">{viewTitle(view)}</h1>
     {createFailure && <ErrorState requestId={createFailure.requestId}>{t("实例未能创建，请刷新列表核对后重试。", "The instance could not be created. Refresh the list before retrying.")}</ErrorState>}
     {view === "instances" && <><InstanceStatistics cameras={cameras} clients={clients} status={systemStatus} /><section className="view active sarmg-content-stack"><h2>{t("实例列表", "Instance list")}</h2><ClientsView clients={clients} cameras={cameras} changed={loadClients} toast={toast} select={id => { setSelected(id); window.location.hash = "details"; }} /></section></>}
     {view === "details" && chosen && <><ClientDetails client={chosen} cameras={clientCameras} /><CameraView cameras={visible} search={search} setSearch={setSearch} inspect={setDrawerCamera} />{recordings.length > 0 && <RecordingsView cameras={recordings} toast={toast} />}<ClientSettings key={chosen.id} client={chosen} changed={loadClients} toast={toast} /></>}
-    {view === "logs" && <><EventsView events={events} cameras={cameras} unacknowledgedOnly={unacknowledgedOnly} setUnacknowledgedOnly={setUnacknowledgedOnly} refresh={() => void loadEvents().catch((error) => toast(errorText(error), "error"))} acknowledge={(id) => void acknowledge(id).catch((error) => toast(errorText(error), "error"))} /><MediaOperationsView operations={operations} cameras={cameras} changed={loadOperations} toast={toast} /><AuditLogView failure={auditFailure} audit={audit} refresh={() => void loadAudit().catch((error) => toast(errorText(error), "error"))} /></>}
+    {view === "logs" && <><section className="filter-panel sarmg-content-panel"><FormField label={t("服务器日期", "Server date")}><TextField type="date" disabled={logDate === null} value={logDate ?? ""} onChange={event => setLogDate(event.target.value)} /></FormField><label className="toggle-line"><Checkbox checked={unacknowledgedOnly} onChange={event => setUnacknowledgedOnly(event.target.checked)} />{t("仅显示未确认事件", "Show unacknowledged events only")}</label><Button disabled={!logDate} onClick={() => void loadLogs()}>{t("刷新日志", "Refresh logs")}</Button></section>{logFailure ? <ErrorState requestId={logFailure.requestId} onRetry={() => void (logDate === null ? loadLogCalendar() : loadLogs())}>{t("所选日期的日志暂不可用。", "Logs for the selected date are temporarily unavailable.")}</ErrorState> : logDate === "" ? <div className="empty-state">{t("请选择服务器日期", "Choose a server date")}</div> : loadedLogDate !== logDate ? <LoadingState>{t("正在加载所选日期的日志…", "Loading logs for the selected date…")}</LoadingState> : <><EventsView events={events} cameras={cameras} acknowledge={(id) => void acknowledge(id).catch((error) => toast(errorText(error), "error"))} /><MediaOperationsView operations={operations} cameras={cameras} changed={loadLogs} toast={toast} /><AuditLogView audit={audit} /></>}</>}
     {drawerCamera !== null && <CameraDrawer camera={drawerCamera} close={() => setDrawerCamera(null)} toast={toast} />}
   </div>;
 }
@@ -371,24 +395,22 @@ function RecordingsView({ cameras, toast }: { cameras: Camera[]; toast(message: 
   return <section className="view active sarmg-content-stack"><div className="filter-panel sarmg-content-panel"><label>{t("摄像头", "Camera")}<Select value={cameraId} onChange={(event) => setCameraId(event.target.value)}>{cameras.map((camera) => <option key={camera.id} value={camera.id}>{camera.name}</option>)}</Select></label><label>{t("开始时间", "Start time")}<TextField type="datetime-local" value={start} onChange={(event) => setStart(event.target.value)} /></label><label>{t("结束时间", "End time")}<TextField type="datetime-local" value={end} onChange={(event) => setEnd(event.target.value)} /></label><Button className="button button-primary" onClick={() => void search().catch((error) => toast(errorText(error), "error"))}>{t("查询录像", "Search recordings")}</Button></div><div className="recording-layout sarmg-content-panel"><div><div className="section-heading"><h3>{t("录像时间段", "Recording segments")}</h3><span>{spans.length} {t("条", "segments")}</span></div><div className="record-list">{spans.length === 0 ? <div className="empty-state">{t("所选范围内没有录像", "No recordings in the selected range")}</div> : spans.map((span) => <Button key={`${span.start}-${span.duration}`} className="record-item" onClick={() => setPlaying(span)}><span>{formatDate(span.start)}</span><strong>{formatDuration(span.duration)}</strong><i>{t("播放", "Play")}</i></Button>)}</div></div><div className="playback-stage"><video src={playback || undefined} controls playsInline autoPlay /><div>{playing === null ? t("尚未选择录像", "No recording selected") : `${formatDate(playing.start)} · ${formatDuration(playing.duration)}`}</div></div></div></section>;
 }
 
-function EventsView({ events, cameras, unacknowledgedOnly, setUnacknowledgedOnly, refresh, acknowledge }: { events: MonitorEvent[]; cameras: Camera[]; unacknowledgedOnly: boolean; setUnacknowledgedOnly(value: boolean): void; refresh(): void; acknowledge(id: string): void }) {
+function EventsView({ events, cameras, acknowledge }: { events: MonitorEvent[]; cameras: Camera[]; acknowledge(id: string): void }) {
   const names = new Map(cameras.map((camera) => [camera.id, camera.name]));
-  return <section className="view active sarmg-content-stack"><div className="command-bar"><label className="toggle-line"><Checkbox checked={unacknowledgedOnly} onChange={(event) => setUnacknowledgedOnly(event.target.checked)} />{t("仅显示未确认事件", "Show unacknowledged events only")}</label></div><Table aria-label={t("监控事件", "Monitoring events")}><thead><tr><th>{t("等级", "Severity")}</th><th>{t("事件", "Event")}</th><th>{t("摄像头", "Camera")}</th><th>{t("时间", "Time")}</th><th>{t("状态", "Status")}</th></tr></thead><tbody>{events.length === 0 ? <tr><td colSpan={5} className="empty-state">{t("没有事件", "No events")}</td></tr> : events.map((event) => <tr key={event.id}><td><span className={`severity ${event.severity}`}>{severityLabel(event.severity)}</span></td><td><strong>{displayLabel(event.kind)}</strong></td><td>{event.camera_id === null ? t("系统", "System") : names.get(event.camera_id) ?? t("系统", "System")}</td><td>{formatDate(event.created_at)}</td><td>{event.acknowledged_at === null ? <Button className="text-button" onClick={() => acknowledge(event.id)}>{t("确认", "Acknowledge")}</Button> : t("已确认", "Acknowledged")}</td></tr>)}</tbody></Table></section>;
+  return <section className="view active sarmg-content-stack"><Table aria-label={t("监控事件", "Monitoring events")}><thead><tr><th>{t("等级", "Severity")}</th><th>{t("事件", "Event")}</th><th>{t("摄像头", "Camera")}</th><th>{t("服务器时间", "Server time")}</th><th>{t("状态", "Status")}</th></tr></thead><tbody>{events.length === 0 ? <tr><td colSpan={5} className="empty-state">{t("没有事件", "No events")}</td></tr> : events.map((event) => <tr key={event.id}><td><span className={`severity ${event.severity}`}>{severityLabel(event.severity)}</span></td><td><strong>{displayLabel(event.kind)}</strong></td><td>{event.camera_id === null ? t("系统", "System") : names.get(event.camera_id) ?? t("系统", "System")}</td><td>{event.server_created_at}</td><td>{event.acknowledged_at === null ? <Button className="text-button" onClick={() => acknowledge(event.id)}>{t("确认", "Acknowledge")}</Button> : t("已确认", "Acknowledged")}</td></tr>)}</tbody></Table></section>;
 }
 
-function AuditLogView({ failure, audit, refresh }: { failure: { requestId?: string } | null; audit: AuditRow[] | null; refresh(): void }) {
+function AuditLogView({ audit }: { audit: AuditRow[] }) {
   return <section className="view active sarmg-content-stack">
-    {failure ? <ErrorState requestId={failure.requestId} onRetry={refresh}>{t("审计日志暂不可用。", "Audit logs are temporarily unavailable.")}</ErrorState>
-      : audit === null ? <LoadingState>{t("正在加载审计日志…", "Loading audit logs…")}</LoadingState>
-        : <section className="management-block sarmg-content-panel"><div className="section-heading"><h2>{t("审计日志", "Audit logs")}</h2></div>
-          <div className="audit-list">{audit.length === 0 ? <div className="empty-state">{t("暂无审计日志", "No audit logs yet")}</div> : audit.map((row) => <details key={row.id}><summary><span>{displayLabel(row.action)}</span> · <small>{formatDate(row.created_at)}</small></summary><dl><dt>{t("操作者", "Actor")}</dt><dd><code>{row.user_id ?? t("系统", "System")}</code></dd><dt>{t("对象", "Entity")}</dt><dd><code>{displayLabel(row.entity_type)}{row.entity_id === null ? "" : ` / ${row.entity_id}`}</code></dd><dt>{t("详情", "Details")}</dt><dd><code>{safeAuditDetails(row.details)}</code></dd></dl></details>)}</div>
-        </section>}
+    <section className="management-block sarmg-content-panel"><div className="section-heading"><h2>{t("审计日志", "Audit logs")}</h2></div>
+          <div className="audit-list">{audit.length === 0 ? <div className="empty-state">{t("暂无审计日志", "No audit logs yet")}</div> : audit.map((row) => <details key={row.id}><summary><span>{displayLabel(row.action)}</span> · <small>{row.server_created_at}</small></summary><dl><dt>{t("操作者", "Actor")}</dt><dd><code>{row.user_id ?? t("系统", "System")}</code></dd><dt>{t("对象", "Entity")}</dt><dd><code>{displayLabel(row.entity_type)}{row.entity_id === null ? "" : ` / ${row.entity_id}`}</code></dd><dt>{t("详情", "Details")}</dt><dd><code>{safeAuditDetails(row.details)}</code></dd></dl></details>)}</div>
+        </section>
   </section>;
 }
 
-function MediaOperationsView({ operations, cameras, changed, toast }: { operations: MediaOperation[] | null; cameras: Camera[]; changed(): Promise<void>; toast(message: string, type?: string): void }) {
+function MediaOperationsView({ operations, cameras, changed, toast }: { operations: LoggedMediaOperation[]; cameras: Camera[]; changed(): Promise<void>; toast(message: string, type?: string): void }) {
   const [pending, setPending] = useState(false);
-  const [resolution, setResolution] = useState<{ operation: MediaOperation; value: "confirmed_succeeded" | "confirmed_failed" | "unable_to_confirm"; label: string } | null>(null);
+  const [resolution, setResolution] = useState<{ operation: LoggedMediaOperation; value: "confirmed_succeeded" | "confirmed_failed" | "unable_to_confirm"; label: string } | null>(null);
   const names = new Map(cameras.map(camera => [camera.id, camera.name]));
   const resolve = async (target: NonNullable<typeof resolution>) => {
     setPending(true);
@@ -404,8 +426,8 @@ function MediaOperationsView({ operations, cameras, changed, toast }: { operatio
     ["unable_to_confirm", t("仍无法确认", "Still unable to confirm")],
   ] as const;
   return <section className="management-block sarmg-content-panel"><div className="section-heading"><h2>{t("媒体协调操作", "Media reconciliation operations")}</h2><Button onClick={() => void changed().catch(error => toast(errorText(error), "error"))}>{t("刷新", "Refresh")}</Button></div>
-    {operations === null ? <LoadingState>{t("正在加载媒体操作…", "Loading media operations…")}</LoadingState> : <div className="audit-list">{operations.length === 0 ? <div className="empty-state">{t("暂无媒体协调操作", "No media reconciliation operations")}</div> : operations.map(operation => <details key={operation.id}><summary><span>{names.get(operation.camera_id) ?? operation.camera_id} · {displayLabel(operation.state)}</span> · <small>{formatDate(operation.created_at)}</small></summary><dl><dt>{t("操作标识", "Operation ID")}</dt><dd><code>{operation.id}</code></dd><dt>{t("原因", "Reason")}</dt><dd>{displayLabel(operation.reason)}</dd><dt>{t("代际 / 尝试", "Generation / attempts")}</dt><dd>{operation.generation} / {operation.attempt} of {operation.max_attempts}</dd><dt>{t("错误", "Error")}</dt><dd>{operation.error_code ?? "—"}</dd></dl>
-      {(["unknown", "failed", "dead_letter"].includes(operation.state)) && <div className="sarmg-actions">{choices.map(([value, label]) => <Button key={value} disabled={pending} onClick={() => setResolution({ operation, value, label })}>{label}</Button>)}</div>}</details>)}</div>}
+    <div className="audit-list">{operations.length === 0 ? <div className="empty-state">{t("暂无媒体协调操作", "No media reconciliation operations")}</div> : operations.map(operation => <details key={operation.id}><summary><span>{names.get(operation.camera_id) ?? operation.camera_id} · {displayLabel(operation.state)}</span> · <small>{operation.server_created_at}</small></summary><dl><dt>{t("操作标识", "Operation ID")}</dt><dd><code>{operation.id}</code></dd><dt>{t("原因", "Reason")}</dt><dd>{displayLabel(operation.reason)}</dd><dt>{t("代际 / 尝试", "Generation / attempts")}</dt><dd>{operation.generation} / {operation.attempt} of {operation.max_attempts}</dd><dt>{t("错误", "Error")}</dt><dd>{operation.error_code ?? "—"}</dd></dl>
+      {(["unknown", "failed", "dead_letter"].includes(operation.state)) && <div className="sarmg-actions">{choices.map(([value, label]) => <Button key={value} disabled={pending} onClick={() => setResolution({ operation, value, label })}>{label}</Button>)}</div>}</details>)}</div>
     {resolution && <ConfirmDangerDialog title={resolution.label} description={t("请先核对 MediaMTX 与摄像头的实际状态。此操作只记录人工结论，不会重新执行原媒体操作。", "Check the actual MediaMTX and camera state first. This only records a manual conclusion and does not rerun the media operation.")} pending={pending} onClose={() => { if (!pending) setResolution(null); }} onConfirm={() => { const target = resolution; setResolution(null); void resolve(target).catch(error => toast(errorText(error), "error")); }} />}
   </section>;
 }

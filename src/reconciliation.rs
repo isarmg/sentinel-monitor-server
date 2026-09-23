@@ -151,29 +151,88 @@ pub async fn get_operation(pool: &SqlitePool, id: &str) -> Result<MediaOperation
 
 pub async fn list_operations(
     pool: &SqlitePool,
-    limit: u32,
-    offset: u32,
+    start_micros: i64,
+    end_micros: i64,
 ) -> Result<Vec<MediaOperationView>> {
-    let ids: Vec<String> = sqlx::query_scalar(
-        "SELECT operation_id FROM _sarmg_operations WHERE namespace = ? \
-         ORDER BY created_at_micros DESC, operation_id DESC LIMIT ? OFFSET ?",
+    let rows = sqlx::query_as::<_, OperationListRow>(
+        "SELECT operation_id, namespace, target_key, action, idempotency_digest, \
+         request_fingerprint, request_payload, result_payload, state, attempt, max_attempts, \
+         not_before_micros, lease_owner, lease_expiry_micros, error_code, resolution_code, \
+         created_at_micros, updated_at_micros FROM _sarmg_operations WHERE namespace = ? \
+         AND created_at_micros >= ? AND created_at_micros < ? \
+         ORDER BY created_at_micros DESC, operation_id DESC",
     )
     .bind(OPERATION_NAMESPACE)
-    .bind(i64::from(limit))
-    .bind(i64::from(offset))
+    .bind(start_micros)
+    .bind(end_micros)
     .fetch_all(pool)
     .await?;
-    let store = SqliteOperationStore::new(pool.clone());
-    let mut operations = Vec::with_capacity(ids.len());
-    for id in ids {
-        let stored = store
-            .get(&id)
-            .await
-            .map_err(operation_error)?
-            .ok_or_else(|| AppError::Internal("媒体操作列表在读取期间发生不一致".into()))?;
-        operations.push(operation_view(stored)?);
+    rows.into_iter()
+        .map(|row| operation_view(row.into_stored()?))
+        .collect()
+}
+
+#[derive(sqlx::FromRow)]
+struct OperationListRow {
+    operation_id: String,
+    namespace: String,
+    target_key: String,
+    action: String,
+    idempotency_digest: Vec<u8>,
+    request_fingerprint: Vec<u8>,
+    request_payload: Vec<u8>,
+    result_payload: Option<Vec<u8>>,
+    state: String,
+    attempt: i64,
+    max_attempts: i64,
+    not_before_micros: i64,
+    lease_owner: Option<String>,
+    lease_expiry_micros: Option<i64>,
+    error_code: Option<String>,
+    resolution_code: Option<String>,
+    created_at_micros: i64,
+    updated_at_micros: i64,
+}
+
+impl OperationListRow {
+    fn into_stored(self) -> Result<StoredOperation> {
+        let attempt = u32::try_from(self.attempt)
+            .map_err(|_| AppError::Internal("媒体操作尝试次数无效".into()))?;
+        let max_attempts = u32::try_from(self.max_attempts)
+            .map_err(|_| AppError::Internal("媒体操作最大尝试次数无效".into()))?;
+        if max_attempts == 0 || attempt > max_attempts {
+            return Err(AppError::Internal("媒体操作尝试次数无效".into()));
+        }
+        let operation = Operation {
+            operation_id: self.operation_id,
+            namespace: self.namespace,
+            target_key: self.target_key,
+            idempotency_digest: self
+                .idempotency_digest
+                .try_into()
+                .map_err(|_| AppError::Internal("媒体操作幂等摘要无效".into()))?,
+            request_fingerprint: self
+                .request_fingerprint
+                .try_into()
+                .map_err(|_| AppError::Internal("媒体操作请求摘要无效".into()))?,
+            state: OperationState::parse(&self.state).map_err(operation_error)?,
+            attempt,
+            max_attempts,
+            not_before_micros: self.not_before_micros,
+            lease_owner: self.lease_owner,
+            lease_expiry_micros: self.lease_expiry_micros,
+            error_code: self.error_code,
+        };
+        Ok(StoredOperation {
+            operation,
+            action: self.action,
+            request_payload: self.request_payload,
+            result_payload: self.result_payload,
+            resolution_code: self.resolution_code,
+            created_at_micros: self.created_at_micros,
+            updated_at_micros: self.updated_at_micros,
+        })
     }
-    Ok(operations)
 }
 
 pub async fn recover_interrupted_operations(pool: &SqlitePool) -> Result<u64> {

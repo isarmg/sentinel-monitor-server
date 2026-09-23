@@ -1,5 +1,6 @@
 import { createAdministratorApiClient, type JsonGuard } from "@sarmg/admin-web";
 import { ADMIN_AUTH_PATHS } from "@sarmg/contracts";
+import { MAX_RESPONSE_BYTES } from "@sarmg/http-client";
 
 import protocolContract from "./protocol-contract.json";
 
@@ -78,6 +79,8 @@ export type MediaOperation = {
   error_message: string | null;
 };
 
+export type LoggedMediaOperation = MediaOperation & { server_created_at: string };
+
 export type StreamTicket = {
   profile: string;
   whep_url: string;
@@ -96,6 +99,7 @@ export type MonitorEvent = {
   message: string;
   acknowledged_at: string | null;
   created_at: string;
+  server_created_at: string;
 };
 
 export type AuditRow = {
@@ -106,7 +110,10 @@ export type AuditRow = {
   entity_id: string | null;
   details: Record<string, unknown>;
   created_at: string;
+  server_created_at: string;
 };
+
+export type LogCalendar = { today: string };
 
 export type SystemStatus = {
   service: string;
@@ -142,6 +149,16 @@ export function request<T>(
   init?: RequestInit,
 ): Promise<T> {
   return administratorApi.request(apiPath(path), guard, init);
+}
+
+export function requestLog<T>(path: string, guard: JsonGuard<T>): Promise<T> {
+  // The administrator client forwards this public HTTP transport budget.
+  // A selected day is returned in one response, including days above the 2 MiB default.
+  const options: RequestInit & { maxResponseBytes: number; timeoutMs: number } = {
+    maxResponseBytes: MAX_RESPONSE_BYTES,
+    timeoutMs: 120_000,
+  };
+  return administratorApi.request(apiPath(path), guard, options);
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -211,7 +228,11 @@ export const isOperation: JsonGuard<MediaOperation> = (
     "error_code",
     "error_message",
   ].every((key) => isNullableString(value[key]));
-export const isOperations = arrayOf(isOperation);
+export const isOperations = arrayOf((value): value is LoggedMediaOperation =>
+  isOperation(value) && "server_created_at" in value && isString(value.server_created_at));
+
+export const isLogCalendar: JsonGuard<LogCalendar> = (value): value is LogCalendar =>
+  isRecord(value) && isString(value.today) && /^\d{4}-\d{2}-\d{2}$/.test(value.today);
 
 export const isStreamTicket: JsonGuard<StreamTicket> = (
   value,
@@ -236,13 +257,15 @@ const isMonitorEvent: JsonGuard<MonitorEvent> = (
   ) &&
   isNullableString(value.camera_id) &&
   isNullableString(value.acknowledged_at) &&
+  isString(value.server_created_at) &&
   ["info", "warning", "critical"].includes(value.severity as string);
 export const isMonitorEvents = arrayOf(isMonitorEvent);
 
 const isAuditRow: JsonGuard<AuditRow> = (value): value is AuditRow =>
   isRecord(value) &&
   ["id", "action", "entity_type", "created_at"].every((key) => isString(value[key])) &&
-  isNullableString(value.user_id) && isNullableString(value.entity_id) && isRecord(value.details);
+  isNullableString(value.user_id) && isNullableString(value.entity_id) && isRecord(value.details) &&
+  isString(value.server_created_at);
 export const isAuditRows = arrayOf(isAuditRow);
 
 export const isSystemStatus: JsonGuard<SystemStatus> = (
