@@ -151,10 +151,10 @@ Administrator Browser Session
 顺序取得排他锁，把 SQLite、MediaMTX config/contract、recordings 和 external key 身份作为组合状态处理。
 当前产品不包含迁移器、不扫描其他代路径、不解析非当前 Schema/密文，也不通过 fallback 修补数据。
 
-## 9. Web 构建与 Foundation 0.9.1 流程
+## 9. Web 构建与 Foundation 0.9.2 流程
 
 ```text
-package.json + package-lock.json 精确锁定 Foundation 0.9.1 和工具链
+package.json + package-lock.json 精确锁定 Foundation 0.9.2 和工具链
   -> npm ci
   -> check:foundation
        ├─ 校验 Node/React/TypeScript/Vite 精确版本
@@ -180,8 +180,8 @@ npm run build
 
 `build` 已把 `check:foundation` 设为硬前置，因此不能通过直接执行 Vite 跳过共享边界。构建产物完全自包含；
 浏览器运行时不解析 npm 包，也不访问 npm registry、Foundation 仓库或远程 CSS。
-构建期八个 Web 包来自 Foundation `v0.9.1` GitHub Release 归档，并由 lockfile integrity 锁定字节；
-Rust crate 由版本 `=0.9.1` 和 revision `84966364c5b4662104e05741b3045482e4fd4fc8` 双重锁定。两者都不读取
+构建期八个 Web 包来自 Foundation `v0.9.2` GitHub Release 归档，并由 lockfile integrity 锁定字节；
+Rust crate 由版本 `=0.9.2` 和 revision `0174fc1b6ffcdf876e6dc7c715f107266582410e` 双重锁定。两者都不读取
 共同父目录或 sibling checkout，也不提供旧来源 fallback。
 
 ## 10. Foundation 共享层与产品层调用树
@@ -205,10 +205,10 @@ web/src/main.tsx
    └─ 纸张/墨色/警示色、布局、组件和响应式品牌样式
 
 Rust/Axum
-├─ sarmg-contracts 0.9.1 -> Administrator 认证 DTO/路径和跨语言合同
-├─ sarmg-error 0.9.1 -> 严格 ErrorEnvelope/ErrorCode
-├─ sarmg-schema-identity 0.9.1 -> metadata DDL/列、指纹 framing 与 exact identity
-├─ sarmg-server-target 0.9.1 -> 编译期 x86_64-unknown-linux-gnu 门禁
+├─ sarmg-contracts 0.9.2 -> Administrator 认证 DTO/路径和跨语言合同
+├─ sarmg-error 0.9.2 -> 严格 ErrorEnvelope/ErrorCode
+├─ sarmg-schema-identity 0.9.2 -> metadata DDL/列、指纹 framing 与 exact identity
+├─ sarmg-server-target 0.9.2 -> 编译期 x86_64-unknown-linux-gnu 门禁
 └─ Sentinel 产品代码 -> 私有 SQLite generation、Schema DDL、Cookie、Session、媒体、审计与运维
 ```
 
