@@ -145,7 +145,7 @@ function Console() {
     <h1 className="sarmg-visually-hidden">{viewTitle(view)}</h1>
     {createFailure && <ErrorState requestId={createFailure.requestId}>{t("实例未能创建，请刷新列表核对后重试。", "The instance could not be created. Refresh the list before retrying.")}</ErrorState>}
     {view === "instances" && <><InstanceStatistics cameras={cameras} clients={clients} status={systemStatus} /><section className="view active sarmg-content-stack"><h2>{t("实例列表", "Instance list")}</h2><ClientsView clients={clients} cameras={cameras} changed={loadClients} toast={toast} select={id => { setSelected(id); window.location.hash = "details"; }} /></section></>}
-    {view === "details" && chosen && <><ClientDetails client={chosen} cameras={clientCameras} changed={loadClients} toast={toast} /><CameraView cameras={visible} search={search} setSearch={setSearch} inspect={setDrawerCamera} />{recordings.length > 0 && <RecordingsView cameras={recordings} toast={toast} />}</>}
+    {view === "details" && chosen && <><ClientDetails client={chosen} cameras={clientCameras} /><CameraView cameras={visible} search={search} setSearch={setSearch} inspect={setDrawerCamera} />{recordings.length > 0 && <RecordingsView cameras={recordings} toast={toast} />}<ClientSettings key={chosen.id} client={chosen} changed={loadClients} toast={toast} /></>}
     {view === "logs" && <><EventsView events={events} cameras={cameras} unacknowledgedOnly={unacknowledgedOnly} setUnacknowledgedOnly={setUnacknowledgedOnly} refresh={() => void loadEvents().catch((error) => toast(errorText(error), "error"))} acknowledge={(id) => void acknowledge(id).catch((error) => toast(errorText(error), "error"))} /><MediaOperationsView operations={operations} cameras={cameras} changed={loadOperations} toast={toast} /><AuditLogView failure={auditFailure} audit={audit} refresh={() => void loadAudit().catch((error) => toast(errorText(error), "error"))} /></>}
     {drawerCamera !== null && <CameraDrawer camera={drawerCamera} close={() => setDrawerCamera(null)} toast={toast} />}
   </div>;
@@ -296,7 +296,25 @@ function ClientsView({ clients, cameras, changed, toast, select }: {
   </div>;
 }
 
-function ClientDetails({ client, cameras, changed, toast }: { client: SentinelClient; cameras: Camera[]; changed(): Promise<void>; toast(message: string, type?: string): void }) {
+function ClientDetails({ client, cameras }: { client: SentinelClient; cameras: Camera[] }) {
+  return <section className="view active sarmg-content-stack">
+    <section className="sarmg-content-panel" aria-label={t("配对账户信息", "Pairing account information")}><h2>{client.name}</h2><dl className="sentinel-detail-list">
+      <dt>{t("账户名", "Account name")}</dt><dd>{client.name}</dd>
+      <dt>{t("账户", "Account")}</dt><dd><code>{client.id}</code></dd>
+      <dt>{t("密码", "Password")}</dt><dd><code>{client.authorization_code}</code></dd>
+      <dt>{t("配对状态", "Pairing status")}</dt><dd>{client.status === "pending" ? t("待配对", "Awaiting pairing") : client.status === "revoked" ? t("已撤销", "Revoked") : t("已配对", "Paired")}</dd>
+    </dl></section>
+
+    <section className="sarmg-content-panel" aria-label={t("摄像机状态", "Camera status")}><h2>{t("摄像机状态", "Camera status")}</h2><dl className="sentinel-detail-list">
+      <dt>{t("在线状态", "Online status")}</dt><dd>{client.status === "online" ? t("在线", "Online") : t("离线", "Offline")}</dd>
+      <dt>{t("版本", "Version")}</dt><dd>{client.client_version ?? "—"}</dd>
+      <dt>{t("最后在线", "Last online")}</dt><dd>{client.last_seen_at === null ? "—" : formatDate(client.last_seen_at)}</dd>
+      <dt>{t("摄像头", "Cameras")}</dt><dd>{cameras.length}</dd>
+    </dl></section>
+  </section>;
+}
+
+function ClientSettings({ client, changed, toast }: { client: SentinelClient; changed(): Promise<void>; toast(message: string, type?: string): void }) {
   const [name, setName] = useState(client.name);
   const [pending, setPending] = useState(false);
   const [failure, setFailure] = useState<{ requestId?: string } | null>(null);
@@ -311,27 +329,13 @@ function ClientDetails({ client, cameras, changed, toast }: { client: SentinelCl
     } catch (error) { setFailure({ requestId: errorRequestId(error) }); }
     finally { setPending(false); }
   }
-  return <section className="view active sarmg-content-stack">
-    <section className="sarmg-content-panel" aria-label={t("配对账户信息", "Pairing account information")}><h2>{client.name}</h2><dl className="sentinel-detail-list">
-      <dt>{t("账户名", "Account name")}</dt><dd>{client.name}</dd>
-      <dt>{t("账户", "Account")}</dt><dd><code>{client.id}</code></dd>
-      <dt>{t("密码", "Password")}</dt><dd><code>{client.authorization_code}</code></dd>
-      <dt>{t("配对状态", "Pairing status")}</dt><dd>{client.status === "pending" ? t("待配对", "Awaiting pairing") : client.status === "revoked" ? t("已撤销", "Revoked") : t("已配对", "Paired")}</dd>
-    </dl></section>
-    <section className="sarmg-content-panel" aria-label={t("实例设置", "Instance settings")}><h2>{t("实例设置", "Instance settings")}</h2>
+  return <section className="sarmg-content-panel" aria-label={t("实例设置", "Instance settings")}><h2>{t("实例设置", "Instance settings")}</h2>
       <form onSubmit={event => { event.preventDefault(); void saveName(); }} aria-busy={pending}>
         <FormField label={t("实例名称", "Instance name")}><InstanceNameField name="name" value={name} onChange={event => setName(event.target.value)} required readOnly={pending} /></FormField>
         {failure && <ErrorState requestId={failure.requestId}>{t("实例名称未能保存，请重试。", "The instance name could not be saved. Please retry.")}</ErrorState>}
         <div className="sarmg-actions"><Button type="submit" disabled={pending || name.trim() === client.name}>{pending ? t("正在保存…", "Saving…") : t("保存名称", "Save name")}</Button></div>
       </form>
-    </section>
-    <section className="sarmg-content-panel" aria-label={t("摄像机状态", "Camera status")}><h2>{t("摄像机状态", "Camera status")}</h2><dl className="sentinel-detail-list">
-      <dt>{t("在线状态", "Online status")}</dt><dd>{client.status === "online" ? t("在线", "Online") : t("离线", "Offline")}</dd>
-      <dt>{t("版本", "Version")}</dt><dd>{client.client_version ?? "—"}</dd>
-      <dt>{t("最后在线", "Last online")}</dt><dd>{client.last_seen_at === null ? "—" : formatDate(client.last_seen_at)}</dd>
-      <dt>{t("摄像头", "Cameras")}</dt><dd>{cameras.length}</dd>
-    </dl></section>
-  </section>;
+    </section>;
 }
 
 function RecordingsView({ cameras, toast }: { cameras: Camera[]; toast(message: string, type?: string): void }) {

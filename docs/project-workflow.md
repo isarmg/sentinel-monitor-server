@@ -8,7 +8,7 @@
 队列回归使用 `npm run test:unit --prefix web`，页面交互使用 `npm run test:browser --prefix web` 验证。
 
 ```text
-Sentinel Monitor 0.2.19
+Sentinel Monitor 0.2.20
 ├─ 构建
 │  ├─ Node 26.7.0 -> check:foundation -> TypeScript strict -> Vite 7
 │  ├─ Rust 1.98.0 -> x86_64-unknown-linux-gnu binary
@@ -41,7 +41,7 @@ Sentinel Monitor 0.2.19
 
 ## 2. 原生发布与首次启动
 
-`native/build.sh` 只接受干净且 annotated `v0.2.19` 指向 HEAD 的 checkout、Linux x86_64 builder，以及与
+`native/build.sh` 只接受干净且 annotated `v0.2.20` 指向 HEAD 的 checkout、Linux x86_64 builder，以及与
 `config/mediamtx.lock` 匹配的 `linux_amd64` MediaMTX `v1.20.0`。Rust target 固定为
 `x86_64-unknown-linux-gnu`，没有其他架构、OS 或 libc 的正式构建分支。脚本构建 Web 和 source-bound
 Rust binary，生成完整 manifest，在同一文件系统暂存并验证后，以 no-clobber 语义发布固定版本目录。
