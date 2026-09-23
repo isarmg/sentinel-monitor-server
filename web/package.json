@@ -10,6 +10,7 @@
     "dev": "vite --host 0.0.0.0",
     "typecheck": "tsc --noEmit",
     "check:foundation": "node tests/design-foundation.test.mjs",
+    "test:unit": "node --test tests/snapshot-refresh.test.mjs",
     "build": "npm run check:foundation && npm run typecheck && vite build",
     "test:browser": "npm run build && node tests/browser-acceptance.mjs"
   },

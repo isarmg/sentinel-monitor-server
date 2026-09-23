@@ -37,6 +37,7 @@ import {
   type SystemStatus,
 } from "./api";
 import { WhepPlayer } from "./whep";
+import { createSnapshotRefresh } from "./snapshot-refresh";
 
 type View = InstancePage;
 function Console() {
@@ -50,8 +51,8 @@ function Console() {
   const [clients, setClients] = useState<SentinelClient[]>([]);
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [operations, setOperations] = useState<MediaOperation[] | null>(null);
-  const snapshotRefresh = useRef<{ inFlight: Promise<void> | null; queued: boolean }>({ inFlight: null, queued: false });
   const snapshotLoaders = useRef<Array<() => Promise<void>>>([]);
+  const [refreshSnapshot] = useState(() => createSnapshotRefresh(() => snapshotLoaders.current));
   const [auditFailure, setAuditFailure] = useState<{ requestId?: string } | null>(null);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
@@ -86,32 +87,7 @@ function Console() {
     setOperations(await request("/media/operations?limit=50&offset=0", isOperations));
   }, []);
   snapshotLoaders.current = [loadCameras, loadEvents, loadClients, loadSystemStatus];
-  const refreshSnapshot = useCallback(() => {
-    const state = snapshotRefresh.current;
-    if (state.inFlight !== null) {
-      state.queued = true;
-      return state.inFlight;
-    }
-    const run = async () => {
-      let lastError: unknown;
-      do {
-        state.queued = false;
-        lastError = undefined;
-        try {
-          await Promise.all(snapshotLoaders.current.map(load => load()));
-        } catch (error) {
-          lastError = error;
-        }
-      } while (state.queued);
-      if (lastError !== undefined) throw lastError;
-    };
-    const work = run();
-    state.inFlight = work;
-    void work.finally(() => { if (state.inFlight === work) state.inFlight = null; }).catch(() => undefined);
-    return work;
-  }, []);
-
-  useEffect(() => { void refreshSnapshot().catch((error) => toast(errorText(error), "error")); }, [refreshSnapshot, toast]);
+  useEffect(() => { void refreshSnapshot().catch((error) => toast(errorText(error), "error")); }, [loadEvents, refreshSnapshot, toast]);
   useEffect(() => { if (view === "logs") void Promise.all([loadAudit(), loadOperations()]).catch((error) => toast(errorText(error), "error")); }, [loadAudit, loadOperations, toast, view]);
   useEffect(() => {
     const source = new EventSource(apiPath("/events/stream"));
@@ -135,10 +111,10 @@ function Console() {
   }, [refreshSnapshot, toast]);
   useEffect(() => {
     const timer = window.setInterval(() => {
-      if (!document.hidden) void Promise.all([loadClients(), loadSystemStatus()]).catch(error => toast(errorText(error), "error"));
+      if (!document.hidden) void refreshSnapshot().catch(error => toast(errorText(error), "error"));
     }, 15_000);
     return () => clearInterval(timer);
-  }, [loadClients, loadSystemStatus, toast]);
+  }, [refreshSnapshot, toast]);
 
   const filteredCameras = useMemo(() => {
     const term = search.trim().toLowerCase();

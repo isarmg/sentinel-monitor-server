@@ -29,6 +29,7 @@ jobs:
           npm --version
           npm ci --prefix web
           npm run check:foundation --prefix web
+          npm run test:unit --prefix web
           npm run build --prefix web
       - name: Install acceptance browsers
         working-directory: web
