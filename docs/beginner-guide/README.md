@@ -66,12 +66,12 @@ cargo run -- serve
 管理员初始身份在全新数据库初始化时由 `BOOTSTRAP_ADMIN_USERNAME` 与密码提供。username candidate
 是 1–64 bytes printable ASCII，经 trim ASCII/lowercase 后必须是 3–64 bytes、首尾字母数字、字符仅
 `[a-z0-9._-]`；默认值为 `admin`，`@` 不合法。密码使用当前 Argon2id。登录成功后浏览器取得
-`__Host-sentinel_session` Secure/HttpOnly/SameSite Cookie；写请求同时需要 Session 绑定 CSRF。
+`__Host-sarmg-sentinel-monitor-session` Secure/HttpOnly/SameSite=Strict Cookie；写请求同时需要 Session 绑定 CSRF。
 登录按真实连接来源和规范化账户分别限流，并受请求体、Argon2 并发与超时预算保护。
 
-控制面只有 Administrator：每个成功登录的账户都能访问摄像头、直播、录像、PTZ、事件、用户、审计
+控制面只有 Administrator：每个成功登录的账户都能访问摄像头、直播、录像、PTZ、事件、实例、审计
 和系统状态。请求精确为 `{username,password}`，Session 精确包含
-`authenticated/user_id/username/role/csrf_token` 五字段；`users` 表不保存 email 或 `role`，wire 中固定的
+`authenticated/user_id/username/role/csrf_token` 五字段；`_sarmg_administrators` 表不保存 email 或 `role`，wire 中固定的
 `role:"admin"` 只是 Foundation 身份合同。实例授权码、Client 访问令牌和媒体 JWT
 `actions` 都是数据面凭据或资源范围，不能解释为第二套控制面角色。
 

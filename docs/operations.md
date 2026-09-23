@@ -251,8 +251,8 @@ Foundation 512 KiB 硬限制且不发布 source map。浏览器验收使用真�
 当前 Foundation 来源/lockfile，重新生成整个 Web dist 和不可变 release。Foundation 版本切换属于直接
 替换当前合同，不保留并行 CSS 或媒体查询式版本 fallback。
 
-系统页不再展示管理员列表，也不请求 Foundation `/api/v2/platform/administrators`；管理员账号名称和密码只从 Shell 右上角人物图标进入自助设置。
-业务页面不再有 `/users` 请求或产品用户编辑器。平台管理员 API 仍由 Foundation 提供给需要它的后端集成。
+系统页展示媒体状态与业务审计；管理员账号名称和密码从 Shell 右上角人物图标进入自助设置。
+管理员 API 由 Foundation 提供给后端集成，业务页面通过账号自助设置访问当前身份。
 改密/停用撤销全部会话，安全审计与写入同事务。系统页展示的“业务审计”仍来自产品 `/audit`，与平台安全审计分工明确。
 
 ### 11.1 Foundation 包的运维边界

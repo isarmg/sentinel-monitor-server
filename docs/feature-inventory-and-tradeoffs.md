@@ -29,11 +29,10 @@
 
 ### 1.3 身份边界
 
-Sentinel 控制面只有 Administrator 一种身份。`users` 表没有 `role` 列，登录成功的 wire response 固定
-`role:"admin"`，身份键为 canonical `users.username`；创建、停用、删除用户只是在管理 Administrator
-账号，不会产生 observer、operator 或
-viewer。摄像头的 RTSP/ONVIF `username`、加密 `password` 和媒体 JWT `actions` 都是数据面凭据或资源
-授权，不是控制面角色。相同 username 文本不会把摄像头身份与 Administrator 关联。
+Sentinel 控制面只有 Administrator 一种身份。`_sarmg_administrators` 表没有 `role` 列，登录成功的 wire response 固定
+`role:"admin"`，账户名称为 canonical `username`，业务外键引用不透明的 `administrator_id`。
+Foundation 提供管理员创建、凭据管理与停用能力。摄像头 RTSP/ONVIF 凭据只保存在 Client；实例授权码和
+媒体 JWT `actions` 属于数据面授权，不代表控制面角色。相同 username 文本不会把摄像头身份与 Administrator 关联。
 
 ### 1.4 删除闭包
 
@@ -161,7 +160,7 @@ viewer。摄像头的 RTSP/ONVIF `username`、加密 `password` 和媒体 JWT `a
 | SEN-E-004 | 事件确认记录时间和 Administrator ID | `ack_event`、`acknowledged_*` | 建议保留 | 中 | 告警无法形成最小人工闭环 | 不存在 ID、重复确认、CSRF、账号删除后的 FK |
 | SEN-E-005 | SSE 只作实时通知，SQLite 是事实源；lagged 时发送 `resync-required` 后断开 | `event_stream`、broadcast channel | 保障 | 高 | 静默跳过会让页面误以为事件完整；删 SSE 则只能轮询 | 正常事件、lag、关闭、重新全量查询 |
 | SEN-E-006 | 审计表记录用户、动作、实体、细节和时间；查询最多 500 条 | `audit_logs`、`list_audit` | 建议保留 | 中 | 敏感变更追溯能力下降 | client create/pair/rotate/revoke/delete、PTZ queue、login；limit clamp |
-| SEN-E-007 | 摄像头/用户持久变更审计与业务同事务；PTZ/登录审计当前 best-effort | `write_audit_in`、`write_audit` | 保障 | 高 | 若把两类语义混同，运维会错误承诺审计不丢 | DB 故障注入；两类语义分别说明 |
+| SEN-E-007 | 实例持久变更审计与业务同事务，PTZ 排队的产品审计为 best-effort；管理员登录审计由 Foundation 同事务提交 | `write_audit_in`、`write_audit`、Foundation admin-sqlite | 保障 | 高 | 若把两类语义混同，运维会错误承诺审计不丢 | DB 故障注入；产品与平台审计语义分别说明 |
 | SEN-E-008 | 当前没有审计 outbox、独立 sink 或后台重投表 | Schema 与生产模块不存在该表/worker | 核心 | 高 | 若未来需要“必达外部审计”，必须新增状态机，不能把当前表描述为 outbox | 文档、Schema 和代码搜索一致 |
 | SEN-E-009 | system status 汇总数据库、MediaMTX 与已配置服务器录像数；实例总数和在线数由实例列表统一计算 | `/system/status` | 建议保留 | 低 | 控制台缺少一页式运行概况 | companion 不可达、坏 credential、空设备 |
 
@@ -231,11 +230,11 @@ viewer。摄像头的 RTSP/ONVIF `username`、加密 `password` 和媒体 JWT `a
 | SEN-X-004 | 不提供云多租户或组织隔离；一个部署是一套 Administrator 与摄像头 | 数据模型无 tenant | 核心 | 高 | 所有查询、JWT、录像路径和审计都要加入租户边界 | 威胁模型、逐查询隔离、计费/配额设计 |
 | SEN-X-005 | 不提供运行时 Schema migration、双读或非当前密文 keyring | `src/sqlite.rs`、`src/crypto.rs` | 保障 | 高 | 产品复杂度会随代数增长，并在启动期写未知数据 | 转换只进入 `sarmg-upgrade`，产品保留单一当前格式 |
 | SEN-X-006 | 不提供通用操作 Idempotency-Key；camera desired generation 是当前收敛语义 | Schema/queue 实现 | 保障 | 高 | 新 header 必须定义存储期限、payload digest、冲突和重放响应 | API/Schema/容量/清理/并发完整设计 |
-| SEN-X-007 | 不保证 PTZ durable；请求断线时不能从 operation API 查询终态 | 同步 `routes::ptz` | 可选 | 高 | 若要保证需为设备副作用建立专用 operation/fencing/unknown 模型 | 设备 mock 故障注入、重复动作风险分析 |
+| SEN-X-007 | PTZ 持久化为有期限设备命令，HTTP 202 仅证明已排队；媒体 operation API 不提供设备命令终态查询 | `routes::ptz`、`device_commands`、Client snapshot | 可选 | 高 | 若提供设备副作用终态查询需定义专用查询与不确定结果模型 | 命令到期、Client 去重、回执、重复动作风险 |
 | SEN-X-008 | 不提供审计外部必达 sink/outbox | 只有 `audit_logs` | 可选 | 高 | 若要合规导出需新增持久投递、重试、死信、脱敏和容量控制 | sink 合同、outbox Schema、故障注入、保留策略 |
 | SEN-X-009 | 不承诺应用核对每个录像文件的 Hash/inventory；doctor 目前检查安全目录和写探针 | `doctor::recording_write_probe` | 建议保留 | 高 | 若新增完整 inventory，doctor 时间、存储和备份合同都会扩大 | 百万文件预算、增量索引、特殊文件与并发写设计 |
 | SEN-X-010 | 不发布 systemd unit；脚本是唯一受支持生命周期入口 | `native/`、release layout | 开发运维 | 中 | 自建 unit 只能调用脚本，不能复制启动逻辑 | 发行/运维文档明确；lifecycle 测试 |
-| SEN-X-011 | 不支持 Server ARM、musl、Windows 或 macOS；客户端仅浏览器 | compile/runtime gates | 核心 | 高 | 扩平台不能只删除 compile gate，还需 companion、脚本、锁和发行等价证明 | 新平台完整 CI、真实媒体和部署安全验证 |
+| SEN-X-011 | Server 只支持 Linux x86_64 GNU；管理界面为浏览器，边缘客户端平台由独立 Client 仓库定义 | compile/runtime gates、sentinel-monitor-client | 核心 | 高 | 扩平台不能只删除 compile gate，还需 companion、脚本、锁和发行等价证明 | 新平台完整 CI、真实媒体和部署安全验证 |
 
 ## 13. 关键取舍说明
 
@@ -245,11 +244,11 @@ viewer。摄像头的 RTSP/ONVIF `username`、加密 `password` 和媒体 JWT `a
 仍可调用”、事件查看与摄像头密码管理权限错位等问题。`role:"admin"` 留在 wire 中是 Foundation 的跨
 项目身份常量，不表示数据库存在 RBAC。
 
-### 13.2 为什么摄像头变更异步而 PTZ 同步
+### 13.2 媒体期望态与设备命令
 
 摄像头配置是长期期望态，必须在重启后继续收敛，所以使用 durable operation、generation 和 lease。
-PTZ 是瞬时动作，当前同步调用并只报告本次 HTTP 所能证明的结果。两者故障语义不同，不能在文档中
-笼统称为“所有外部写操作均可恢复”。
+PTZ 写入带 10 秒有效期的 `device_commands`，HTTP 202 表示排队成功；Client 按命令 ID 去重、执行前
+检查截止时间，并通过快照回报结果。排队成功与设备动作成功是两个状态；结果不确定时不能盲目重放 move。
 
 ### 13.3 为什么固定 MediaMTX
 

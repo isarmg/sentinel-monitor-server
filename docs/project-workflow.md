@@ -25,7 +25,7 @@ Sentinel Monitor 0.2.18
 │  ├─ login/session/logout -> Session + CSRF
 │  ├─ 授权实例/Client 设备快照 -> 摄像机期望态
 │  ├─ reconciler -> MediaMTX actual state
-│  └─ 用户、事件、审计与 operation status
+│  └─ 实例、事件、审计与 operation status
 ├─ 媒体面
 │  ├─ 浏览器读取与 Client 发布分别申请资源/动作限定的短时 JWT
 │  ├─ MediaMTX internal auth 回调
@@ -73,8 +73,8 @@ POST /api/v2/auth/login  {username,password}
   -> canonical 3..64 bytes、首尾字母数字、字符仅 [a-z0-9._-]
   -> 请求体/来源/账户/全局准入
   -> Argon2 校验
-  -> 写 browser_sessions 的 Session/CSRF digest
-  -> Set-Cookie: __Host-sentinel_session（Secure/HttpOnly/SameSite）
+  -> 写 _sarmg_admin_sessions 的 Session/CSRF digest
+  -> Set-Cookie: __Host-sarmg-sentinel-monitor-session（Secure/HttpOnly/SameSite=Strict）
   -> 返回严格 AdministratorSession
 
 GET /api/v2/auth/session
@@ -89,9 +89,10 @@ POST /api/v2/auth/logout + X-CSRF-Token
 
 `AdministratorSession` 的 wire 形状固定为
 `{authenticated:true,user_id,username,role:"admin",csrf_token}`。`role` 是跨项目 wire 常量，不是数据库字段；
-`users` 表不保存身份等级，也不存在运行时身份切换。除 login 外，`/api/v2` 业务路由都要求有效
+`_sarmg_administrators` 表不保存身份等级，也不存在运行时身份切换。浏览器管理路由要求有效
 Administrator Session；unsafe method 还要求当前 CSRF、Origin/Host/URI authority 边界以及单值
-`Sec-Fetch-Site: same-origin`。
+`Sec-Fetch-Site: same-origin`。`/api/v2/client/pair` 使用实例授权码，`/api/v2/client/snapshot` 使用
+Client Bearer token，二者均不使用浏览器 Session。
 
 摄像机 RTSP/ONVIF 凭据由 Client 保管，Server 摄像机表不存储 URL、username 或 password。
 一个加密授权码只对应一个摄像机实例，与 Administrator Session 始终分离。
