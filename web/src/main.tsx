@@ -2,7 +2,7 @@ import { displayLabel } from "./display-labels";
 import { t, getLocale } from "@sarmg/admin-ui/i18n";
 import { StrictMode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { createSarmgAdminApplication, errorRequestId, useAdminApplication, InstanceNameField, InstancePageNavigation, InstanceHeaderActions, type InstancePage } from "@sarmg/admin-shell";
+import { createSarmgAdminApplication, errorRequestId, useAdminApplication, InstancePageNavigation, InstanceHeaderActions, type InstancePage } from "@sarmg/admin-shell";
 import { Button, Checkbox, ConfirmDangerDialog, Dialog, ErrorState, FormField, LoadingState, Select, Table, TextField } from "@sarmg/admin-ui";
 
 import "@sarmg/design-tokens/tokens.css";
@@ -40,6 +40,9 @@ import { WhepPlayer } from "./whep";
 import { createSnapshotRefresh } from "./snapshot-refresh";
 
 type View = InstancePage;
+const trimInstanceName = (value: string) => value.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, "");
+const validInstanceName = (value: string) => value.length > 0 && [...value].length <= 64
+  && !/[\u0000-\u001f\u007f-\u009f\ud800-\udfff]/u.test(value);
 function Console() {
   const { notify } = useAdminApplication();
   const [view, setView] = useState<View>(currentView);
@@ -318,12 +321,14 @@ function ClientSettings({ client, changed, toast }: { client: SentinelClient; ch
   const [name, setName] = useState(client.name);
   const [pending, setPending] = useState(false);
   const [failure, setFailure] = useState<{ requestId?: string } | null>(null);
+  const normalizedName = trimInstanceName(name);
+  const nameValid = validInstanceName(normalizedName);
   useEffect(() => { setName(client.name); setFailure(null); }, [client.id, client.name]);
   async function saveName() {
-    if (pending) return;
+    if (pending || !nameValid || normalizedName === client.name) return;
     setPending(true); setFailure(null);
     try {
-      await request(`/clients/${client.id}`, isSentinelClient, { method: "PATCH", body: JSON.stringify({ name: name.trim() }) });
+      await request(`/clients/${client.id}`, isSentinelClient, { method: "PATCH", body: JSON.stringify({ name: normalizedName }) });
       await changed();
       toast(t("实例名称已保存", "Instance name saved"), "success");
     } catch (error) { setFailure({ requestId: errorRequestId(error) }); }
@@ -331,9 +336,10 @@ function ClientSettings({ client, changed, toast }: { client: SentinelClient; ch
   }
   return <section className="sarmg-content-panel" aria-label={t("实例设置", "Instance settings")}><h2>{t("实例设置", "Instance settings")}</h2>
       <form onSubmit={event => { event.preventDefault(); void saveName(); }} aria-busy={pending}>
-        <FormField label={t("实例名称", "Instance name")}><InstanceNameField name="name" value={name} onChange={event => setName(event.target.value)} required readOnly={pending} /></FormField>
+        <FormField label={t("实例名称", "Instance name")}><TextField name="name" value={name} onChange={event => setName(event.target.value)} required readOnly={pending} /></FormField>
+        {!nameValid && <p role="alert">{t("名称须为 1–64 个字符，不能包含控制字符。", "Use 1–64 characters without control characters.")}</p>}
         {failure && <ErrorState requestId={failure.requestId}>{t("实例名称未能保存，请重试。", "The instance name could not be saved. Please retry.")}</ErrorState>}
-        <div className="sarmg-actions"><Button type="submit" disabled={pending || name.trim() === client.name}>{pending ? t("正在保存…", "Saving…") : t("保存名称", "Save name")}</Button></div>
+        <div className="sarmg-actions"><Button type="submit" disabled={pending || !nameValid || normalizedName === client.name}>{pending ? t("正在保存…", "Saving…") : t("保存名称", "Save name")}</Button></div>
       </form>
     </section>;
 }
@@ -345,14 +351,21 @@ function RecordingsView({ cameras, toast }: { cameras: Camera[]; toast(message: 
   const [spans, setSpans] = useState<RecordingSpan[]>([]);
   const [playing, setPlaying] = useState<RecordingSpan | null>(null);
   const selectedCamera = useRef(cameraId);
-  useEffect(() => { if (cameraId === "" && cameras[0] !== undefined) setCameraId(cameras[0].id); }, [cameraId, cameras]);
+  useEffect(() => {
+    if (!cameras.some(camera => camera.id === cameraId)) {
+      setCameraId(cameras[0]?.id ?? "");
+    }
+  }, [cameraId, cameras]);
   useEffect(() => { selectedCamera.current = cameraId; setSpans([]); setPlaying(null); }, [cameraId]);
   const search = async () => {
     if (cameraId === "") return toast(t("请先添加摄像头", "Add a camera first"), "warning");
     const requestedCamera = cameraId;
     const query = new URLSearchParams({ camera_id: requestedCamera, start: new Date(start).toISOString(), end: new Date(end).toISOString() });
     const value = await request(`/recordings?${query}`, isRecordingSpans);
-    if (selectedCamera.current === requestedCamera) setSpans(value);
+    if (selectedCamera.current === requestedCamera) {
+      setSpans(value);
+      setPlaying(null);
+    }
   };
   const playback = playing === null ? "" : apiPath(`/recordings/play?${new URLSearchParams({ camera_id: cameraId, start: playing.start, duration: String(playing.duration), format: "mp4" })}`);
   return <section className="view active sarmg-content-stack"><div className="filter-panel sarmg-content-panel"><label>{t("摄像头", "Camera")}<Select value={cameraId} onChange={(event) => setCameraId(event.target.value)}>{cameras.map((camera) => <option key={camera.id} value={camera.id}>{camera.name}</option>)}</Select></label><label>{t("开始时间", "Start time")}<TextField type="datetime-local" value={start} onChange={(event) => setStart(event.target.value)} /></label><label>{t("结束时间", "End time")}<TextField type="datetime-local" value={end} onChange={(event) => setEnd(event.target.value)} /></label><Button className="button button-primary" onClick={() => void search().catch((error) => toast(errorText(error), "error"))}>{t("查询录像", "Search recordings")}</Button></div><div className="recording-layout sarmg-content-panel"><div><div className="section-heading"><h3>{t("录像时间段", "Recording segments")}</h3><span>{spans.length} {t("条", "segments")}</span></div><div className="record-list">{spans.length === 0 ? <div className="empty-state">{t("所选范围内没有录像", "No recordings in the selected range")}</div> : spans.map((span) => <Button key={`${span.start}-${span.duration}`} className="record-item" onClick={() => setPlaying(span)}><span>{formatDate(span.start)}</span><strong>{formatDuration(span.duration)}</strong><i>{t("播放", "Play")}</i></Button>)}</div></div><div className="playback-stage"><video src={playback || undefined} controls playsInline autoPlay /><div>{playing === null ? t("尚未选择录像", "No recording selected") : `${formatDate(playing.start)} · ${formatDuration(playing.duration)}`}</div></div></div></section>;

@@ -25,6 +25,7 @@ const administratorId = "A".repeat(43);
 const session = { authenticated: true, user_id: administratorId, username: "admin", role: "admin", csrf_token: "A".repeat(43) };
 const activeId = "018f1f4b-7a5d-7b5f-8d31-123456789abc";
 const pendingId = "018f1f4b-7a5d-7b5f-8d31-123456789abd";
+const secondId = "018f1f4b-7a5d-7b5f-8d31-123456789ac0";
 const camera = { id: activeId, name: "验收摄像头", location: "测试现场", has_sub_stream: false, source_kind: "client", client_id: activeId, adapter_kind: "onvif", manufacturer: "Acme", model: "IPC-1", firmware_version: null, serial_number: null, capabilities: { video: true, main_stream: true, sub_stream: false, local_recording: false, server_recording: true, ptz: true, events: false, audio_input: false, audio_output: false }, streams: [{ profile: "main", video_codec: null, audio_codec: null, width: null, height: null, frame_rate: null }], health_message: null, device_status: "disabled", storage_mode: "server", enabled: false, record_enabled: false, status: "disabled", last_seen_at: null, created_at: time, updated_at: time };
 const activeInstance = { id: activeId, installation_id: "018f1f4b-7a5d-7b5f-8d31-123456789abe", name: "门口摄像机实例", client_version: "0.3.0", authorization_code: "a".repeat(36), status: "online", last_seen_at: time, created_at: time, updated_at: time };
 const pendingInstance = { id: pendingId, installation_id: null, name: "待配对摄像机", client_version: null, authorization_code: "s".repeat(36), status: "pending", last_seen_at: null, created_at: time, updated_at: time };
@@ -38,7 +39,9 @@ try {
       const context = await browser.newContext({ locale: "zh-CN",  viewport: { width: 360, height: 740 } });
       const page = await context.newPage();
       const errors = [], paths = [], ptz = [], eventQueries = [];
-      let acknowledged = false, failAudit = false, holdSystem = false, releaseSystem = null, clients = [{ ...activeInstance }, { ...pendingInstance }];
+      let acknowledged = false, failAudit = false, holdSystem = false, releaseSystem = null, clients = [{ ...activeInstance }, { ...pendingInstance }], cameras = [camera];
+      const boundedName = `\uFEFF${"x".repeat(63)}`;
+      const expectedNames = ["Renamed instance", "\uFEFFRenamed instance\uFEFF", "Renamed instance", boundedName, "Renamed instance"];
       page.on("pageerror", error => errors.push(error.message));
       await page.route("**/api/v2/**", async route => {
         const request = route.request(), url = new URL(request.url()), path = url.pathname;
@@ -57,9 +60,10 @@ try {
           clients.push(created); return route.fulfill({ status: 201, json: created });
         }
         if (path.endsWith(`/clients/${activeId}`) && request.method() === "PATCH") {
-          assert.deepEqual(request.postDataJSON(), { name: "Renamed instance" });
+          const name = expectedNames.shift();
+          assert.deepEqual(request.postDataJSON(), { name });
           const target = clients.find(value => value.id === activeId);
-          target.name = "Renamed instance";
+          target.name = name;
           return route.fulfill({ json: target });
         }
         if (path.endsWith(`/clients/${pendingId}`) && request.method() === "DELETE") {
@@ -68,7 +72,7 @@ try {
           return route.fulfill({ status: 204 });
         }
         if (path.endsWith("/ptz")) { ptz.push(request.postDataJSON().action); return route.fulfill({ status: 204 }); }
-        if (path.endsWith("/cameras") && request.method() === "GET") return route.fulfill({ json: [camera] });
+        if (path.endsWith("/cameras") && request.method() === "GET") return route.fulfill({ json: cameras });
         if (path.endsWith("/events/event-1/ack")) { acknowledged = true; return route.fulfill({ status: 204 }); }
         if (path.endsWith("/events")) {
           const unacknowledged = url.searchParams.get("unacknowledged"); eventQueries.push(unacknowledged);
@@ -136,6 +140,22 @@ try {
       await page.getByLabel("实例名称", { exact: true }).fill("Renamed instance");
       await page.getByRole("button", { name: "保存名称", exact: true }).click();
       await expect(pairingDetails).toContainText("Renamed instance");
+      await page.getByLabel("实例名称", { exact: true }).fill("\uFEFFRenamed instance\uFEFF");
+      await page.getByRole("button", { name: "保存名称", exact: true }).click();
+      await expect.poll(() => clients.find(value => value.id === activeId).name).toBe("\uFEFFRenamed instance\uFEFF");
+      await page.getByLabel("实例名称", { exact: true }).fill("Renamed instance");
+      await page.getByRole("button", { name: "保存名称", exact: true }).click();
+      await expect.poll(() => clients.find(value => value.id === activeId).name).toBe("Renamed instance");
+      await expect.poll(() => pairingDetails.locator("h2").evaluate(element => element.textContent)).toBe("Renamed instance");
+      await page.getByLabel("实例名称", { exact: true }).fill(`\uFEFF${"x".repeat(64)}`);
+      await expect(page.getByRole("button", { name: "保存名称", exact: true })).toBeDisabled();
+      await expect(page.getByRole("region", { name: "实例设置" }).getByRole("alert")).toContainText("1–64 个字符");
+      await page.getByLabel("实例名称", { exact: true }).fill(boundedName);
+      await page.getByRole("button", { name: "保存名称", exact: true }).click();
+      await expect.poll(() => pairingDetails.locator("h2").evaluate(element => element.textContent)).toBe(boundedName);
+      await page.getByLabel("实例名称", { exact: true }).fill("Renamed instance");
+      await page.getByRole("button", { name: "保存名称", exact: true }).click();
+      await expect.poll(() => clients.find(value => value.id === activeId).name).toBe("Renamed instance");
       await expect(page.getByRole("region", { name: "摄像机状态" })).toContainText("0.3.0");
       await expect(page.getByRole("complementary")).toHaveCount(0);
       await expect(page.locator(".sarmg-instance-sidebar, .sarmg-instance-workspace")).toHaveCount(0);
@@ -148,6 +168,21 @@ try {
       await page.keyboard.up("Enter");
       await expect.poll(() => ptz.slice()).toEqual(["move", "stop", "move", "stop"]);
       await page.keyboard.press("Escape");
+      await page.getByRole("button", { name: "查询录像", exact: true }).click();
+      await expect(page.getByRole("button", { name: /1分0秒/ })).toBeVisible();
+      clients.push({ ...activeInstance, id: secondId, name: "第二摄像机实例" });
+      cameras = [...cameras, { ...camera, id: secondId, client_id: secondId, name: "第二摄像头" }];
+      await page.getByRole("button", { name: "实例列表", exact: true }).click();
+      await page.getByRole("banner").getByRole("button", { name: "刷新", exact: true }).click();
+      await instanceTable.getByRole("link", { name: "选择实例 第二摄像机实例", exact: true }).click();
+      await expect(page.getByRole("region", { name: "配对账户信息" })).toContainText("第二摄像机实例");
+      const recordingCamera = page.getByRole("combobox", { name: "摄像头", exact: true });
+      await expect(recordingCamera).toHaveValue(secondId);
+      clients = clients.filter(client => client.id !== secondId);
+      cameras = [camera];
+      await page.getByRole("banner").getByRole("button", { name: "刷新", exact: true }).click();
+      await expect(page.getByRole("region", { name: "配对账户信息" })).toContainText("Renamed instance");
+      await expect(recordingCamera).toHaveValue(activeId);
       await page.getByRole("button", { name: "查询录像", exact: true }).click();
       await expect(page.getByRole("button", { name: /1分0秒/ })).toBeVisible();
       await page.getByRole("button", { name: "日志", exact: true }).click();

@@ -66,7 +66,7 @@ sudoedit /etc/isarmg/sentinel-monitor.env
 可达、证书链受 Client 系统信任且名称匹配的 `rtsps://host:8322` origin，并设置
 `MEDIAMTX_RTSP_CERT/KEY`，`--confirm-config` 才会接受。生产运行时拒绝明文、loopback/unspecified 发布地址。
 首次成功启动完成管理员初始化后，`start` 会从环境文件中原子移除
-`BOOTSTRAP_ADMIN_PASSWORD`；后续启动不再要求或向服务进程传入首管密码。若全新数据库尚未初始化，
+`BOOTSTRAP_ADMIN_PASSWORD`；已初始化数据库的常规启动无需首管密码，也不会向服务进程传入该值。若全新数据库尚未初始化，
 则必须先保留该字段，启动失败也不会提前删除它。
 
 ## 3. 核心配置
@@ -198,6 +198,8 @@ lifecycle test 仅使用临时根，覆盖 no-clobber、合同外环境拒绝、
 | 凭据解密失败 | 确认当前 key 和 key ID；不要自动换 key 或绕过认证 |
 
 系统状态中的 `recording_configured` 只统计已启用且配置为服务器录像的摄像机，不证明 MediaMTX 正在持续写盘。媒体服务状态、流就绪、录像文件增长和磁盘错误需要分别观测。
+
+管理页的录像摄像头选择限定为当前实例的服务器录像设备。实例或设备列表变化时，当前选择会指向仍可用的摄像头；重新查询录像后，播放选择会清空，避免把上一查询的片段显示为本次结果。
 
 ## 10. 安全事件
 
