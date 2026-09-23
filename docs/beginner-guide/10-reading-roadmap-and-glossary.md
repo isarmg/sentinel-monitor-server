@@ -38,7 +38,7 @@
 | reconciler | 把期望状态协调到实际系统的 worker |
 | lease | 限时声明协调所有权的持久记录 |
 | unknown | 外部副作用无法证明的终态 |
-| envelope | 包含算法、nonce、key ID、密文等的当前密文结构 |
+| envelope | 包含格式版本、nonce 与认证密文的当前密文结构；产品不存储独立的 key ID |
 | AAD | 认证但不加密、用于绑定上下文的数据 |
 | audit log | 与部分业务事务共同写入 SQLite 的审计记录；当前没有 outbox 或外部必达投递 |
 | WHEP | 浏览器 WebRTC 接收协议 |

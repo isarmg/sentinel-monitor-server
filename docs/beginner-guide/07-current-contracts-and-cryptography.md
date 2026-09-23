@@ -30,8 +30,8 @@ Web 消费同一字段。摄像头 username、媒体 JWT/camera identity 不属�
 
 ## 7.5 External key
 
-原始 key 来自受保护环境/credential file，不写数据库、备份、日志或 JSON。启动时不仅比较 key ID，还
-实际认证全部持久 Secret；仅 ID 相同不足以证明 key 正确。
+原始 key 来自受保护环境/credential file，不写数据库、备份、日志或 JSON。启动和 doctor
+使用该 key 实际认证全部持久授权码密文；产品不存储独立的 key ID。
 
 ## 7.6 Key rotation
 

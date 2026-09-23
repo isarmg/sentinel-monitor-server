@@ -18,7 +18,7 @@ Node `26.7.0`。
 ## 1. 唯一生产布局
 
 ```text
-/opt/isarmg/sentinel-monitor/releases/0.2.20/
+/opt/isarmg/sentinel-monitor/releases/0.2.21/
 ├─ RELEASE-MANIFEST
 ├─ bin/{sentinel-monitor,mediamtx}
 ├─ web/{index.html,assets/...}
@@ -43,11 +43,11 @@ Node `26.7.0`。
 export SENTINEL_MEDIAMTX_SOURCE=/absolute/path/to/mediamtx
 ./native/build.sh
 
-/opt/isarmg/sentinel-monitor/releases/0.2.20/native/sentinelctl bootstrap
+/opt/isarmg/sentinel-monitor/releases/0.2.21/native/sentinelctl bootstrap
 sudoedit /etc/isarmg/sentinel-monitor.env
-/opt/isarmg/sentinel-monitor/releases/0.2.20/native/sentinelctl bootstrap --confirm-config
-/opt/isarmg/sentinel-monitor/releases/0.2.20/native/sentinelctl start
-/opt/isarmg/sentinel-monitor/releases/0.2.20/native/sentinelctl status
+/opt/isarmg/sentinel-monitor/releases/0.2.21/native/sentinelctl bootstrap --confirm-config
+/opt/isarmg/sentinel-monitor/releases/0.2.21/native/sentinelctl start
+/opt/isarmg/sentinel-monitor/releases/0.2.21/native/sentinelctl status
 ```
 
 构建机必须是 Linux x86_64，并安装 Rust `1.98.0` 的 `rustfmt`、`clippy` 组件及
@@ -57,7 +57,7 @@ sudoedit /etc/isarmg/sentinel-monitor.env
 停止：
 
 ```bash
-/opt/isarmg/sentinel-monitor/releases/0.2.20/native/sentinelctl stop
+/opt/isarmg/sentinel-monitor/releases/0.2.21/native/sentinelctl stop
 ```
 
 同版本第二次 build/bootstrap 不覆盖既有 release 或环境文件。bootstrap 不启动服务，只读取固定的平面
@@ -144,9 +144,9 @@ set -a
 source /etc/isarmg/sentinel-monitor.env
 set +a
 
-"/opt/isarmg/sentinel-monitor/releases/0.2.20/bin/sentinel-monitor" doctor --offline
-/opt/isarmg/sentinel-monitor/releases/0.2.20/native/sentinelctl start
-"/opt/isarmg/sentinel-monitor/releases/0.2.20/bin/sentinel-monitor" doctor
+"/opt/isarmg/sentinel-monitor/releases/0.2.21/bin/sentinel-monitor" doctor --offline
+/opt/isarmg/sentinel-monitor/releases/0.2.21/native/sentinelctl start
+"/opt/isarmg/sentinel-monitor/releases/0.2.21/bin/sentinel-monitor" doctor
 ```
 
 offline 检查 Schema、SQLite integrity/foreign keys、回滚写探针、录像目录、全量凭据解密、MediaMTX
@@ -167,7 +167,7 @@ binary/version/SHA/config。在线模式再检查两个 loopback readiness。失
 - SQLite main/WAL/journal；
 - MediaMTX config 与 lock；
 - 完整 recordings tree；升级仓必须生成并校验包含空目录在内的独立摘要 inventory；
-- 外部 `CREDENTIALS_KEY` 的非秘密 key ID/Hash 要求。
+- 外部 `CREDENTIALS_KEY` 的受保护保存与授权码密文认证要求。
 
 原始 key 不进入备份，但恢复验证必须提供相同受保护 key。定期在隔离主机演练恢复与媒体播放。
 
@@ -195,7 +195,7 @@ lifecycle test 仅使用临时根，覆盖 no-clobber、合同外环境拒绝、
 | operation unknown | 对照远端 actual state，禁止盲重试 |
 | 无画面 | 摄像头 RTSP、publisher、JWT 时间窗、Caddy WHEP/HLS 路由 |
 | doctor Schema 失败 | 停止服务，保全 generation，交给升级工具 |
-| 凭据解密失败 | 确认当前 key 和 key ID；不要自动换 key 或绕过认证 |
+| 凭据解密失败 | 用受保护的当前 `CREDENTIALS_KEY` 核对授权码密文；不要自动换 key 或绕过认证 |
 
 系统状态中的 `recording_configured` 只统计已启用且配置为服务器录像的摄像机，不证明 MediaMTX 正在持续写盘。媒体服务状态、流就绪、录像文件增长和磁盘错误需要分别观测。
 

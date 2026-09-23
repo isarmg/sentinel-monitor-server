@@ -1,6 +1,6 @@
 use std::{collections::BTreeSet, env, fs, path::PathBuf};
 
-const UNBOUND_MANIFEST: &str = "format=sentinel-static-layout-v1\napplication=sentinel-monitor\napplication_version=0.2.20\nunbound=true\n";
+const UNBOUND_MANIFEST: &str = "format=sentinel-static-layout-v1\napplication=sentinel-monitor\napplication_version=0.2.21\nunbound=true\n";
 const FOUNDATION_SOURCE: &str = "git+https://github.com/isarmg/sarmg-foundation-server.git?rev=";
 
 fn locked_foundation_revision(lockfile: &str) -> String {
