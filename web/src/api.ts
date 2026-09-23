@@ -151,12 +151,13 @@ export function request<T>(
   return administratorApi.request(apiPath(path), guard, init);
 }
 
-export function requestLog<T>(path: string, guard: JsonGuard<T>): Promise<T> {
+export function requestLog<T>(path: string, guard: JsonGuard<T>, signal?: AbortSignal): Promise<T> {
   // The administrator client forwards this public HTTP transport budget.
   // A selected day is returned in one response, including days above the 2 MiB default.
   const options: RequestInit & { maxResponseBytes: number; timeoutMs: number } = {
     maxResponseBytes: MAX_RESPONSE_BYTES,
     timeoutMs: 120_000,
+    signal,
   };
   return administratorApi.request(apiPath(path), guard, options);
 }

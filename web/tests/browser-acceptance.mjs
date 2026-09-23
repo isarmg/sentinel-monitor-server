@@ -40,7 +40,7 @@ try {
       const context = await browser.newContext({ locale: "zh-CN", timezoneId: "America/Los_Angeles", viewport: { width: 360, height: 740 } });
       const page = await context.newPage();
       const errors = [], paths = [], ptz = [], eventQueries = [], logQueries = [];
-      let acknowledged = false, failAudit = false, holdSystem = false, releaseSystem = null, clients = [{ ...activeInstance }, { ...pendingInstance }], cameras = [camera];
+      let acknowledged = false, failAudit = false, holdSystem = false, releaseSystem = null, serverToday = "2026-09-04", clients = [{ ...activeInstance }, { ...pendingInstance }], cameras = [camera];
       const boundedName = `\uFEFF${"x".repeat(63)}`;
       const expectedNames = ["Renamed instance", "\uFEFFRenamed instance\uFEFF", "Renamed instance", boundedName, "Renamed instance"];
       page.on("pageerror", error => errors.push(error.message));
@@ -53,7 +53,7 @@ try {
           if (holdSystem) { holdSystem = false; await new Promise(resolve => { releaseSystem = resolve; }); releaseSystem = null; }
           return route.fulfill({ json: { service: "sentinel-monitor", version: "0.2.20", database: "ok", media_service: "ok", cameras: { recording_configured: 0 }, server_time: time } });
         }
-        if (path.endsWith("/logs/calendar")) return route.fulfill({ json: { today: "2026-09-04" } });
+        if (path.endsWith("/logs/calendar")) return route.fulfill({ json: { today: serverToday } });
         if (request.method() !== "GET") assert.equal(request.headers()["x-csrf-token"], session.csrf_token);
         if (path.endsWith("/clients") && request.method() === "GET") return route.fulfill({ json: clients });
         if (path.endsWith("/clients") && request.method() === "POST") {
@@ -80,6 +80,7 @@ try {
           const date = url.searchParams.get("date"), unacknowledged = url.searchParams.get("unacknowledged");
           logQueries.push({ path, date, limit: url.searchParams.get("limit"), offset: url.searchParams.get("offset") });
           eventQueries.push(unacknowledged);
+          if (date === "2026-09-05") return route.fulfill({ json: [] });
           if (date === "2026-09-03") return route.fulfill({ json: Array.from({ length: 120 }, (_, index) => ({ id: `past-event-${index}`, camera_id: camera.id, kind: "camera.status", severity: "info", message: "验收事件", acknowledged_at: null, created_at: "2026-09-02T16:00:00Z", server_created_at: "2026-09-03 00:00:00 +08:00" })) });
           return route.fulfill({ json: unacknowledged === "true" && acknowledged ? [] : [{ id: "event-1", camera_id: camera.id, kind: "camera.status", severity: "info", message: "验收事件", acknowledged_at: acknowledged ? time : null, created_at: time, server_created_at: serverTime }] });
         }
@@ -92,7 +93,7 @@ try {
           if (failAudit) { failAudit = false; return route.fulfill({ status: 500, json: { code: "platform.internal", message: "SECRET database path", retryable: false, request_id: "audit-failure-123" } }); }
           const date = url.searchParams.get("date");
           logQueries.push({ path, date, limit: url.searchParams.get("limit"), offset: url.searchParams.get("offset") });
-          return route.fulfill({ json: date === "2026-09-03" ? Array.from({ length: 40 }, (_, index) => ({ id: `past-audit-${index}`, user_id: administratorId, action: "camera.updated", entity_type: "camera", entity_id: camera.id, details: { generation: 1, note: "x".repeat(60_000) }, created_at: "2026-09-02T16:00:00Z", server_created_at: "2026-09-03 00:00:00 +08:00" })) : [{ id: "audit-1", user_id: administratorId, action: "camera.updated", entity_type: "camera", entity_id: camera.id, details: { generation: 1 }, created_at: time, server_created_at: serverTime }] });
+          return route.fulfill({ json: date === "2026-09-05" ? [] : date === "2026-09-03" ? Array.from({ length: 40 }, (_, index) => ({ id: `past-audit-${index}`, user_id: administratorId, action: "camera.updated", entity_type: "camera", entity_id: camera.id, details: { generation: 1, note: "x".repeat(60_000) }, created_at: "2026-09-02T16:00:00Z", server_created_at: "2026-09-03 00:00:00 +08:00" })) : [{ id: "audit-1", user_id: administratorId, action: "camera.updated", entity_type: "camera", entity_id: camera.id, details: { generation: 1 }, created_at: time, server_created_at: serverTime }] });
         }
         if (path.endsWith("/recordings")) { assert.equal(url.searchParams.get("camera_id"), camera.id); return route.fulfill({ json: [{ start: time, duration: 60 }] }); }
         throw new Error(`Unexpected API request ${request.method()} ${path}`);
@@ -237,6 +238,12 @@ try {
       await expect(page.locator("body")).not.toContainText("SECRET");
       await page.getByRole("alert").getByRole("button", { name: "重试" }).click();
       await expect(page.getByText("更新摄像头", { exact: true })).toBeVisible();
+      serverToday = "2026-09-05";
+      await page.getByRole("button", { name: "实例列表", exact: true }).click();
+      await page.getByRole("button", { name: "日志", exact: true }).click();
+      await expect(page.getByLabel("服务器日期", { exact: true })).toHaveValue(serverToday);
+      await expect(page.getByText("没有事件", { exact: true })).toBeVisible();
+      assert.ok(logQueries.some(query => query.date === serverToday));
       await expect(page.getByRole("heading", { name: "管理员账号", exact: true })).toHaveCount(0);
       await expect(page.getByRole("table", { name: "管理员账号", exact: true })).toHaveCount(0);
 

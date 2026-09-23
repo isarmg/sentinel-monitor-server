@@ -62,6 +62,8 @@ function Console() {
   const [logDate, setLogDate] = useState<string | null>(null);
   const [loadedLogDate, setLoadedLogDate] = useState<string | null>(null);
   const logRequestId = useRef(0);
+  const logAbortController = useRef<AbortController | null>(null);
+  const calendarRequestId = useRef(0);
   const refreshVisibleLogs = useRef<() => void>(() => {});
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
@@ -74,31 +76,38 @@ function Console() {
   }, []);
   const loadLogs = useCallback(async () => {
     const generation = ++logRequestId.current;
+    logAbortController.current?.abort();
+    logAbortController.current = null;
     setLoadedLogDate(null);
     setLogFailure(null);
     if (logDate === null || !/^\d{4}-\d{2}-\d{2}$/.test(logDate)) return;
+    const controller = new AbortController();
+    logAbortController.current = controller;
     const date = encodeURIComponent(logDate);
     try {
       const [nextEvents, nextOperations, nextAudit] = await Promise.all([
-        requestLog(`/events/logs?date=${date}${unacknowledgedOnly ? "&unacknowledged=true" : ""}`, isMonitorEvents),
-        requestLog(`/media/operations?date=${date}`, isOperations),
-        requestLog(`/audit?date=${date}`, isAuditRows),
+        requestLog(`/events/logs?date=${date}${unacknowledgedOnly ? "&unacknowledged=true" : ""}`, isMonitorEvents, controller.signal),
+        requestLog(`/media/operations?date=${date}`, isOperations, controller.signal),
+        requestLog(`/audit?date=${date}`, isAuditRows, controller.signal),
       ]);
       if (generation !== logRequestId.current) return;
       setEvents(nextEvents); setOperations(nextOperations); setAudit(nextAudit);
       setLoadedLogDate(logDate);
     } catch (error) {
       if (generation === logRequestId.current) setLogFailure({ requestId: errorRequestId(error) });
+    } finally {
+      if (logAbortController.current === controller) logAbortController.current = null;
     }
   }, [logDate, unacknowledgedOnly]);
   refreshVisibleLogs.current = () => { if (view === "logs" && logDate && logFailure === null) void loadLogs(); };
   const loadLogCalendar = useCallback(async () => {
+    const generation = ++calendarRequestId.current;
     setLogFailure(null);
     try {
       const calendar = await request("/logs/calendar", isLogCalendar);
-      setLogDate(current => current ?? calendar.today);
+      if (generation === calendarRequestId.current) setLogDate(calendar.today);
     } catch (error) {
-      setLogFailure({ requestId: errorRequestId(error) });
+      if (generation === calendarRequestId.current) setLogFailure({ requestId: errorRequestId(error) });
     }
   }, []);
   const loadClients = useCallback(async () => {
@@ -113,6 +122,16 @@ function Console() {
     if (view !== "logs" || logDate !== null) return;
     void loadLogCalendar();
   }, [loadLogCalendar, logDate, view]);
+  useEffect(() => {
+    if (view === "logs") return;
+    calendarRequestId.current++;
+    logRequestId.current++;
+    logAbortController.current?.abort();
+    logAbortController.current = null;
+    setLogDate(null);
+    setLoadedLogDate(null);
+    setLogFailure(null);
+  }, [view]);
   useEffect(() => { if (view === "logs" && logDate !== null) void loadLogs(); }, [loadLogs, logDate, view]);
   useEffect(() => {
     const source = new EventSource(apiPath("/events/stream"));
