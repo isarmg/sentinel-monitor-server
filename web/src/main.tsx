@@ -91,7 +91,7 @@ function Console() {
       if (generation === logRequestId.current) setLogFailure({ requestId: errorRequestId(error) });
     }
   }, [logDate, unacknowledgedOnly]);
-  refreshVisibleLogs.current = () => { if (view === "logs" && logDate) void loadLogs(); };
+  refreshVisibleLogs.current = () => { if (view === "logs" && logDate && logFailure === null) void loadLogs(); };
   const loadLogCalendar = useCallback(async () => {
     setLogFailure(null);
     try {
