@@ -44,3 +44,39 @@ test("a rejection without a reason still rejects the snapshot", async () => {
   const refresh = createSnapshotRefresh(() => [() => Promise.reject()]);
   await assert.rejects(refresh());
 });
+
+test("refreshes scheduled while a batch settles are never lost", async () => {
+  for (let depth = 0; depth < 12; depth += 1) {
+    const firstLoader = deferred();
+    let calls = 0;
+    const refresh = createSnapshotRefresh(() => [async () => {
+      calls += 1;
+      if (calls === 1) await firstLoader.promise;
+    }]);
+    const first = refresh();
+    await Promise.resolve();
+    firstLoader.resolve();
+    let followup;
+    let schedule = () => { followup = refresh(); };
+    for (let step = 0; step < depth; step += 1) {
+      const next = schedule;
+      schedule = () => queueMicrotask(next);
+    }
+    schedule();
+    await first;
+    await new Promise(resolve => setImmediate(resolve));
+    await followup;
+    assert.equal(calls, 2, `refresh at microtask depth ${depth}`);
+  }
+});
+
+test("a throwing loader provider releases the refresh slot", async () => {
+  let fail = true;
+  const refresh = createSnapshotRefresh(() => {
+    if (fail) throw new Error("provider failed");
+    return [];
+  });
+  await assert.rejects(refresh(), /provider failed/);
+  fail = false;
+  await refresh();
+});
