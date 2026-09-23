@@ -47,7 +47,7 @@ try {
         if (path.endsWith("/events/stream")) return route.fulfill({ status: 200, contentType: "text/event-stream", body: ": acceptance\n\n" });
         if (path.endsWith("/system/status")) {
           if (holdSystem) { holdSystem = false; await new Promise(resolve => { releaseSystem = resolve; }); releaseSystem = null; }
-          return route.fulfill({ json: { service: "sentinel-monitor", version: "0.2.18", database: "ok", media_service: "ok", cameras: { recording_configured: 0 }, server_time: time } });
+          return route.fulfill({ json: { service: "sentinel-monitor", version: "0.2.19", database: "ok", media_service: "ok", cameras: { recording_configured: 0 }, server_time: time } });
         }
         if (request.method() !== "GET") assert.equal(request.headers()["x-csrf-token"], session.csrf_token);
         if (path.endsWith("/clients") && request.method() === "GET") return route.fulfill({ json: clients });

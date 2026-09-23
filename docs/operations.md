@@ -18,7 +18,7 @@ Node `26.7.0`。
 ## 1. 唯一生产布局
 
 ```text
-/opt/isarmg/sentinel-monitor/releases/0.2.18/
+/opt/isarmg/sentinel-monitor/releases/0.2.19/
 ├─ RELEASE-MANIFEST
 ├─ bin/{sentinel-monitor,mediamtx}
 ├─ web/{index.html,assets/...}
@@ -43,11 +43,11 @@ Node `26.7.0`。
 export SENTINEL_MEDIAMTX_SOURCE=/absolute/path/to/mediamtx
 ./native/build.sh
 
-/opt/isarmg/sentinel-monitor/releases/0.2.18/native/sentinelctl bootstrap
+/opt/isarmg/sentinel-monitor/releases/0.2.19/native/sentinelctl bootstrap
 sudoedit /etc/isarmg/sentinel-monitor.env
-/opt/isarmg/sentinel-monitor/releases/0.2.18/native/sentinelctl bootstrap --confirm-config
-/opt/isarmg/sentinel-monitor/releases/0.2.18/native/sentinelctl start
-/opt/isarmg/sentinel-monitor/releases/0.2.18/native/sentinelctl status
+/opt/isarmg/sentinel-monitor/releases/0.2.19/native/sentinelctl bootstrap --confirm-config
+/opt/isarmg/sentinel-monitor/releases/0.2.19/native/sentinelctl start
+/opt/isarmg/sentinel-monitor/releases/0.2.19/native/sentinelctl status
 ```
 
 构建机必须是 Linux x86_64，并安装 Rust `1.98.0` 的 `rustfmt`、`clippy` 组件及
@@ -57,7 +57,7 @@ sudoedit /etc/isarmg/sentinel-monitor.env
 停止：
 
 ```bash
-/opt/isarmg/sentinel-monitor/releases/0.2.18/native/sentinelctl stop
+/opt/isarmg/sentinel-monitor/releases/0.2.19/native/sentinelctl stop
 ```
 
 同版本第二次 build/bootstrap 不覆盖既有 release 或环境文件。bootstrap 不启动服务，只读取固定的平面
@@ -144,9 +144,9 @@ set -a
 source /etc/isarmg/sentinel-monitor.env
 set +a
 
-"/opt/isarmg/sentinel-monitor/releases/0.2.18/bin/sentinel-monitor" doctor --offline
-/opt/isarmg/sentinel-monitor/releases/0.2.18/native/sentinelctl start
-"/opt/isarmg/sentinel-monitor/releases/0.2.18/bin/sentinel-monitor" doctor
+"/opt/isarmg/sentinel-monitor/releases/0.2.19/bin/sentinel-monitor" doctor --offline
+/opt/isarmg/sentinel-monitor/releases/0.2.19/native/sentinelctl start
+"/opt/isarmg/sentinel-monitor/releases/0.2.19/bin/sentinel-monitor" doctor
 ```
 
 offline 检查 Schema、SQLite integrity/foreign keys、回滚写探针、录像目录、全量凭据解密、MediaMTX
@@ -227,7 +227,7 @@ auth body、媒体 JWT、WHEP/HLS 播放与录像状态不使用 Administrator u
 当前 Web 使用 Foundation 的 admin-web、admin-shell、admin-ui、contracts、design-tokens、http-client、
 web-fonts、web-toolchain 八个构建期包，不是生产运行服务。Node 固定为 `.node-version` 的 `26.7.0`。
 
-- 当前 Rust 固定 Foundation `=0.9.0` / `b146afefb1e864de78d5f6ac43cab7d1a4e02fc7`，八个 Web 包固定同版正式 Release tarball 和 lockfile integrity，不读取相邻工作区。
+- 当前 Rust 固定 Foundation `=0.9.1` / `84966364c5b4662104e05741b3045482e4fd4fc8`，八个 Web 包固定同版正式 Release tarball 和 lockfile integrity，不读取相邻工作区。
 - 已通过独立 CI，见[消费者证据](https://github.com/isarmg/sarmg-foundation-server/blob/main/consumers/axum-0.7.0-evidence.md)。后续更新仍须统一 manifest、lockfile、发布身份并复验；独立构建不等于主分支改动已进入现有产品 Release，不改写已发布 tag 或资产，不保留双路径。
 
 ```bash

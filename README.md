@@ -1,6 +1,6 @@
 # Sentinel Monitor Server
 
-Sentinel Monitor `0.2.18` 是自托管的浏览器摄像头监控系统。Rust/Axum 控制面负责管理员、Client 实例、摄像头状态、PTZ 和录像索引；固定版本的 MediaMTX companion 负责视频接入、播放与 Server 侧录像。
+Sentinel Monitor `0.2.19` 是自托管的浏览器摄像头监控系统。Rust/Axum 控制面负责管理员、Client 实例、摄像头状态、PTZ 和录像索引；固定版本的 MediaMTX companion 负责视频接入、播放与 Server 侧录像。
 
 正式 Server 仅支持 Linux AMD64 GNU（`x86_64-unknown-linux-gnu`）。摄像头地址和密码保存在独立的 Sentinel Client，Server 只管理统一设备状态和短期媒体发布授权。
 
@@ -9,11 +9,11 @@ Sentinel Monitor `0.2.18` 是自托管的浏览器摄像头监控系统。Rust/A
 安装发行树后，由生命周期脚本创建生产环境文件，再编辑其中的密钥、管理员密码、公开媒体地址和证书路径：
 
 ```sh
-sudo /opt/isarmg/sentinel-monitor/releases/0.2.18/native/sentinelctl bootstrap
+sudo /opt/isarmg/sentinel-monitor/releases/0.2.19/native/sentinelctl bootstrap
 sudoedit /etc/isarmg/sentinel-monitor.env
-sudo /opt/isarmg/sentinel-monitor/releases/0.2.18/native/sentinelctl bootstrap --confirm-config
-sudo /opt/isarmg/sentinel-monitor/releases/0.2.18/native/sentinelctl start
-sudo /opt/isarmg/sentinel-monitor/releases/0.2.18/native/sentinelctl status
+sudo /opt/isarmg/sentinel-monitor/releases/0.2.19/native/sentinelctl bootstrap --confirm-config
+sudo /opt/isarmg/sentinel-monitor/releases/0.2.19/native/sentinelctl start
+sudo /opt/isarmg/sentinel-monitor/releases/0.2.19/native/sentinelctl status
 ```
 
 控制面和 MediaMTX 管理端口应只监听 loopback。生产入口由 HTTPS 反向代理提供；RTSPS 发布地址及证书必须能被所有 Client 验证。网络端口、反向代理和录像目录配置见[运维文档](docs/operations.md)。
