@@ -1,0 +1,12 @@
+{
+  "release_root": "/opt/isarmg/xcos/current",
+  "data_dir": "/var/lib/isarmg/xcos/db",
+  "database_url": "sqlite:///var/lib/isarmg/xcos/db/app.db",
+  "runtime_directory": "/run/isarmg/xcos",
+  "recordings_directory": "/var/lib/isarmg/xcos/recordings",
+  "jwt_secret": "REPLACE_WITH_RANDOM_SECRET_OF_AT_LEAST_32_BYTES",
+  "credentials_key": "REPLACE_WITH_BASE64_ENCODED_32_RANDOM_BYTES",
+  "bind_addr": "127.0.0.1:8080",
+  "app_env": "production",
+  "public_rtsp_publish_base_url": "rtsps://REPLACE_WITH_PUBLIC_HOST:8322"
+}

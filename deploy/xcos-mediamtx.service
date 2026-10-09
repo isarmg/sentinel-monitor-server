@@ -1,0 +1,24 @@
+[Unit]
+Description=Xcos pinned MediaMTX companion
+PartOf=xcos.service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=xcos
+Group=xcos
+WorkingDirectory=/
+UMask=0077
+EnvironmentFile=/etc/isarmg/xcos/mediamtx.env
+ExecStartPre=/opt/isarmg/xcos/current/bin/xcos verify-release /opt/isarmg/xcos/current
+ExecStart=/opt/isarmg/xcos/current/bin/mediamtx /opt/isarmg/xcos/current/config/mediamtx.yml
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+KillMode=control-group
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/isarmg/xcos/recordings

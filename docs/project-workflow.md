@@ -1,0 +1,211 @@
+# xcos 工作流程与流程树
+
+## 1. 总流程树
+
+管理 Web 将首次载入、事件通知、筛选变化、手动刷新和定时刷新交给同一个快照队列。
+同一批请求全部结束后才开始下一批；某个接口失败时仍等待其余请求结束。刷新期间收到多个触发时，
+队列合并为下一批请求。日志页按服务器日期范围展示已确认与未确认事件；年月日数字直接编辑、回车应用，范围包含起止当天，前后端拒绝非法日期和倒置范围，三类日志均在列表下方提供首页、上一页和下一页。
+队列回归使用 `npm run test:unit --prefix web`，页面交互使用 `npm run test:browser --prefix web` 验证。
+
+```text
+xcos 1.0.0
+├─ 构建
+│  ├─ Node 26.7.0 -> check:foundation -> TypeScript strict -> Vite 8
+│  ├─ Rust 1.99.0 -> x86_64-unknown-linux-gnu binary
+│  └─ Web、Rust、MediaMTX、配置 -> 不可变 release manifest
+├─ 启动
+│  ├─ 验证固定 release + MediaMTX contract
+│  ├─ 解析当前配置与 Secret
+│  ├─ 取得 database/runtime/MediaMTX 锁
+│  ├─ 验证当前 SQLite、Schema 与全部实例授权密文
+│  ├─ 启动 Rust API、reconciler 与 MediaMTX
+│  ├─ 控制/API/playback 保持 loopback；生产 RTSPS/HLS/WebRTC 媒体 listener 按合同绑定主机网卡
+│  └─ Caddy 将浏览器 TLS 同源入口转发到三个明确的 127.0.0.1 上游
+├─ Administrator 控制面
+│  ├─ login/session/logout -> Session + CSRF
+│  ├─ 授权实例/Client 设备快照 -> 摄像机期望态
+│  ├─ reconciler -> MediaMTX actual state
+│  └─ 实例、事件、审计与 operation status
+├─ 媒体面
+│  ├─ 浏览器读取与 Client 发布分别申请资源/动作限定的短时 JWT
+│  ├─ MediaMTX internal auth 回调
+│  └─ WHEP 实时预览 / HLS 回放
+└─ 运维
+   ├─ start/status/stop/doctor
+   └─ lifecycle + relocated smoke tests
+```
+
+产品运行时只理解当前合同，非当前输入明确拒绝。
+
+## 2. 原生发布与首次启动
+
+`scripts/build.sh` 只接受干净且 annotated `v1.0.0` 指向 HEAD 的 checkout、Linux x86_64 builder，以及与
+`config/mediamtx.lock` 匹配的 `linux_amd64` MediaMTX `v1.20.0`。Rust target 固定为
+`x86_64-unknown-linux-gnu`，没有其他架构、OS 或 libc 的正式构建分支。脚本构建 Web 和 source-bound
+Rust binary，生成完整 manifest，在同一文件系统暂存并验证后，以 no-clobber 语义发布固定版本目录。
+
+`xcosctl bootstrap`创建目录、0600环境文件和初始管理员输入材料，不启动服务、不覆盖配置、不回显随机Secret。`bootstrap --confirm-config`在审阅后通过stdin调用显式`init`创建当前库/管理员，再以`config validate`只读核验；既有库只验证，成功才移除临时密码。操作者
+编辑密码、配置 Client 可达且证书受信的 `rtsps://` 发布 origin 与证书/私钥并运行
+`xcosctl bootstrap --confirm-config` 后，`xcosctl start` 才按锁顺序启动 companion 和应用；运行机同样必须是 Linux x86_64。
+
+主机代理源资产固定为 `deploy/Caddyfile`，不进入应用生命周期脚本。它只允许
+`127.0.0.1:8080/8888/8889` 三个原生进程上游；根目录不存在第二份 Caddyfile，仓库也没有容器 DNS
+兼容。CI 会拒绝根级副本、缺失模板、端口漂移和 `app:`/`mediamtx:` 上游重新出现。
+
+## 3. 正式进程启动顺序
+
+1. 验证进程物理位置、revision、target、API、Schema、Web、credential epoch、MediaMTX 和 manifest 全树。
+2. 解析环境；生产 Cookie 必须 Secure，资源使用 executable 内嵌快照并拒绝开发目录覆盖。
+3. 取得数据库 instance 排他锁和 maintenance 共享锁。
+4. runtime目录复用公共`.xcss-maintenance.lock`/`.xcss-instance.lock`并维护PID；MediaMTX 由脚本持有 companion lock。
+5. 私有复制并验证 SQLite generation、租约 singleton 与所有加密实例授权码。
+6. 启动后台 reconciler、HTTP 服务与 readiness；任何合同不能证明时 fail closed。
+
+## 4. Administrator 认证流程
+
+```text
+POST /api/v1/auth/login  {username,password}
+  -> candidate 为 1..64 bytes printable ASCII
+  -> trim ASCII whitespace + ASCII lowercase
+  -> canonical 3..64 bytes、首尾字母数字、字符仅 [a-z0-9._-]
+  -> 请求体/来源/账户/全局准入
+  -> Argon2 校验
+  -> 写 _xcss_admin_sessions 的 Session/CSRF digest
+  -> Set-Cookie: __Host-xcss-xcos-session（Secure/HttpOnly/SameSite=Strict）
+  -> 返回严格 AdministratorSession
+
+GET /api/v1/auth/session
+  -> 验证 Session Cookie 与 idle/absolute TTL
+  -> 轮换 CSRF token digest
+  -> 返回严格 AdministratorSession
+
+POST /api/v1/auth/logout + X-CSRF-Token
+  -> 撤销 Session
+  -> 过期 Session Cookie
+```
+
+`AdministratorSession` 的 wire 形状固定为
+`{authenticated:true,user_id,username,role:"admin",csrf_token}`。`role` 是跨项目 wire 常量，不是数据库字段；
+`_xcss_administrators` 表不保存身份等级，也不存在运行时身份切换。浏览器管理路由要求有效
+Administrator Session；unsafe method 还要求当前 CSRF、Origin/Host/URI authority 边界以及单值
+`Sec-Fetch-Site: same-origin`。`/api/v1/client/pair` 使用实例授权码，`/api/v1/client/snapshot` 使用
+Client Bearer token，二者均不使用浏览器 Session。
+
+摄像机 RTSP/ONVIF 凭据由 Client 保管，Server 摄像机表不存储 URL、username 或 password。
+一个加密授权码只对应一个摄像机实例，与 Administrator Session 始终分离。
+
+管理认证 API 和 React/Vite Web 属于 Server 控制面；Client 配对、MediaMTX internal auth、
+媒体 JWT subject/camera/actions、录像和播放属于数据面。两类身份不得共用存储或日志字段。
+
+## 5. 授权实例与媒体状态机
+
+```text
+Administrator 创建授权实例 -> 加密保存授权码
+  -> Client 以该码配对，上报且仅上报一台摄像机快照
+  -> SQLite transaction: camera snapshot + desired media state + operation
+  -> reconciler 领取 global lease + operation lease
+  -> transaction 外调用 MediaMTX
+       ├─ 成功 -> actual path + succeeded
+       ├─ 明确失败 -> failed + 可解释错误
+       └─ 结果不可证明 -> unknown
+  -> 更换授权码要求 Client 重新配对
+  -> 删除：先 revoked + 清理路径，再永久删除实例
+```
+
+只有仍同时持有未过期全局/操作租约的 owner 能 finalize。启动恢复只处理确实过期或缺失租约的 running，
+不会清空健康 owner。首次删除会撤销并隐藏摄像机，二次删除只在 MediaMTX 清理已确认后执行；
+录像字节不会因删除页面条目而被隐式擦除。
+
+PTZ 不由 Server 直连 ONVIF：`POST /api/v1/cameras/{id}/ptz` 将有期限命令排队给所属 Client，
+Client 在快照通道回报结果。网络结果不确定时不能自动重放 move。
+
+## 6. 漂移修复
+
+周期任务读取期望态，在事务外读取 MediaMTX 配置、Publisher、Recording 实际态；摘要比较发现差异
+后创建 `drift_detected` 操作。日志和持久错误仅包含 camera/operation ID 与固定错误码，不包含 RTSP
+URL、userinfo、用户名、密码或远端错误正文。
+
+## 7. 播放授权
+
+```text
+Administrator Browser Session
+  -> /api/v1 请求单摄像头媒体授权
+  -> 当前 HKDF key 签发短时 JWT
+  -> Browser 访问同源 /media-webrtc 或 /media-hls
+  -> Reverse proxy 转给 MediaMTX
+  -> MediaMTX 调用 /internal/v1/media/auth
+  -> Rust 验证 protocol、issuer、audience、kind、camera、jti 与时间
+```
+
+媒体 JWT 只能授权指定资源与用途，不能调用管理 API；Session Cookie 也不能替代媒体 JWT。
+
+## 8. 停机与代际数据边界
+
+`xcosctl stop` 通过 operations lock 串行生命周期动作，先停止应用，使数据库/reconciler/runtime 锁释放，再
+停止 MediaMTX。直接 kill 或乱序停止可能把外部效果留在 unknown，应保全日志后由 reconciler/人工判断。
+
+普通运行不扫描其他代路径、不解析非当前Schema/密文，也不通过fallback修补数据。实例、runtime和companion锁分别核对物理身份，错误输入拒绝运行。
+
+## 9. Web 构建与 Foundation 1.0.0 流程
+
+```text
+package.json + package-lock.json 精确锁定 Foundation 1.0.0 和工具链
+  -> npm ci
+  -> check:foundation
+       ├─ 校验 Node/React/TypeScript/Vite 精确版本
+       ├─ 校验八个 Foundation Web 包及 lock 来源
+       ├─ 校验认证 hook、运行时守卫和 data-xcss-scope
+       └─ 校验 token/reset/accessibility 内容摘要和品牌语义映射
+  -> TypeScript 7.0.2 strict typecheck
+  -> React 19.3.0 + ReactDOM 19.3.0
+  -> Vite 8.3.3 + @vitejs/plugin-react 6.1.2 build
+  -> dist/index.html + hashed assets
+  -> native build 纳入 release manifest
+  -> relocated smoke 验证引用、重定位与篡改拒绝
+```
+
+开发期命令：
+
+```bash
+cd web
+npm ci
+npm run check:foundation
+npm run build
+```
+
+`build` 已把 `check:foundation` 设为硬前置，因此不能通过直接执行 Vite 跳过共享边界。构建产物完全自包含；
+浏览器运行时不解析 npm 包，也不访问 npm registry、Foundation 仓库或远程 CSS。
+构建期八个Web包候选固定Foundation `v1.0.0`官方URL和真实归档的lockfile integrity；Foundation 1.0.0 已正式发布，产品输入使用官方归档与精确 SRI。
+Rust crate 由版本 `=1.0.0` 和 revision `d58b9ef0822984ee0d29fb8b8139cfd2787374fb` 双重锁定。两者都不读取
+共同父目录或 sibling checkout，也不提供旧来源 fallback。
+
+## 10. Foundation 共享层与产品层调用树
+
+```text
+web/src/main.tsx
+├─ @xcss/admin-web
+│  ├─ createAdministratorApiClient
+│  ├─ /react: useAdministratorSession
+│  ├─ /vite: createXcssReactViteConfig
+│  └─ /tsconfig.json: strict TypeScript baseline
+├─ @xcss/contracts
+│  └─ auth path、AdministratorSession、ErrorEnvelope 的类型与运行时守卫
+├─ @xcss/http-client
+│  └─ same-origin、Cookie、CSRF、超时、响应大小、Content-Type 与错误解析
+├─ @xcss/design-tokens
+│  └─ token、scoped reset、focus/reduced-motion/forced-colors 基线
+└─ Xcos 产品代码
+   ├─ 摄像头/录像/事件/审计 DTO 的运行时守卫
+   ├─ 页面、WHEP/HLS 播放、交互与中文文案
+   └─ 纸张/墨色/警示色、布局、组件和响应式品牌样式
+
+Rust/Axum
+├─ xcss-contracts 1.0.0 -> Administrator 认证 DTO/路径和跨语言合同
+├─ xcss-error 1.0.0 -> 严格 ErrorEnvelope/ErrorCode
+├─ xcss-schema-identity 1.0.0 -> metadata DDL/列、指纹 framing 与 exact identity
+├─ xcss-server-target 1.0.0 -> 编译期 x86_64-unknown-linux-gnu 门禁
+└─ Xcos 产品代码 -> 私有 SQLite generation、Schema DDL、Cookie、Session、媒体、审计与运维
+```
+
+共享层只统一真正跨产品的合同；它不拥有 Xcos 的业务 DTO、数据库、媒体状态机、密码策略、Cookie
+名称、页面或品牌。产品层也不得复制共享实现形成第二事实源。

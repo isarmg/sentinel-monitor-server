@@ -1,0 +1,58 @@
+# 07. 当前协议、加密与状态合同
+
+## 7.1 API 当前代
+
+浏览器和服务端只实现当前版本路由与 DTO。unknown fields、非法枚举、超长文本和合同外 ID 必须拒绝。
+前端类型不能代替服务端运行时验证。
+
+## 7.2 Schema 身份
+
+`product_metadata`精确绑定application、数据格式xcos-db-v1、revision1和code-owned DDL SHA；软件版本1.0.0另由release identity记录。启动/doctor 从实际
+`sqlite_schema` 重新规范计算，不信任 metadata 自报。当前 SHA 为
+`89d3e59dab120939725a7e3b052cf3cf5887f051c024e0325c3e9494043909e3`；管理员表只有 canonical
+`username`，没有 email/role。空文件、非当前库和漂移库都只读拒绝。
+
+共享 Foundation `xcss-schema-identity 1.0.0` 定义 fingerprint v1 的字节 framing、metadata 五列 DDL/
+shape 和 exact identity 比较；Xcos 在私有 SQLx 校验代际上复用共享
+`ProductMetadataRow` 后执行验证。SQLite当前WAL/journal代的只读临时副本由Foundation公共snapshot捕获；产品验证精确业务Schema、路径身份和lease。普通运行只接受当前revision1。非当前格式只读拒绝，不改写输入。
+
+Client配对/设备快照是xcos-edge-v1，能力字段必须使用supported/unsupported/unknown；浏览器wire身份为xcos-wire-v1，HTTP路径前缀仍为/api/v1，media JWT为v1。
+
+## 7.3 Administrator 身份合同
+
+登录 JSON 只接受 `username/password`，Session 只返回 `authenticated/user_id/username/role/csrf_token`。
+Foundation 拥有 username 规范化与跨语言守卫；Rust Schema 保存同一 canonical 形状，React/Vite 管理
+Web 消费同一字段。摄像头 username、媒体 JWT/camera identity 不属于该合同，保持独立数据面语义。
+
+## 7.4 Authorization envelope
+
+实例授权码使用 Foundation secret envelope 认证加密，AAD 绑定客户端实例 ID。数据库只保存
+`authorization_code_enc` 和查找用 hash；摄像机 RTSP/ONVIF 凭据只保存在 Client，Server 没有对应列。
+
+## 7.5 External key
+
+原始 key 来自受保护环境/credential file，不写数据库、备份、日志或 JSON。启动和 doctor
+使用该 key 实际认证全部持久授权码密文；产品不存储独立的 key ID。
+
+## 7.6 Key rotation
+
+运行时只接受一个当前key，没有previous-key keyring。输入的key必须能认证全部当前密文，错误key拒绝运行。
+
+## 7.7 Lease 合同
+
+单例 lease 行和字段组合是 Schema 之外的业务不变量。owner 必须是规范 UUIDv4，时间为 UTC RFC 3339，
+expiry 晚于 updated；空闲态 owner/expiry 同空。非法状态不自动清零。
+
+## 7.8 发行合同
+
+source-bound binary 验证精确 release root、manifest、文件 Hash/mode/type、Web fingerprint、API 与 Schema
+身份。拒绝 symlink、额外文件、硬链接 alias 和服务账户可写资产。
+
+## 7.9 变更合同的步骤
+
+定义新唯一格式；更新生产者和消费者；更新 code-owned identity 与负例；删除旧解析和dual write；构建真实发行物做重定位与篡改测试。
+
+## 7.10 密码学注意事项
+
+不要自创算法、复用 nonce、把错误区分到可形成 oracle、记录明文或为“救数据”跳过认证。密文损坏应
+视为状态不可验证，并在隔离副本上通过已审核工具处理。

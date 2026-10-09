@@ -1,0 +1,142 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions: {}
+
+jobs:
+  frontend:
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26.7.0
+          check-latest: false
+      - name: Build the pinned Web dependency graph
+        run: |
+          node --version
+          npm --version
+          npm ci --prefix web
+          npm run check:foundation --prefix web
+          npm run test:unit --prefix web
+          npm run build --prefix web
+      - name: Install acceptance browsers
+        working-directory: web
+        run: npx playwright install --with-deps chromium firefox
+      - name: Verify business UI and shared platform integration
+        working-directory: web
+        run: npm run test:browser
+
+  rust:
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify the pinned Foundation product manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          readarray -t foundation_identity < <(python3 - <<'PY'
+          import tomllib
+          with open("xcss-product.toml", "rb") as stream:
+              foundation = tomllib.load(stream)["foundation"]
+          print(foundation["version"])
+          print(foundation["git_rev"])
+          PY
+          )
+          foundation_root="$RUNNER_TEMP/xcss"
+          git clone --quiet --filter=blob:none --depth=1 \
+            --branch "v${foundation_identity[0]}" \
+            https://github.com/isarmg/xcss.git \
+            "$foundation_root"
+          test "$(git -C "$foundation_root" rev-parse HEAD)" = "${foundation_identity[1]}"
+          python3 "$foundation_root/scripts/xcss-conformance.py" \
+            verify-manifest --product-root "$GITHUB_WORKSPACE"
+      - name: Install Rust 1.99
+        run: rustup toolchain install 1.99.0 --profile minimal --component rustfmt,clippy
+      - name: Install pinned Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26.7.0
+          check-latest: false
+      - name: Build current Web compilation inputs
+        run: |
+          npm ci --prefix web
+          web/node_modules/.bin/xcss-build-server --config "$PWD/foundation-web-build.json" --mode development --web-only --no-install
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Check all targets
+        run: cargo check --locked --workspace --all-targets --all-features
+      - name: Lint all targets
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+      - name: Test all features
+        run: cargo test --locked --workspace --all-features
+      - name: Smoke-test relocated binary and static assets
+        run: ./scripts/relocated-smoke-test.sh
+
+  native-shell:
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check tracked native shell scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -d '' scripts < <(git ls-files -z -- 'scripts/*.sh' 'deploy/*.sh' 'deploy/.*-action.sh' 'deploy/xcosctl')
+          if (( ${#scripts[@]} == 0 )); then
+            echo 'No tracked native shell scripts found.' >&2
+            exit 1
+          fi
+          for script in "${scripts[@]}"; do
+            bash -n "$script"
+          done
+          shellcheck "${scripts[@]}"
+      - name: Exercise immutable native release lifecycle
+        run: ./scripts/lifecycle-test.sh
+      - name: Verify root and service-owner native input boundaries
+        run: sudo python3 scripts/private-input-ownership-test.py
+      - name: Exercise the real pinned companion configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          companion_dir="$(mktemp -d)"
+          curl --fail --location --retry 3 --output "$companion_dir/mediamtx.tar.gz" \
+            https://github.com/bluenviron/mediamtx/releases/download/v1.20.0/mediamtx_v1.20.0_linux_amd64.tar.gz
+          tar -xzf "$companion_dir/mediamtx.tar.gz" -C "$companion_dir" mediamtx
+          python3 scripts/companion-smoke-test.py "$companion_dir/mediamtx"
+      - name: Validate the current native proxy contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e Caddyfile
+          test -f deploy/Caddyfile
+          test "$(grep -Fxc '        reverse_proxy 127.0.0.1:8889' deploy/Caddyfile)" -eq 1
+          test "$(grep -Fxc '        reverse_proxy 127.0.0.1:8888 {' deploy/Caddyfile)" -eq 1
+          test "$(grep -Fxc '            header_down Location "^/(.*)$" "/media-hls/$1"' deploy/Caddyfile)" -eq 1
+          test "$(grep -Fxc '        reverse_proxy 127.0.0.1:8080' deploy/Caddyfile)" -eq 1
+          if grep -Eq 'reverse_proxy[[:space:]]+(app|mediamtx):' deploy/Caddyfile; then
+            echo 'Container-only proxy names are outside the current native contract.' >&2
+            exit 1
+          fi

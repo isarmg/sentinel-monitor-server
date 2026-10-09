@@ -1,0 +1,191 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+[[ "${XCOS_LIFECYCLE_DISPATCH:-}" == "start" ]] || {
+  echo "Use deploy/xcosctl start" >&2
+  exit 2
+}
+
+[[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]] || {
+  printf '%s\n' 'Xcos release runtime requires x86_64 Linux' >&2
+  exit 1
+}
+
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+# shellcheck source=/dev/null
+source "$(cd "$(dirname "$SCRIPT_PATH")" && pwd -P)/common.sh"
+resolve_release_context "$SCRIPT_PATH"
+deployment_paths
+verify_release "$XCOS_RELEASE_ROOT"
+
+[[ ! -e "$XCOS_REVIEW_MARKER" && ! -L "$XCOS_REVIEW_MARKER" ]] ||
+  die "Configuration has not been confirmed; run xcosctl bootstrap --confirm-config"
+load_deployment_env
+require_runtime_contract
+assert_private_directory "$XCOS_RUNTIME_PATH" "runtime directory"
+assert_private_directory "$XCOS_STATE_DIR" "state directory"
+assert_private_directory "$XCOS_STATE_DIR/db" "database directory"
+assert_private_directory "$XCOS_STATE_DIR/db/logs" "bounded application log directory"
+assert_private_directory "$RECORDINGS_DIR" "recordings directory"
+assert_private_directory "$XCOS_STATE_DIR/logs" "log directory"
+assert_regular_file "$MEDIAMTX_BINARY" "MediaMTX binary"
+assert_regular_file "$MEDIAMTX_CONFIG" "MediaMTX configuration"
+assert_regular_file "$MEDIAMTX_CONTRACT" "MediaMTX contract"
+assert_regular_file "$XCOS_RELEASE_ROOT/bin/xcos" "Xcos binary"
+require_command curl
+require_command flock
+umask 077
+acquire_native_operation_lock
+
+locked_value() {
+  awk -F= -v key="$1" '$1 == key { print $2 }' "$MEDIAMTX_CONTRACT"
+}
+
+EXPECTED_MEDIA_VERSION="$(locked_value version)"
+EXPECTED_MEDIA_PLATFORM="$(locked_value platform)"
+EXPECTED_MEDIA_SHA256="$(locked_value sha256)"
+ACTUAL_MEDIA_VERSION="$($MEDIAMTX_BINARY --version | tr -d '\r\n')"
+ACTUAL_MEDIA_SHA256="$(sha256sum -- "$MEDIAMTX_BINARY" | awk '{print $1}')"
+[[ "$EXPECTED_MEDIA_PLATFORM" == "linux_amd64" ]] ||
+  die "Unsupported MediaMTX companion platform: $EXPECTED_MEDIA_PLATFORM"
+[[ "$ACTUAL_MEDIA_VERSION" == "$EXPECTED_MEDIA_VERSION" ]] ||
+  die "MediaMTX version mismatch"
+[[ "$ACTUAL_MEDIA_SHA256" == "$EXPECTED_MEDIA_SHA256" ]] ||
+  die "MediaMTX SHA-256 mismatch; refusing to start an unapproved companion"
+
+APP_BIN="$XCOS_RELEASE_ROOT/bin/xcos"
+"$APP_BIN" config validate
+MEDIA_LOCK="$XCOS_RUNTIME_PATH/mediamtx.lock"
+MEDIA_PID_FILE="$XCOS_RUNTIME_PATH/mediamtx.pid"
+APP_PID_FILE="$XCOS_RUNTIME_PATH/app.pid"
+ensure_lock_file "$XCOS_RUNTIME_PATH/app.lock" "application runtime lock"
+ensure_lock_file "$MEDIA_LOCK" "MediaMTX runtime lock"
+
+APP_PID="$(read_optional_running_pid "$APP_PID_FILE" "$APP_BIN")"
+MEDIA_PID="$(read_optional_running_pid "$MEDIA_PID_FILE" "$MEDIAMTX_BINARY")"
+STARTED_APP=""
+STARTED_MEDIA=""
+START_COMPLETE=false
+remove_matching_pid_file() {
+  local path="$1"
+  local pid="$2"
+  if [[ -f "$path" && ! -L "$path" ]] && [[ "$(<"$path")" == "$pid" ]]; then
+    rm -- "$path"
+  fi
+}
+
+rollback_start() {
+  if [[ -n "$STARTED_APP" ]]; then
+    terminate_started_process "$STARTED_APP"
+    remove_matching_pid_file "$APP_PID_FILE" "$STARTED_APP"
+  fi
+  if [[ -n "$STARTED_MEDIA" ]]; then
+    terminate_started_process "$STARTED_MEDIA"
+    remove_matching_pid_file "$MEDIA_PID_FILE" "$STARTED_MEDIA"
+  fi
+}
+
+terminate_started_process() {
+  local pid="$1"
+  kill "$pid" 2>/dev/null || true
+  for _ in {1..40}; do
+    process_is_live "$pid" || break
+    sleep 0.05
+  done
+  if process_is_live "$pid"; then
+    kill -KILL "$pid" 2>/dev/null || true
+  fi
+  wait "$pid" 2>/dev/null || true
+}
+
+cleanup_failed_start() {
+  local status="$?"
+  trap - EXIT
+  if [[ "$START_COMPLETE" != true ]]; then
+    rollback_start
+  fi
+  exit "$status"
+}
+trap cleanup_failed_start EXIT
+
+wait_for_pid_identity() {
+  local path="$1"
+  local binary="$2"
+  local expected_pid="$3"
+  local actual_pid
+  for _ in {1..20}; do
+    process_is_live "$expected_pid" || return 1
+    actual_pid="$(read_optional_running_pid "$path" "$binary")"
+    [[ "$actual_pid" == "$expected_pid" ]] && return 0
+    sleep 0.05
+  done
+  return 1
+}
+
+# Neither long-lived process inherits the operator's checkout or working
+# directory. Every runtime input below is an absolute release/state path.
+cd /
+
+if [[ -z "$MEDIA_PID" ]]; then
+  if [[ -e "$MEDIA_PID_FILE" || -L "$MEDIA_PID_FILE" ]]; then
+    assert_private_file "$MEDIA_PID_FILE" "MediaMTX PID file"
+    rm -- "$MEDIA_PID_FILE"
+  fi
+  MEDIA_HOSTS="${MEDIA_PUBLIC_HOSTS:-127.0.0.1}"
+  nohup flock --no-fork --nonblock "$MEDIA_LOCK" \
+    env MTX_WEBRTCADDITIONALHOSTS="$MEDIA_HOSTS" \
+    MTX_RTSPENCRYPTION=strict \
+    MTX_RTSPSADDRESS=:8322 \
+    MTX_RTSPSERVERCERT="$MEDIAMTX_RTSP_CERT" \
+    MTX_RTSPSERVERKEY="$MEDIAMTX_RTSP_KEY" \
+    MTX_PATHDEFAULTS_RECORDPATH="$RECORDINGS_DIR/%path/%Y-%m-%d_%H-%M-%S-%f" \
+    MTX_PATHDEFAULTS_RECORDDELETEAFTER="${RECORD_DELETE_AFTER:-168h}" \
+    "$MEDIAMTX_BINARY" "$MEDIAMTX_CONFIG" \
+    9>&- >"$XCOS_STATE_DIR/logs/mediamtx.log" 2>&1 &
+  STARTED_MEDIA="$!"
+  write_pid_file "$MEDIA_PID_FILE" "$STARTED_MEDIA"
+fi
+
+MEDIA_READY=false
+for _ in {1..30}; do
+  if curl -fsS --noproxy '*' --connect-timeout 1 --max-time 2 --max-filesize 4096 "${MEDIAMTX_READY_URL:-http://127.0.0.1:9997/v3/info}" >/dev/null; then
+    MEDIA_READY=true
+    break
+  fi
+  sleep 0.25
+done
+[[ "$MEDIA_READY" == true ]] || die "MediaMTX did not become ready"
+if [[ -n "$STARTED_MEDIA" ]]; then
+  wait_for_pid_identity "$MEDIA_PID_FILE" "$MEDIAMTX_BINARY" "$STARTED_MEDIA" ||
+    die "MediaMTX did not retain its expected PID identity"
+fi
+
+if [[ -z "$APP_PID" ]]; then
+  if [[ -e "$APP_PID_FILE" || -L "$APP_PID_FILE" ]]; then
+    assert_private_file "$APP_PID_FILE" "application PID file"
+    rm -- "$APP_PID_FILE"
+  fi
+  nohup "$APP_BIN" run --release-root "$XCOS_RELEASE_ROOT" \
+    9>&- >"$XCOS_STATE_DIR/logs/app.log" 2>&1 &
+  STARTED_APP="$!"
+fi
+
+APP_READY=false
+for _ in {1..60}; do
+  if readiness="$(curl -fsS --noproxy '*' --connect-timeout 1 --max-time 3 --max-filesize 128 -w ':%{http_code}' "${XCOS_READY_URL:-http://127.0.0.1:8080/readyz}")" && [[ "$readiness" == '{"ready":true}:200' ]]; then
+    APP_READY=true
+    break
+  fi
+  sleep 0.25
+done
+[[ "$APP_READY" == true ]] || die "Xcos application did not become ready"
+if [[ -n "$STARTED_APP" ]]; then
+  wait_for_pid_identity "$APP_PID_FILE" "$APP_BIN" "$STARTED_APP" ||
+    die "Xcos application did not retain its expected PID identity"
+fi
+START_COMPLETE=true
+trap - EXIT
+STARTED_APP=""
+STARTED_MEDIA=""
+
+echo "xcos $XCOS_VERSION is ready at ${XCOS_READY_URL:-http://127.0.0.1:8080/readyz}"

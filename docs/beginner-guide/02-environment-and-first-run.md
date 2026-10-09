@@ -1,0 +1,72 @@
+# 02. 开发环境与第一次运行
+
+## 2.1 所需工具
+
+需要固定 Rust 工具链和 Web lockfile 对应的 Node/npm。完整原生生命周期还需要 Linux、shell 工具以及
+仓库固定的 MediaMTX 制品。不要用系统中碰巧安装的另一个 MediaMTX 代替合同资产。
+
+```bash
+npm ci --prefix web
+web/node_modules/.bin/xcss-build-server --config "$PWD/foundation-web-build.json" --mode development --no-install
+cargo +1.99.0 check --locked --all-targets
+```
+
+## 2.2 临时实验环境
+
+为数据库、runtime、recordings、MediaMTX config 与 binary 分别创建受保护临时路径；生成仅用于实验的
+32字节credential key和本地管理员密码；用`init --username admin`（或其他Foundation canonical username），把密码经stdin传入，不放在命令行。这个显式命令只初始化Server管理账户；摄像头的 RTSP/ONVIF username 仍在摄像头表中
+独立加密。所有路径使用绝对路径，避免工作目录变化改变身份。
+
+## 2.3 第一次开发启动
+
+开发模式只绑定回环，未提供 `BIND_ADDR` 时生产解析器也安全默认到 `127.0.0.1:8080`。使用上方统一构建
+得到的内嵌 Web binary 和临时 SQLite，按 `config/xcos.env.example`/当前配置解析器设置必要变量后运行开发
+`run`。正式 source-bound binary 只能从验证过的 release root 启动；对外访问由可信 TLS 网关转发。
+
+```bash
+read -rs -p 'Local administrator password: ' LOCAL_ADMIN_PASSWORD
+printf '\n'
+printf '%s\n' "$LOCAL_ADMIN_PASSWORD" | target/x86_64-unknown-linux-gnu/debug/xcos init --username admin
+unset LOCAL_ADMIN_PASSWORD
+target/x86_64-unknown-linux-gnu/debug/xcos config validate
+target/x86_64-unknown-linux-gnu/debug/xcos run
+```
+
+仅开发目录热更新时设置 `XCSS_DEV_WEB_DIR="$PWD/web/dist"`；重新构建 Web 后无需重编 Rust。
+正式发行拒绝此覆盖。
+
+## 2.4 启动 companion
+
+使用 `deploy/xcosctl start` 让统一命令验证 binary SHA、版本、配置、目录权限和锁，再启动 MediaMTX；不要绕过
+脚本直接后台运行。随后启动 Xcos，并分别检查应用与 companion 的 loopback readiness。
+
+## 2.5 第一个摄像机实例练习
+
+只使用实验摄像头或本地测试源：管理员在菜单中创建实例，把授权码配置到 Client，
+由 Client 选择一台摄像机并上报，确认 MediaMTX publisher/path，再通过可信代理测试播放。
+设备密码不应离开 Client，也不应出现在浏览器状态、审计或日志中。
+
+## 2.6 成功标准
+
+- release/config/Schema/credential 预检均通过；
+- 两个进程各自只存在一个实例；
+- 创建操作持久化并到达可解释终态；
+- 浏览器只拿短期播放授权；
+- 重启后 pending 可继续；只有 operation lease 已过期的 running 才转为 unknown，健康 owner 不被改写；
+- offline/online doctor 都通过。
+
+## 2.7 常见失败
+
+| 现象 | 先检查 |
+|---|---|
+| MediaMTX 拒绝启动 | binary SHA、版本、config exact contract |
+| Xcos 拒绝库 | metadata、DDL SHA、lease、密文或锁 |
+| 登录循环 | HTTPS、Secure Cookie、Origin/Host、系统时钟 |
+| 登录 400 | 请求是否精确为 `username/password`，username 是否符合 3–64 bytes canonical 规则 |
+| operation 不结束 | reconciler lease、MediaMTX API、网络 |
+| 无画面 | RTSP source、publisher、JWT、代理 WHEP/HLS 路由 |
+
+## 2.8 实验清理
+
+停止两个进程并确认锁释放后删除临时根。不要把临时 credential key、数据库或摄像头 URL 提交到仓库，
+也不要拿生产录像做测试 fixture。

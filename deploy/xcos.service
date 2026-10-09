@@ -1,0 +1,28 @@
+[Unit]
+Description=xcos
+Requires=xcos-mediamtx.service
+After=network-online.target xcos-mediamtx.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=xcos
+Group=xcos
+WorkingDirectory=/
+UMask=0077
+RuntimeDirectory=isarmg/xcos
+RuntimeDirectoryMode=0700
+ExecStartPre=/opt/isarmg/xcos/current/bin/xcos --config /etc/isarmg/xcos/config.json config validate
+ExecStart=/opt/isarmg/xcos/current/bin/xcos --config /etc/isarmg/xcos/config.json run --release-root /opt/isarmg/xcos/current
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+KillMode=control-group
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/isarmg/xcos /run/isarmg/xcos
+
+[Install]
+WantedBy=multi-user.target

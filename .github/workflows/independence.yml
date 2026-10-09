@@ -1,0 +1,56 @@
+name: Independence gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  independence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Reject runtime coupling and container manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # The current Foundation metadata table is not a retired runtime component.
+          coupling_pattern='UNION_|X-Union-|UnionGateway|ModuleManifest|PluginManifest|ProcessContext|xcss-platform|xcss_platform(?!_metadata\b)|/modules/'
+          coupling_matches="$(
+            git grep -nP "$coupling_pattern" -- \
+              ':!.github/workflows/independence.yml' \
+              ':!CHANGELOG.md' \
+              || true
+          )"
+          if [[ -n "$coupling_matches" ]]; then
+            printf '%s\n' "$coupling_matches"
+            exit 1
+          fi
+
+          container_matches="$(
+            git ls-files | awk '
+              {
+                depth = gsub("/", "/")
+                name = $0
+                sub(/^.*\//, "", name)
+                name = tolower(name)
+                if (depth <= 4 &&
+                    (name ~ /^dockerfile/ ||
+                     name ~ /^docker-compose.*\.ya?ml$/)) {
+                  print $0
+                }
+              }
+            '
+          )"
+          if [[ -n "$container_matches" ]]; then
+            printf '%s\n' "$container_matches"
+            exit 1
+          fi

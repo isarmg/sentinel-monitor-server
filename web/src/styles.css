@@ -1,0 +1,51 @@
+/* Product layout only. Foundation owns all platform colors, fonts and controls. */
+.xcos-business {
+  min-width: 0;
+  .eyebrow { margin: 0; font-size: .8rem; }
+  .view { margin-top: 0; }
+  .command-bar, .command-actions, .section-heading, .camera-actions, .pager, .check-row { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; }
+  .command-bar, .section-heading { justify-content: space-between; }
+  .section-heading :is(h2, h3) { margin: 0; }
+  .search-wrap { display: flex; align-items: center; gap: .5rem; width: min(360px, 100%); }
+  .camera-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+  .camera-card { min-width: 0; overflow: hidden; }
+  .camera-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem; padding: 1rem; }
+  .camera-meta > div { display: grid; gap: .25rem; min-width: 0; overflow-wrap: anywhere; }
+  .camera-actions { padding: 0 1rem 1rem; gap: .5rem; }
+  .camera-status { align-self: start; }
+  .danger-link { color: var(--xcss-text-danger); }
+  .video-shell, .detail-video { position: relative; aspect-ratio: 16/9; overflow: hidden; background: #000; }
+  .video-shell video, .detail-video video, .playback-stage video { width: 100%; height: 100%; object-fit: contain; background: #000; }
+  .video-state { position: absolute; inset: 0; display: grid; place-items: center; padding: 1rem; color: #fff; background: #000; font-size: .85rem; overflow-wrap: anywhere; text-align: center; }
+  .pager { justify-content: center; margin-top: 1rem; }
+  .empty-state { padding: 2rem 1rem; text-align: center; }
+  .full-span { grid-column: 1 / -1; }
+  .filter-panel { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: 1rem; align-items: end; }
+  .filter-panel label, .form-grid label { display: grid; gap: .5rem; min-width: 0; }
+  .recording-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: 1.5rem; margin-top: 1.5rem; }
+  .record-list { display: grid; gap: .5rem; max-height: 540px; overflow: auto; }
+  .record-item { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem; text-align: start; }
+  .playback-stage { align-self: start; }
+  .playback-stage video { aspect-ratio: 16/9; }
+  .check-row label { display: flex; align-items: center; gap: .5rem; }
+  fieldset { min-width: 0; border: 0; margin: 0; padding: 0; }
+  .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+  .form-grid .wide { grid-column: 1 / -1; }
+  .field-help, .check-row { margin-block: 1rem; }
+  .ptz-panel { display: grid; gap: 1rem; margin-top: 1rem; }
+  .ptz-grid { display: grid; grid-template-columns: repeat(3, 3rem); gap: .5rem; justify-content: center; }
+  .ptz-grid button, .zoom-row button { touch-action: none; }
+  .zoom-row { display: flex; justify-content: center; gap: 1rem; }
+  @media (max-width: 1100px) { .filter-panel { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 760px) {
+    .camera-grid, .filter-panel, .recording-layout, .form-grid { grid-template-columns: minmax(0, 1fr); }
+  }
+}
+
+.xcos-detail-list { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .55rem 1.25rem; margin: 0; }
+.xcos-detail-list dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.xcos-business .xcss-table .xcss-actions > .xcss-button { display: inline-flex; align-items: center; justify-content: flex-start; min-width: 44px; padding-inline: 0; text-align: left; }
+.xcss-instance-link, .xcss-instance-link:visited { color: inherit; text-decoration: none; }
+.xcss-instance-link:hover, .xcss-instance-link:focus-visible { text-decoration: underline; }
+
+.xcos-log-table caption { padding: 0 .7rem 1rem; text-align: start; }
