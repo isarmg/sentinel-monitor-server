@@ -64,6 +64,12 @@ pub struct RecordingSpan {
     pub url: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct RecordingIndex {
+    name: String,
+    segments: Vec<Value>,
+}
+
 impl MediaMtxClient {
     pub fn new(
         client: Client,
@@ -277,6 +283,26 @@ impl MediaMtxClient {
         // recording segments. That is an empty search result, not a failed API.
         if response.status() == reqwest::StatusCode::NOT_FOUND {
             return Ok(Vec::new());
+        }
+        // Before the first recording creates its directory, MediaMTX 1.20's
+        // playback list returns 400. Its control API still reports an empty
+        // index for the configured path; require that evidence rather than
+        // treating every bad request as an empty recording search.
+        if response.status() == reqwest::StatusCode::BAD_REQUEST {
+            if let Ok(index_response) = self
+                .client
+                .get(format!("{}/v3/recordings/get/{path}", self.api_url))
+                .send()
+                .await
+            {
+                if index_response.status().is_success() {
+                    if let Ok(index) = index_response.json::<RecordingIndex>().await {
+                        if index.name == path && index.segments.is_empty() {
+                            return Ok(Vec::new());
+                        }
+                    }
+                }
+            }
         }
         if !response.status().is_success() {
             return Err(AppError::Upstream(format!(
