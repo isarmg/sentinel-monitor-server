@@ -496,6 +496,149 @@ fn test_state(pool: sqlx::SqlitePool) -> AppState {
 }
 
 #[tokio::test]
+async fn production_ingress_supports_https_origin_through_a_remote_gateway() {
+    use axum::{extract::ConnectInfo, http::Request};
+    use tower::ServiceExt as _;
+
+    let directory = tempfile::tempdir().unwrap();
+    let pool = crate::sqlite::initialize_test_pool(&format!(
+        "sqlite://{}",
+        directory.path().join("remote-ingress.sqlite3").display()
+    ))
+    .await
+    .unwrap();
+    let client_id = Uuid::new_v4();
+    insert_test_client(&pool, client_id, "gateway-camera-client").await;
+    upsert_test_camera(&pool, client_id, client_id, "entrance").await;
+    let mut state = test_state(pool.clone());
+    let authorization = random_authorization_code().unwrap();
+    sqlx::query(
+        "UPDATE xcocs SET authorization_code_enc = ?, authorization_code_hash = ? WHERE id = ?",
+    )
+    .bind(
+        state
+            .secrets
+            .encrypt_client_authorization(&client_id.to_string(), &authorization)
+            .unwrap(),
+    )
+    .bind(hash_secret(&authorization).to_vec())
+    .bind(client_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let config = Arc::make_mut(&mut state.config);
+    config.bind_addr = "192.168.1.20:9080".parse().unwrap();
+    config.development_mode = false;
+    config.public_rtsp_publish_base_url = "rtsps://xcos.example.org:8322".into();
+    state.administrator_origin = xcss::admin_auth::AdministratorOriginMode::ProductionHttps;
+    state
+        .administrator
+        .bootstrap_administrator("admin", "ordinary-gateway-test-password", 1)
+        .await
+        .unwrap();
+    let (media_token, _) = issue_media_token(
+        "administrator",
+        client_id,
+        camera_path(client_id, "main"),
+        vec!["read".into()],
+        None,
+        &state.config,
+    )
+    .unwrap();
+    let app = xcss::admin_axum::administrator_router(
+        "xcos",
+        state.administrator_origin,
+        state.administrator.clone(),
+    )
+    .unwrap()
+    .merge(
+        Router::new()
+            .route("/api/v1/clients", get(list_clients))
+            .route(&CONTRACT.media_auth_path, post(media_auth))
+            .with_state(state),
+    );
+    let request = |method: &str, path: &str, body: String| {
+        let mut request = Request::builder()
+            .method(method)
+            .uri(path)
+            .header("host", "xcos.example.org")
+            .header("origin", "https://xcos.example.org")
+            .header("sec-fetch-site", "same-origin")
+            .header("content-type", "application/json")
+            .body(Body::from(body))
+            .unwrap();
+        request.extensions_mut().insert(ConnectInfo(
+            "192.168.1.1:54321".parse::<std::net::SocketAddr>().unwrap(),
+        ));
+        request
+    };
+    let login = app
+        .clone()
+        .oneshot(request(
+            "POST",
+            xcss::contracts::ADMIN_LOGIN_PATH,
+            json!({"username": "admin", "password": "ordinary-gateway-test-password"}).to_string(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(login.status(), StatusCode::OK);
+    let set_cookie = login.headers()["set-cookie"].to_str().unwrap();
+    assert!(set_cookie.contains("; Secure"));
+    let cookie = set_cookie.split(';').next().unwrap().to_owned();
+    let session: xcss::contracts::AdministratorSession =
+        serde_json::from_slice(&axum::body::to_bytes(login.into_body(), 4096).await.unwrap())
+            .unwrap();
+    let mut clients = request("GET", "/api/v1/clients", String::new());
+    clients
+        .headers_mut()
+        .insert("cookie", cookie.parse().unwrap());
+    let clients = app.clone().oneshot(clients).await.unwrap();
+    assert_eq!(clients.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(clients.into_body(), 4096)
+        .await
+        .unwrap();
+    assert!(std::str::from_utf8(&body)
+        .unwrap()
+        .contains("gateway-camera-client"));
+
+    let callback = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(&CONTRACT.media_auth_path)
+                .header("host", "127.0.0.1:8080")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "user": "", "password": "", "token": media_token, "ip": "192.168.1.30",
+                        "action": "read", "path": camera_path(client_id, "main"),
+                        "protocol": "webrtc", "id": "connection", "query": "", "userAgent": ""
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(callback.status(), StatusCode::OK);
+
+    let mut logout = request("POST", xcss::contracts::ADMIN_LOGOUT_PATH, String::new());
+    logout
+        .headers_mut()
+        .insert("cookie", cookie.parse().unwrap());
+    logout.headers_mut().insert(
+        xcss::admin_auth::CSRF_HEADER,
+        session.csrf_token.parse().unwrap(),
+    );
+    assert_eq!(
+        app.oneshot(logout).await.unwrap().status(),
+        StatusCode::NO_CONTENT
+    );
+    pool.close().await;
+}
+
+#[tokio::test]
 async fn client_list_returns_every_instance_in_case_insensitive_name_order() {
     let directory = tempfile::tempdir().unwrap();
     let database = directory.path().join("client-list.sqlite3");

@@ -223,7 +223,9 @@ pub(crate) async fn serve(
             .build()
             .await?;
         let signals = xcss::server_runtime::ProcessSignals::install()?;
-        let listeners = xcss::server_runtime::BoundListeners::bind([config.bind_addr])?;
+        let listeners = xcss::server_runtime::BoundListeners::bind(
+            crate::config::listener_addresses(config.bind_addr),
+        )?;
         tracing::info!(event = "common.runtime.started");
         let mut transport = xcss::server_runtime::HttpServer::new(listeners, signals);
         transport.participant = Some(Arc::new(lifecycle::Lifecycle {

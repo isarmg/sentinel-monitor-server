@@ -28,7 +28,7 @@ sudo /opt/isarmg/xcos/releases/1.0.0/deploy/xcosctl start
 sudo /opt/isarmg/xcos/releases/1.0.0/deploy/xcosctl status
 ```
 
-确认配置前，填写管理员密码、独立密钥、公开 RTSPS 地址和证书路径，并配置 HTTPS 网关。`bootstrap --confirm-config` 显式初始化；普通启动不建库。控制面和 MediaMTX 管理端口只向本机网关开放。
+确认配置前，填写管理员密码、独立密钥、公开 RTSPS 地址和证书路径，并配置 HTTPS 网关。`bootstrap --confirm-config` 显式初始化；普通启动不建库。Xcos、MediaMTX 和数据部署在同一台机器；网关可在另一台机器，通过显式配置的回源地址访问，MediaMTX 管理端口仍只供本机使用。远端网关配置见[配置参考](docs/configuration.md)。
 
 ## 如何编译部署
 

@@ -303,7 +303,7 @@ fn validate_intrinsic(
     {
         return Err(invalid("/database_url"));
     }
-    if !value.bind_addr.ip().is_loopback() {
+    if value.app_env == "development" && !value.bind_addr.ip().is_loopback() {
         return Err(invalid("/bind_addr"));
     }
     if !matches!(value.app_env.as_str(), "production" | "development") {
@@ -552,11 +552,27 @@ fn absolute_path(name: &str, value: String) -> Result<PathBuf, String> {
     }
 }
 
-fn validate_development_bind(bind_addr: SocketAddr, _development_mode: bool) -> Result<(), String> {
-    if !bind_addr.ip().is_loopback() {
-        Err("BIND_ADDR must be loopback because the fixed MediaMTX auth callback and public gateway use the local application listener".into())
+fn validate_development_bind(bind_addr: SocketAddr, development_mode: bool) -> Result<(), String> {
+    if development_mode && !bind_addr.ip().is_loopback() {
+        Err("BIND_ADDR must be loopback in development mode".into())
     } else {
         Ok(())
+    }
+}
+
+/// Keep the bundled MediaMTX callback and local readiness probes reachable even
+/// when the configured ingress uses a different interface or port. The common
+/// runtime uses IPv6-only sockets, so IPv6 binds never cover this IPv4 endpoint.
+pub(crate) fn listener_addresses(bind_addr: SocketAddr) -> Vec<SocketAddr> {
+    let local: SocketAddr = DEFAULT_BIND_ADDR.parse().expect("default address");
+    let covers_local = bind_addr == local
+        || (bind_addr.is_ipv4()
+            && bind_addr.ip().is_unspecified()
+            && bind_addr.port() == local.port());
+    if covers_local {
+        vec![bind_addr]
+    } else {
+        vec![bind_addr, local]
     }
 }
 
@@ -577,7 +593,62 @@ mod tests {
         assert!(validate_development_bind("[::1]:8080".parse().unwrap(), true).is_ok());
         assert!(validate_development_bind("0.0.0.0:8080".parse().unwrap(), true).is_err());
         assert!(validate_development_bind("192.168.1.10:8080".parse().unwrap(), true).is_err());
-        assert!(validate_development_bind("0.0.0.0:8080".parse().unwrap(), false).is_err());
+        assert!(validate_development_bind("0.0.0.0:8080".parse().unwrap(), false).is_ok());
+        assert!(validate_development_bind("192.168.1.10:8080".parse().unwrap(), false).is_ok());
+        assert!(validate_development_bind("[fd00::10]:8080".parse().unwrap(), false).is_ok());
+    }
+
+    #[test]
+    fn configured_ingress_preserves_the_local_companion_endpoint() {
+        let local = "127.0.0.1:8080".parse::<SocketAddr>().unwrap();
+        for address in ["127.0.0.1:8080", "0.0.0.0:8080"] {
+            let address = address.parse::<SocketAddr>().unwrap();
+            assert_eq!(listener_addresses(address), vec![address]);
+        }
+        for address in [
+            "192.168.1.10:8080",
+            "192.168.1.10:9080",
+            "0.0.0.0:9080",
+            "127.0.0.1:9080",
+            "127.0.0.2:8080",
+            "[::1]:8080",
+            "[::]:8080",
+            "[fd00::10]:9080",
+        ] {
+            let address = address.parse::<SocketAddr>().unwrap();
+            assert_eq!(listener_addresses(address), vec![address, local]);
+        }
+    }
+
+    #[test]
+    fn production_configuration_accepts_explicit_remote_ingress() {
+        for address in ["192.168.1.10:9080", "0.0.0.0:8080", "[fd00::10]:8080"] {
+            let settings = Settings {
+                bind_addr: address.parse().unwrap(),
+                data_dir: Some("/var/lib/isarmg/xcos/db".into()),
+                jwt_secret: Some("x".repeat(32)),
+                credentials_key: Some(STANDARD.encode([7_u8; 32])),
+                public_rtsp_publish_base_url: "rtsps://xcos.example.org:8322".into(),
+                ..Settings::default()
+            };
+            let loaded = xcss::config::resolve_validated(
+                &Settings::default(),
+                Some(&serde_json::to_vec(&settings).unwrap()),
+                &[],
+                &[],
+                validate_intrinsic,
+            )
+            .unwrap();
+            let config = loaded.value.effective().unwrap();
+            assert_eq!(config.bind_addr, settings.bind_addr);
+            assert!(!config.development_mode);
+            let development = Settings {
+                app_env: "development".into(),
+                ..settings
+            };
+            assert!(validate_intrinsic(&development, xcss::config::ConfigSource::File).is_err());
+            assert!(development.effective().is_err());
+        }
     }
 
     #[test]
