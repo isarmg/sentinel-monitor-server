@@ -116,7 +116,7 @@ pub(super) async fn ptz(
     user: CurrentUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    xcss_server_cli::ContractJson(request): xcss_server_cli::ContractJson<PtzRequest>,
+    xcss::server_cli::ContractJson(request): xcss::server_cli::ContractJson<PtzRequest>,
 ) -> Result<(StatusCode, Json<Value>)> {
     if request.action != "move" && request.action != "stop" {
         return Err(AppError::Validation("PTZ action只能是move或stop".into()));

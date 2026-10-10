@@ -32,7 +32,7 @@ release_root="$TEMPORARY/archive/opt/isarmg/xcos/releases/$XCOS_VERSION"
 verify_release "$release_root"
 install -m 0444 "$TEMPORARY/LICENSE" "$TEMPORARY/archive/licenses/MediaMTX-LICENSE"
 for name in OFL.txt CJK-LICENSE.txt NORMAL-LICENSE.txt; do
-  install -m 0444 "$SOURCE_ROOT/web/node_modules/@xcss/web-fonts/dist/$name" "$TEMPORARY/archive/licenses/$name"
+  install -m 0444 "$SOURCE_ROOT/web/node_modules/@xcss/web/dist/web-fonts/$name" "$TEMPORARY/archive/licenses/$name"
 done
 install -m 0444 "$SOURCE_ROOT/docs/releases/$XCOS_VERSION.md" "$TEMPORARY/archive/README.md"
 epoch="$(git -C "$SOURCE_ROOT" show -s --format=%ct HEAD)"

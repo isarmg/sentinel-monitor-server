@@ -1,5 +1,5 @@
 use anyhow::Context;
-use xcss_schema_identity::SchemaIdentity;
+use xcss::schema_identity::SchemaIdentity;
 
 mod connection;
 mod initialization;

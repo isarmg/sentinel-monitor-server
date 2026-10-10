@@ -41,7 +41,9 @@ pub(super) async fn list_clients(
 pub(super) async fn create_client(
     user: CurrentUser,
     State(state): State<AppState>,
-    xcss_server_cli::ContractJson(request): xcss_server_cli::ContractJson<CreateXcosClientRequest>,
+    xcss::server_cli::ContractJson(request): xcss::server_cli::ContractJson<
+        CreateXcosClientRequest,
+    >,
 ) -> Result<Response> {
     let name = validate_client_name(request.name.as_deref().unwrap_or("新实例"))?;
     let id = Uuid::new_v4();
@@ -96,7 +98,7 @@ pub(super) async fn update_client_authorization(
     user: CurrentUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    xcss_server_cli::ContractJson(request): xcss_server_cli::ContractJson<
+    xcss::server_cli::ContractJson(request): xcss::server_cli::ContractJson<
         UpdateAuthorizationCodeRequest,
     >,
 ) -> Result<Response> {
@@ -180,7 +182,9 @@ pub(super) async fn update_client_name(
     user: CurrentUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    xcss_server_cli::ContractJson(request): xcss_server_cli::ContractJson<UpdateXcosClientRequest>,
+    xcss::server_cli::ContractJson(request): xcss::server_cli::ContractJson<
+        UpdateXcosClientRequest,
+    >,
 ) -> Result<Response> {
     let name = validate_client_name(&request.name)?;
     let now = Utc::now();
@@ -248,7 +252,7 @@ pub(super) fn client_view(state: &AppState, record: XcosClientRecord) -> Result<
 
 pub(super) async fn pair_client(
     State(state): State<AppState>,
-    xcss_server_cli::ContractJson(request): xcss_server_cli::ContractJson<PairClientRequest>,
+    xcss::server_cli::ContractJson(request): xcss::server_cli::ContractJson<PairClientRequest>,
 ) -> Result<Response> {
     if request.protocol != CLIENT_PAIRING_PROTOCOL || request.product != "xcos" {
         return Err(AppError::UnsupportedClientProtocol);
@@ -263,7 +267,7 @@ pub(super) async fn pair_client(
     }
     validate_client_name(&request.name)?;
     let code_hash = hash_secret(&request.authorization_code).to_vec();
-    let access_token = xcss_admin_auth::random_token()
+    let access_token = xcss::admin_auth::random_token()
         .map_err(|_| AppError::Internal("client token generation failed".into()))?;
     let now = Utc::now();
     let mut transaction = state.pool.begin_with("BEGIN IMMEDIATE").await?;
@@ -473,7 +477,7 @@ pub(super) async fn purge_revoked_client_in(
 pub(super) async fn client_snapshot(
     State(state): State<AppState>,
     headers: HeaderMap,
-    xcss_server_cli::ContractJson(request): xcss_server_cli::ContractJson<ClientSnapshotRequest>,
+    xcss::server_cli::ContractJson(request): xcss::server_cli::ContractJson<ClientSnapshotRequest>,
 ) -> Result<Response> {
     validate_client_snapshot_shape(&request)?;
     let token_hash = client_token_hash(&headers)?;

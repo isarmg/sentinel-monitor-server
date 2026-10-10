@@ -22,7 +22,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          # The current Foundation metadata table is not a retired runtime component.
+          # The current xcss metadata table is not a retired runtime component.
           coupling_pattern='UNION_|X-Union-|UnionGateway|ModuleManifest|PluginManifest|ProcessContext|xcss-platform|xcss_platform(?!_metadata\b)|/modules/'
           coupling_matches="$(
             git grep -nP "$coupling_pattern" -- \

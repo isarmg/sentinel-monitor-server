@@ -51,7 +51,7 @@ pub(super) fn history_slots() -> Arc<tokio::sync::Semaphore> {
 }
 
 pub(super) async fn history_response<T, F>(
-    scope: xcss_server_runtime::WorkScope,
+    scope: xcss::server_runtime::WorkScope,
     query: F,
 ) -> Result<Response>
 where

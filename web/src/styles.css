@@ -1,4 +1,4 @@
-/* Product layout only. Foundation owns all platform colors, fonts and controls. */
+/* Product layout only. xcss owns all platform colors, fonts and controls. */
 .xcos-business {
   min-width: 0;
   .eyebrow { margin: 0; font-size: .8rem; }

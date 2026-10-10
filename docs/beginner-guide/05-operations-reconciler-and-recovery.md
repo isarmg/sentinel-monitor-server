@@ -39,7 +39,7 @@ claim -> decrypt current credential -> validate again
 ## 5.6 审计的当前边界
 
 授权实例 create/pair/rotate/revoke/delete 与相关业务变更在同一事务写入 `audit_logs`。
-PTZ 记录的是命令已排队，Client 回报结果保存在 `device_commands`。媒体 operation 还有 Foundation
+PTZ 记录的是命令已排队，Client 回报结果保存在 `device_commands`。媒体 operation 还有 xcss
 durable-operation audit outbox；它与产品业务审计表是两种语义，不得混同。
 
 ## 5.7 Reconcile 的边界

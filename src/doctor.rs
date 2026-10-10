@@ -53,8 +53,8 @@ pub async fn run(options: &DoctorOptions) -> anyhow::Result<DoctorReport> {
     let database = sqlite::database_path(&options.database_url)?;
     let snapshot = sqlite::current_validation_snapshot(&database).await?;
     let checked = async {
-        xcss_sqlite::integrity_check(snapshot.pool()).await?;
-        xcss_sqlite::foreign_key_check(snapshot.pool()).await?;
+        xcss::sqlite::integrity_check(snapshot.pool()).await?;
+        xcss::sqlite::foreign_key_check(snapshot.pool()).await?;
         verify_credentials_on_snapshot(snapshot.pool(), &options.credentials_key).await?;
         Ok::<(), anyhow::Error>(())
     }
@@ -118,7 +118,7 @@ async fn live_probe(url: &str, kind: ReadinessKind) -> anyhow::Result<bool> {
     }
     let service_values = response
         .headers()
-        .get_all(xcss_server_cli::SERVICE_IDENTITY_HEADER);
+        .get_all(xcss::server_cli::SERVICE_IDENTITY_HEADER);
     if service_values.iter().count() != 1
         || !service_values
             .iter()
@@ -130,9 +130,9 @@ async fn live_probe(url: &str, kind: ReadinessKind) -> anyhow::Result<bool> {
     if !has_json_content_type(&response) {
         return Ok(false);
     }
-    let bytes = xcss_secure_http::bounded_response(
+    let bytes = xcss::secure_http::bounded_response(
         response,
-        xcss_secure_http::ResponseBudget {
+        xcss::secure_http::ResponseBudget {
             max_header_bytes: 4096,
             max_body_bytes: 128,
         },
@@ -193,7 +193,7 @@ struct LivePathDefaults {
 /// Inspect the companion's effective configuration, including environment overrides.
 /// The pinned MediaMTX API owns its other path-default fields.
 async fn verify_live_recordings(url: &str, recordings_directory: &Path) -> anyhow::Result<()> {
-    let directory = xcss_state_file::PrivateStateDirectory::open(recordings_directory)?;
+    let directory = xcss::state_file::PrivateStateDirectory::open(recordings_directory)?;
     let mut endpoint = loopback_url(url)?;
     endpoint.set_path("/v3/config/pathdefaults/get");
     let response = probe_client()?.get(endpoint).send().await?;
@@ -201,9 +201,9 @@ async fn verify_live_recordings(url: &str, recordings_directory: &Path) -> anyho
         response.status() == reqwest::StatusCode::OK && has_json_content_type(&response),
         "MediaMTX effective path configuration is unavailable"
     );
-    let bytes = xcss_secure_http::bounded_response(
+    let bytes = xcss::secure_http::bounded_response(
         response,
-        xcss_secure_http::ResponseBudget {
+        xcss::secure_http::ResponseBudget {
             max_header_bytes: 4096,
             max_body_bytes: 16 * 1024,
         },
@@ -251,7 +251,7 @@ pub(crate) async fn verify_credentials_on_snapshot(
 }
 
 async fn database_write_probe(path: &Path) -> anyhow::Result<()> {
-    let directory = xcss_state_file::PrivateStateDirectory::open(
+    let directory = xcss::state_file::PrivateStateDirectory::open(
         path.parent().context("database parent is required")?,
     )?;
     let before = fs::symlink_metadata(path)?;
@@ -282,7 +282,7 @@ async fn database_write_probe(path: &Path) -> anyhow::Result<()> {
 }
 
 fn recording_write_probe(root: &Path) -> anyhow::Result<()> {
-    let directory = xcss_state_file::PrivateStateDirectory::open(root)?;
+    let directory = xcss::state_file::PrivateStateDirectory::open(root)?;
     let path = root.join(format!(".xcos-doctor-{}", Uuid::new_v4()));
     let mut options = OpenOptions::new();
     options.write(true).create_new(true);
@@ -319,7 +319,7 @@ pub(crate) async fn verify_companion(
     require_secure_file(contract_path, "MediaMTX contract")?;
     require_secure_file(binary_path, "MediaMTX binary")?;
     require_secure_file(config_path, "MediaMTX config")?;
-    let directory = xcss_state_file::PrivateStateDirectory::open(recordings_directory)?;
+    let directory = xcss::state_file::PrivateStateDirectory::open(recordings_directory)?;
 
     let contract = parse_contract(contract_path)?;
     ensure!(
@@ -458,7 +458,7 @@ fn verify_media_config_content(
     recordings_directory: &Path,
     managed: bool,
 ) -> anyhow::Result<()> {
-    let directory = xcss_state_file::PrivateStateDirectory::open(recordings_directory)?;
+    let directory = xcss::state_file::PrivateStateDirectory::open(recordings_directory)?;
     if managed {
         ensure!(
             content == MANAGED_MEDIA_CONFIG,
@@ -512,8 +512,8 @@ fn verify_record_path(configured: &str, recordings_directory: &Path) -> anyhow::
     ensure!(!root.is_empty(), "MediaMTX recordPath has an empty root");
     let root = PathBuf::from(root);
     ensure!(root.is_absolute(), "MediaMTX recordPath must be absolute");
-    let source = xcss_state_file::PrivateStateDirectory::open(&root)?;
-    let expected = xcss_state_file::PrivateStateDirectory::open(recordings_directory)?;
+    let source = xcss::state_file::PrivateStateDirectory::open(&root)?;
+    let expected = xcss::state_file::PrivateStateDirectory::open(recordings_directory)?;
     ensure!(
         fs::canonicalize(&root)? == fs::canonicalize(recordings_directory)?,
         "MediaMTX recordPath points at a different recordings directory"
@@ -884,7 +884,7 @@ mod tests {
              VALUES (?, 'doctor-admin', ?, ?, ?)",
         )
         .bind(user.to_string())
-        .bind(xcss_admin_auth::hash_password("doctor-admin-password").unwrap())
+        .bind(xcss::admin_auth::hash_password("doctor-admin-password").unwrap())
         .bind(now_micros)
         .bind(now_micros)
         .execute(&pool)

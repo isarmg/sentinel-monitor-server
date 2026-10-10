@@ -1,10 +1,10 @@
 pub struct Lifecycle {
-    pub scope: xcss_server_runtime::WorkScope,
+    pub scope: xcss::server_runtime::WorkScope,
     pub pool: sqlx::SqlitePool,
     pub lock: std::sync::Mutex<Option<std::sync::Arc<crate::runtime_lock::ApplicationLock>>>,
 }
 #[async_trait::async_trait]
-impl xcss_server_runtime::LifecycleParticipant for Lifecycle {
+impl xcss::server_runtime::LifecycleParticipant for Lifecycle {
     fn quiesce(&self) {
         tracing::info!(event = "common.runtime.shutdown_started");
         self.scope.quiesce();

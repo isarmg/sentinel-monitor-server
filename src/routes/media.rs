@@ -56,18 +56,18 @@ pub(super) async fn list_media_operations(
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct ResolveMediaOperation {
-    resolution: xcss_operations::Resolution,
+    resolution: xcss::operations::Resolution,
 }
 
 pub(super) async fn resolve_media_operation(
     user: CurrentUser,
     State(state): State<AppState>,
     Path(id): Path<String>,
-    xcss_server_cli::ContractJson(request): xcss_server_cli::ContractJson<ResolveMediaOperation>,
+    xcss::server_cli::ContractJson(request): xcss::server_cli::ContractJson<ResolveMediaOperation>,
 ) -> Result<Json<reconciliation::MediaOperationView>> {
     let operation = reconciliation::get_operation(&state.pool, &id).await?;
     let mut transaction = state.pool.begin_with("BEGIN IMMEDIATE").await?;
-    xcss_operations::SqliteOperationStore::resolve_in(
+    xcss::operations::SqliteOperationStore::resolve_in(
         &mut transaction,
         &id,
         request.resolution,
@@ -75,8 +75,8 @@ pub(super) async fn resolve_media_operation(
     )
     .await
     .map_err(|error| match error {
-        xcss_operations::Error::InvalidTransition { .. }
-        | xcss_operations::Error::ConcurrentModification => {
+        xcss::operations::Error::InvalidTransition { .. }
+        | xcss::operations::Error::ConcurrentModification => {
             AppError::Conflict("媒体操作当前状态不允许此人工处理".into())
         }
         _ => AppError::Internal("媒体操作人工处理写入失败".into()),
@@ -133,7 +133,7 @@ pub(super) struct MediaAuthRequest {
 
 pub(super) async fn media_auth(
     State(state): State<AppState>,
-    xcss_server_cli::ContractJson(request): xcss_server_cli::ContractJson<MediaAuthRequest>,
+    xcss::server_cli::ContractJson(request): xcss::server_cli::ContractJson<MediaAuthRequest>,
 ) -> StatusCode {
     if [
         request.user.as_str(),

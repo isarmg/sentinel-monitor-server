@@ -9,7 +9,7 @@ pub(crate) async fn initialize_with_administrator(
     let root = database
         .parent()
         .ok_or_else(|| anyhow::anyhow!("database parent is required"))?;
-    let directory = xcss_fs_safety::PrivateDirectory::open_existing(root)?;
+    let directory = xcss::fs_safety::PrivateDirectory::open_existing(root)?;
     anyhow::ensure!(
         !database.try_exists()?,
         "refusing to overwrite current database"
@@ -23,15 +23,15 @@ pub(crate) async fn initialize_with_administrator(
         .await
         .context("open initialization pool")?;
     let result = async {
-        let admin = xcss_admin_core::AdministratorService::new(
-            xcss_admin_sqlite::SqliteAdministratorStore::new(pool.clone()),
+        let admin = xcss::admin_core::AdministratorService::new(
+            xcss::admin_sqlite::SqliteAdministratorStore::new(pool.clone()),
         );
         admin
             .bootstrap_administrator(username, password, current_time_micros()?)
             .await
             .map_err(|error| anyhow::anyhow!(error))
             .context("bootstrap staging administrator")?;
-        xcss_sqlite::checkpoint(&pool)
+        xcss::sqlite::checkpoint(&pool)
             .await
             .context("checkpoint staging pool")?;
         let mode: String = sqlx::query_scalar("PRAGMA journal_mode=DELETE")
@@ -49,13 +49,13 @@ pub(crate) async fn initialize_with_administrator(
     result?;
     // Finalize on the one initialization connection before publishing one file.
     std::fs::File::open(&staging)?.sync_all()?;
-    let source = xcss_fs_safety::RelativePath::new(staging.strip_prefix(root)?)?;
-    let destination = xcss_fs_safety::RelativePath::new(
+    let source = xcss::fs_safety::RelativePath::new(staging.strip_prefix(root)?)?;
+    let destination = xcss::fs_safety::RelativePath::new(
         database
             .file_name()
             .ok_or_else(|| anyhow::anyhow!("database filename is required"))?,
     )?;
-    xcss_fs_safety::NoClobberPublish::publish(&directory, &source, &destination)
+    xcss::fs_safety::NoClobberPublish::publish(&directory, &source, &destination)
         .context("publish completed current database")?;
     Ok(())
 }
@@ -84,10 +84,10 @@ mod initialization_tests {
         let pool = crate::sqlite::open_pool(&format!("sqlite://{}", database.display()))
             .await
             .unwrap();
-        let service = xcss_admin_core::AdministratorService::new(
-            xcss_admin_sqlite::SqliteAdministratorStore::new(pool.clone()),
+        let service = xcss::admin_core::AdministratorService::new(
+            xcss::admin_sqlite::SqliteAdministratorStore::new(pool.clone()),
         );
-        use xcss_admin_core::AdministratorStore as _;
+        use xcss::admin_core::AdministratorStore as _;
         assert_eq!(service.store().administrator_count().await.unwrap(), 1);
         service.store().validate_all_administrators().await.unwrap();
         pool.close().await;

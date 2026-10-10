@@ -6,7 +6,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use xcss_error::{ErrorCode, ErrorEnvelope};
+use xcss::error::{ErrorCode, ErrorEnvelope};
 
 pub type Result<T> = std::result::Result<T, AppError>;
 

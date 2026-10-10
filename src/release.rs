@@ -17,7 +17,7 @@ use crate::crypto::{credential_contract_sha256, CREDENTIAL_ENVELOPE_REVISION};
 const MANIFEST_FORMAT: &str = "xcos-release-v1";
 const PRODUCT: &str = "xcos";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-const TARGET: &str = xcss_server_target::SERVER_TARGET_TRIPLE;
+const TARGET: &str = xcss::server_target::SERVER_TARGET_TRIPLE;
 const SERVER_BINARY: &str = "bin/xcos";
 const MANIFEST_NAME: &str = "RELEASE-MANIFEST";
 const MAX_MANIFEST_BYTES: u64 = 8 * 1024 * 1024;
@@ -33,12 +33,12 @@ const MEDIAMTX_LOCK: &[u8] = include_bytes!("../config/mediamtx.lock");
 const MEDIAMTX_CONFIG: &[u8] = include_bytes!("../config/mediamtx.yml");
 
 pub(crate) fn state_contract_bytes() -> Result<Vec<u8>> {
-    use xcss_contracts::{
+    use xcss::contracts::{
         CompanionContract, StateContract, StateResource, StateResourceKind, StateSchemaIdentity,
     };
     let media = mediamtx_identity()?;
     let contract = StateContract {
-        contract_version: xcss_contracts::STATE_CONTRACT_VERSION,
+        contract_version: xcss::contracts::STATE_CONTRACT_VERSION,
         application: PRODUCT.into(),
         application_version: VERSION.into(),
         source_revision: env!("XCOS_SOURCE_REVISION").into(),
@@ -76,15 +76,15 @@ pub(crate) fn state_contract_bytes() -> Result<Vec<u8>> {
         }],
     };
     contract.validate().map_err(|_| {
-        crate::CliFailure(xcss_server_cli::ErrorEnvelope::with_code(
-            xcss_server_cli::ErrorCode::new("release_identity_unbound").expect("static code"),
+        crate::CliFailure(xcss::server_cli::ErrorEnvelope::with_code(
+            xcss::server_cli::ErrorCode::new("release_identity_unbound").expect("static code"),
             "This development binary is not bound to a complete source revision.",
         ))
     })?;
     Ok(serde_json::to_vec(&contract)?)
 }
-pub(crate) fn standard_identity() -> Result<xcss_contracts::ReleaseIdentity> {
-    let identity = xcss_contracts::ReleaseIdentity {
+pub(crate) fn standard_identity() -> Result<xcss::contracts::ReleaseIdentity> {
+    let identity = xcss::contracts::ReleaseIdentity {
         product: PRODUCT.into(),
         version: VERSION.into(),
         source_revision: env!("XCOS_SOURCE_REVISION").into(),
@@ -225,11 +225,13 @@ pub(crate) fn manifest_header() -> Result<String> {
 
 pub(crate) fn ensure_unbound_run() -> Result<()> {
     if env!("XCOS_SOURCE_REVISION") != "unbound" {
-        return Err(crate::CliFailure(xcss_server_cli::ErrorEnvelope::with_code(
-            xcss_server_cli::ErrorCode::new("release_root_required").expect("static code"),
-            "A source-bound Xcos release requires run --release-root RELEASE_ROOT.",
-        ))
-        .into());
+        return Err(
+            crate::CliFailure(xcss::server_cli::ErrorEnvelope::with_code(
+                xcss::server_cli::ErrorCode::new("release_root_required").expect("static code"),
+                "A source-bound Xcos release requires run --release-root RELEASE_ROOT.",
+            ))
+            .into(),
+        );
     }
     Ok(())
 }

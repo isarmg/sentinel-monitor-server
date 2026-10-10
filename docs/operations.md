@@ -61,8 +61,8 @@ sudoedit /etc/isarmg/xcos.env
 /opt/isarmg/xcos/releases/1.0.0/deploy/xcosctl stop
 ```
 
-Web 和 Rust 由 Foundation `xcss-build-server` 按锁图依次构建；配置入口为
-`foundation-web-build.json`。产出的实际 executable 必须用 `web-assets` 输出完整清单，与新建 dist
+Web 和 Rust 由 xcss `xcss-build-server` 按锁图依次构建；配置入口为
+`xcss-web-build.json`。产出的实际 executable 必须用 `web-assets` 输出完整清单，与新建 dist
 逐项核对大小和 SHA-256。正式发行只携带该清单，不重复携带 HTML/JS/CSS/字体原始树；全部 HTTP 资源
 来自同一 executable 内嵌快照。即使重写发行 manifest，清单仍必须逐字节等于执行 binary 的清单。
 
@@ -150,10 +150,10 @@ schema_revision=1
 schema_sha256=89d3e59dab120939725a7e3b052cf3cf5887f051c024e0325c3e9494043909e3
 ```
 
-Foundation `_xcss_administrators` 表保存不透明 TEXT `administrator_id`、canonical `username`、密码摘要、启停状态、Session version 和微秒整数时间
+xcss `_xcss_administrators` 表保存不透明 TEXT `administrator_id`、canonical `username`、密码摘要、启停状态、Session version 和微秒整数时间
 字段，不保存 email 或 `role`。username 的 Schema CHECK 精确要求 3–64 bytes、ASCII 小写、首尾
 `[a-z0-9]`、其余字符仅 `[a-z0-9._-]`；唯一索引直接作用于 canonical 值。登录 candidate 可包含首尾
-ASCII whitespace/大写，但 Foundation 规范化后才查询；`@`、Unicode、内部空白、控制字符和首尾分隔符
+ASCII whitespace/大写，但 xcss 规范化后才查询；`@`、Unicode、内部空白、控制字符和首尾分隔符
 都会拒绝。所有成功认证的控制面账户都是 Administrator；禁止通过手改表或增加配置字段制造身份等级。
 
 `media_reconciler_leases` 必须是当前固定结构且恰有 `singleton=1`。空闲 owner/expiry 同为 NULL；持有态
@@ -253,57 +253,57 @@ auth body、媒体 JWT、WHEP/HLS 播放与录像状态不使用 Administrator u
 
 ## 11. Web 设计依赖与发布证明
 
-当前 Web 使用 Foundation 的 admin-web、admin-shell、admin-ui、contracts、design-tokens、http-client、
-web-fonts、web-toolchain 八个构建期包，不是生产运行服务。Node 固定为 `.node-version` 的 `26.7.0`。
+当前 Web 使用 xcss 的 admin-web、admin-shell、admin-ui、contracts、design-tokens、http-client、
+web-fonts、web-toolchain 八个内部模块，作为一个 @xcss/web 构建期包发布，不是生产运行服务。Node 固定为 `.node-version` 的 `26.7.0`。
 
-- 候选Rust输入固定 Foundation `=1.0.0` / `d58b9ef0822984ee0d29fb8b8139cfd2787374fb`，八个Web包使用对应新tag URL与真实tarball的lock integrity。Foundation 1.0.0 已正式发布，官方八包已逐字节验证；产品仍须完成自身正式构建和发行验收。
+- 候选Rust输入固定 xcss `=1.0.0` / `9fb5b3f8f20762cb93050bc52ea81a36ac0dc914`，一个 @xcss/web 包使用对应新tag URL与真实tarball的lock integrity。xcss 1.0.0 已正式发布，官方单包已逐字节验证；产品仍须完成自身正式构建和发行验收。
 - 旧消费者CI证明只属于其记录的旧revision；本次新源码和真实发行物必须分别验收。统一manifest、lockfile和发布身份，不改写旧tag/资产。
 
 ```bash
 cd web
 npm ci
-npm run check:foundation
+npm run check:xcss
 npm run build
 npm run test:browser
 ```
 
-`build` 自身以 `check:foundation` 为前置，不能绕开。精确工具链为 React/ReactDOM `19.3.0`、TypeScript
+`build` 自身以 `check:xcss` 为前置，不能绕开。精确工具链为 React/ReactDOM `19.3.0`、TypeScript
 `7.0.2`、Vite `8.3.3`、`@vitejs/plugin-react` `6.1.2`、`@types/react` `19.3.0` 和
-`@types/react-dom` `19.3.0`。Shell、登录/恢复/退出、通知、主题、诊断、Maple 字体和 UI 原语全部来自 Foundation。
+`@types/react-dom` `19.3.0`。Shell、登录/恢复/退出、通知、主题、诊断、Maple 字体和 UI 原语全部来自 xcss。
 Xcos CSS 仅保留业务布局，不覆盖平台 token 或定义私有字体。HLS 按需单独加载，完整功能保留；各资产遵循
-Foundation 512 KiB 硬限制且不发布 source map。浏览器验收使用真实 dist，覆盖两种浏览器的系统/管理员、
+xcss 512 KiB 硬限制且不发布 source map。浏览器验收使用真实 dist，覆盖两种浏览器的系统/管理员、
 摄像头、录像、事件、云台键盘停止、对话框焦点和移动明暗主题无障碍。后续
 `scripts/build.sh` 把该 Hash 文件写入发行 manifest，`relocated-smoke-test.sh` 证明实际归档引用它并在篡改
 后拒绝启动。生产目录中不应出现 `node_modules`、源包、`vendor/xcss-design` 或远程 CSS URL。
 
 设计测试或依赖安装失败时，不要复制本地 `reset.css` 临时绕过，也不要在 `index.html` 添加 CDN。应修复
-当前 Foundation 来源/lockfile，重新生成整个 Web dist 和不可变 release。Foundation 版本切换属于直接
+当前 xcss 来源/lockfile，重新生成整个 Web dist 和不可变 release。xcss 版本切换属于直接
 替换当前合同，不保留并行 CSS 或媒体查询式版本 fallback。
 
 系统页展示媒体状态与业务审计；管理员账号名称和密码从 Shell 右上角人物图标进入自助设置。
-管理员 API 由 Foundation 提供给后端集成，业务页面通过账号自助设置访问当前身份。
+管理员 API 由 xcss 提供给后端集成，业务页面通过账号自助设置访问当前身份。
 改密/停用撤销全部会话，安全审计与写入同事务。系统页展示的“业务审计”仍来自产品 `/audit`，与平台安全审计分工明确。
 
-### 11.1 Foundation 包的运维边界
+### 11.1 xcss 包的运维边界
 
-| 包 | Xcos 使用内容 | 运维必须证明 | 不由该包负责 |
+| @xcss/web 内部模块入口 | Xcos 使用内容 | 运维必须证明 | 不由该包负责 |
 |---|---|---|---|
-| `@xcss/contracts` | auth 路径、Administrator DTO、ErrorEnvelope 类型与严格守卫 | 版本/来源锁定；不可信 JSON 通过守卫；未知字段拒绝 | 摄像头、录像、事件、审计等产品 DTO |
-| `@xcss/http-client` | same-origin、Cookie、CSRF、超时、响应上限、Content-Type、错误解析 | unsafe 请求携带当前 CSRF；401 使本地 Session 失效；无跨 origin | 自动重试写操作、大文件下载、业务响应判定 |
-| `@xcss/design-tokens` / `web-fonts` | token、scoped reset、Maple 字体 | `data-xcss-scope`、无私有字体覆盖、无 CDN | 业务布局 |
-| `@xcss/admin-web` | API client、Session 状态机、管理 API client | 当前 auth/administrators 合同、401 generation、CSRF | 业务请求 DTO |
-| `@xcss/admin-shell` / `admin-ui` | 登录、导航、诊断、主题、通知、管理员面板及交互原语 | 共享浏览器与消费者无障碍验收 | 摄像头、录像、事件业务 |
-| `@xcss/web-toolchain` | Vite、strict tsconfig、精确工具链、资源预算和 source map 政策 | `check:foundation`、构建与独立发行验收 | 生产服务 |
+| `@xcss/web/contracts` | auth 路径、Administrator DTO、ErrorEnvelope 类型与严格守卫 | 版本/来源锁定；不可信 JSON 通过守卫；未知字段拒绝 | 摄像头、录像、事件、审计等产品 DTO |
+| `@xcss/web/http-client` | same-origin、Cookie、CSRF、超时、响应上限、Content-Type、错误解析 | unsafe 请求携带当前 CSRF；401 使本地 Session 失效；无跨 origin | 自动重试写操作、大文件下载、业务响应判定 |
+| `@xcss/web/design-tokens` / `web-fonts` | token、scoped reset、Maple 字体 | `data-xcss-scope`、无私有字体覆盖、无 CDN | 业务布局 |
+| `@xcss/web/admin-web` | API client、Session 状态机、管理 API client | 当前 auth/administrators 合同、401 generation、CSRF | 业务请求 DTO |
+| `@xcss/web/admin-shell` / `admin-ui` | 登录、导航、诊断、主题、通知、管理员面板及交互原语 | 共享浏览器与消费者无障碍验收 | 摄像头、录像、事件业务 |
+| `@xcss/web/web-toolchain` | Vite、strict tsconfig、精确工具链、资源预算和 source map 政策 | `check:xcss`、构建与独立发行验收 | 生产服务 |
 
-### 11.2 Foundation Rust crate 的运维边界
+### 11.2 xcss Rust 单体内部模块的运维边界
 
-| crate | 共享能力 | Xcos 保留的产品责任 | 删除后果 |
+| 包内模块 | 共享能力 | Xcos 保留的产品责任 | 删除后果 |
 |---|---|---|---|
-| `xcss-contracts` | Administrator 路径/DTO、跨语言合同类型 | 业务 DTO | Rust/Web 认证合同可能静默漂移 |
-| `xcss-admin-core` / `admin-sqlite` / `admin-axum` | 管理员、固定密码策略、Session、Cookie、CSRF、限流、事务审计与管理路由 | 启动时选择 Profile 并挂载平台 Router | 产品再次拥有第二套认证策略 |
-| `xcss-error` | `ErrorCode`、严格 `ErrorEnvelope` | 业务状态映射和脱敏诊断 | 错误可能泄漏内部结构 |
-| `xcss-schema-identity` / `platform-db` | metadata、当前平台表、fingerprint 和数据库初始化边界 | Xcos 业务 Schema、快照与全局调和租约不变量 | 平台 Schema 发生分叉 |
-| `xcss-server-runtime` / `server-target` | 生命周期、任务监督、健康/诊断与正式 target | 注册业务任务、业务 Router、MediaMTX 伴随进程合同 | 生命周期与运行目标漂移 |
+| `xcss::contracts` | Administrator 路径/DTO、跨语言合同类型 | 业务 DTO | Rust/Web 认证合同可能静默漂移 |
+| `xcss::admin_core` / `admin-sqlite` / `admin-axum` | 管理员、固定密码策略、Session、Cookie、CSRF、限流、事务审计与管理路由 | 启动时选择 Profile 并挂载平台 Router | 产品再次拥有第二套认证策略 |
+| `xcss::error` | `ErrorCode`、严格 `ErrorEnvelope` | 业务状态映射和脱敏诊断 | 错误可能泄漏内部结构 |
+| `xcss::schema_identity` / `platform-db` | metadata、当前平台表、fingerprint 和数据库初始化边界 | Xcos 业务 Schema、快照与全局调和租约不变量 | 平台 Schema 发生分叉 |
+| `xcss::server_runtime` / `server-target` | 生命周期、任务监督、健康/诊断与正式 target | 注册业务任务、业务 Router、MediaMTX 伴随进程合同 | 生命周期与运行目标漂移 |
 
 这些共享包不提供旧合同兼容。升级包版本时同时替换依赖、lockfile、代码消费者、检查和整套发行物，
 不在 Xcos 内加入双读、别名或 fallback。
@@ -312,7 +312,7 @@ Foundation 512 KiB 硬限制且不发布 source map。浏览器验收使用真�
 
 ```bash
 npm ci --prefix web
-web/node_modules/.bin/xcss-build-server --config "$PWD/foundation-web-build.json" --mode development --no-install
+web/node_modules/.bin/xcss-build-server --config "$PWD/xcss-web-build.json" --mode development --no-install
 ```
 
 按当前配置解析器设置实验用数据库、凭据和 MediaMTX 环境，使用 `APP_ENV=development` 和回环绑定，先从stdin读取本地管理员密码执行`init --username admin`，再运行

@@ -12,21 +12,21 @@
 `89d3e59dab120939725a7e3b052cf3cf5887f051c024e0325c3e9494043909e3`；管理员表只有 canonical
 `username`，没有 email/role。空文件、非当前库和漂移库都只读拒绝。
 
-共享 Foundation `xcss-schema-identity 1.0.0` 定义 fingerprint v1 的字节 framing、metadata 五列 DDL/
+共享 xcss `xcss::schema_identity 1.0.0` 定义 fingerprint v1 的字节 framing、metadata 五列 DDL/
 shape 和 exact identity 比较；Xcos 在私有 SQLx 校验代际上复用共享
-`ProductMetadataRow` 后执行验证。SQLite当前WAL/journal代的只读临时副本由Foundation公共snapshot捕获；产品验证精确业务Schema、路径身份和lease。普通运行只接受当前revision1。非当前格式只读拒绝，不改写输入。
+`ProductMetadataRow` 后执行验证。SQLite当前WAL/journal代的只读临时副本由xcss公共snapshot捕获；产品验证精确业务Schema、路径身份和lease。普通运行只接受当前revision1。非当前格式只读拒绝，不改写输入。
 
 Client配对/设备快照是xcos-edge-v1，能力字段必须使用supported/unsupported/unknown；浏览器wire身份为xcos-wire-v1，HTTP路径前缀仍为/api/v1，media JWT为v1。
 
 ## 7.3 Administrator 身份合同
 
 登录 JSON 只接受 `username/password`，Session 只返回 `authenticated/user_id/username/role/csrf_token`。
-Foundation 拥有 username 规范化与跨语言守卫；Rust Schema 保存同一 canonical 形状，React/Vite 管理
+xcss 拥有 username 规范化与跨语言守卫；Rust Schema 保存同一 canonical 形状，React/Vite 管理
 Web 消费同一字段。摄像头 username、媒体 JWT/camera identity 不属于该合同，保持独立数据面语义。
 
 ## 7.4 Authorization envelope
 
-实例授权码使用 Foundation secret envelope 认证加密，AAD 绑定客户端实例 ID。数据库只保存
+实例授权码使用 xcss secret envelope 认证加密，AAD 绑定客户端实例 ID。数据库只保存
 `authorization_code_enc` 和查找用 hash；摄像机 RTSP/ONVIF 凭据只保存在 Client，Server 没有对应列。
 
 ## 7.5 External key

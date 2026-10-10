@@ -146,7 +146,7 @@ else
   npm ci --prefix "$SOURCE_ROOT/web"
   CARGO_TARGET_DIR="$BUILD_TARGET/cargo" \
     "$SOURCE_ROOT/web/node_modules/.bin/xcss-build-server" \
-    --config "$SOURCE_ROOT/foundation-web-build.json" --mode release \
+    --config "$SOURCE_ROOT/xcss-web-build.json" --mode release \
     --no-install --source-revision "$SOURCE_REVISION" >"$TEMPORARY/common-build.log"
   BUILT_APP="$(tail -n 1 "$TEMPORARY/common-build.log")"
   validate_absolute_path "$BUILT_APP" "common builder executable"

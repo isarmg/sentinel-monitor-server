@@ -81,7 +81,7 @@ async fn malformed_large_history_scalar_is_rejected_without_truncation_or_repair
 
 #[tokio::test]
 async fn history_admission_is_held_until_body_drop_and_cancelled_query_completion() {
-    let scope = xcss_server_runtime::WorkScope::new();
+    let scope = xcss::server_runtime::WorkScope::new();
     let mut bodies = Vec::new();
     for _ in 0..4 {
         bodies.push(
@@ -474,7 +474,7 @@ fn test_state(pool: sqlx::SqlitePool) -> AppState {
     let http = reqwest::Client::new();
     let (events, _) = tokio::sync::broadcast::channel(4);
     AppState {
-        scope: xcss_server_runtime::WorkScope::new(),
+        scope: xcss::server_runtime::WorkScope::new(),
         web_directory: None,
         config,
         pool: pool.clone(),
@@ -488,10 +488,10 @@ fn test_state(pool: sqlx::SqlitePool) -> AppState {
         ),
         events,
         reconcile_notify: Arc::new(tokio::sync::Notify::new()),
-        administrator: Arc::new(xcss_admin_core::AdministratorService::new(
-            xcss_admin_sqlite::SqliteAdministratorStore::new(pool),
+        administrator: Arc::new(xcss::admin_core::AdministratorService::new(
+            xcss::admin_sqlite::SqliteAdministratorStore::new(pool),
         )),
-        administrator_origin: xcss_admin_auth::AdministratorOriginMode::LoopbackDevelopmentHttp,
+        administrator_origin: xcss::admin_auth::AdministratorOriginMode::LoopbackDevelopmentHttp,
     }
 }
 

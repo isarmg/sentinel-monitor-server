@@ -1,8 +1,8 @@
-//! Foundation-generated inventory and bytes are part of this executable.
+//! xcss-generated inventory and bytes are part of this executable.
 include!(concat!(env!("OUT_DIR"), "/xcss-web-assets.rs"));
 
 pub fn embedded_contract_sha256() -> anyhow::Result<String> {
-    xcss_web_assets::verify_embedded(ASSETS, MANIFEST, DIGEST)?;
+    xcss::web_assets::verify_embedded(ASSETS, MANIFEST, DIGEST)?;
     Ok(DIGEST.to_owned())
 }
 
@@ -17,7 +17,7 @@ pub(crate) async fn serve(
     let response = if let Some(directory) = state.web_directory.as_deref() {
         directory.response(request.uri().path(), request.method(), request.headers())
     } else {
-        xcss_web_assets::response(
+        xcss::web_assets::response(
             ASSETS,
             request.uri().path(),
             request.method(),

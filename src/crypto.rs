@@ -1,10 +1,10 @@
-//! Xcos-specific credential domain and object binding over Foundation secrets.
+//! Xcos-specific credential domain and object binding over xcss secrets.
 
 use crate::error::{AppError, Result};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
-use xcss_secret::{SecretBytes, SecretKey};
-use xcss_secret_envelope::EnvelopeDomain;
+use xcss::secret::{SecretBytes, SecretKey};
+use xcss::secret_envelope::EnvelopeDomain;
 
 const PRODUCT: &str = "xcos";
 const APPLICATION_VERSION: &str = "1.0.0";
@@ -35,7 +35,7 @@ impl SecretBox {
         client_id: &str,
         plaintext: &str,
     ) -> Result<Vec<u8>> {
-        xcss_secret_envelope::seal::<ClientAuthorizationEnvelope>(
+        xcss::secret_envelope::seal::<ClientAuthorizationEnvelope>(
             &self.master,
             &authorization_binding(client_id),
             &SecretBytes::new(plaintext.as_bytes().to_vec()),
@@ -47,7 +47,7 @@ impl SecretBox {
         if !(64..=MAX_AUTHORIZATION_ENVELOPE_BYTES).contains(&encoded.len()) {
             return Err(malformed_envelope());
         }
-        let plaintext = xcss_secret_envelope::open::<ClientAuthorizationEnvelope>(
+        let plaintext = xcss::secret_envelope::open::<ClientAuthorizationEnvelope>(
             &self.master,
             &authorization_binding(client_id),
             encoded,

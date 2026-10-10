@@ -1,4 +1,4 @@
-import { t } from "@xcss/admin-ui/i18n";
+import { t } from "@xcss/web/admin-ui/i18n";
 import { requireSameOriginMediaUrl, whepResourceUrl } from "./media-url";
 function aborted(): DOMException {
   return new DOMException("Player closed", "AbortError");

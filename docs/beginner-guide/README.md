@@ -49,7 +49,7 @@ IP Camera --RTSP/ONVIF--> MediaMTX --WHEP/HLS--> Caddy --> Browser
 
 ```bash
 npm ci --prefix web
-web/node_modules/.bin/xcss-build-server --config "$PWD/foundation-web-build.json" --mode development --no-install
+web/node_modules/.bin/xcss-build-server --config "$PWD/xcss-web-build.json" --mode development --no-install
 ```
 
 开发启动必须显式设置 `APP_ENV=development` 和回环绑定；默认使用内嵌资源。需要目录热更新时设置
@@ -77,12 +77,12 @@ target/x86_64-unknown-linux-gnu/debug/xcos run
 控制面只有 Administrator：每个成功登录的账户都能访问摄像头、直播、录像、PTZ、事件、实例、审计
 和系统状态。请求精确为 `{username,password}`，Session 精确包含
 `authenticated/user_id/username/role/csrf_token` 五字段；`_xcss_administrators` 表不保存 email 或 `role`，wire 中固定的
-`role:"admin"` 只是 Foundation 身份合同。实例授权码、Client 访问令牌和媒体 JWT
+`role:"admin"` 只是 xcss 身份合同。实例授权码、Client 访问令牌和媒体 JWT
 `actions` 都是数据面凭据或资源范围，不能解释为第二套控制面角色。
 
 ## 5. 实例授权码为什么是 envelope
 
-每个摄像机实例的 36 位小写英文字母数字授权码以 Foundation secret envelope 的认证密文保存。专用
+每个摄像机实例的 36 位小写英文字母数字授权码以 xcss secret envelope 的认证密文保存。专用
 key 从 `CREDENTIALS_KEY` 派生；AAD 绑定授权实例 ID，因此密文不能复制到另一实例。设备
 RTSP/ONVIF URL、用户名和密码只属于 Client，Server Schema 不存储这些字段。
 
@@ -112,11 +112,11 @@ inventory 表或逐文件 Hash 索引。Web 不应直连 9996/9997/9998 管理/�
 
 ## 8. 当前 Schema
 
-数据库只由显式init在空目标中创建。普通run要求主文件存在，并以Foundation当前main/WAL/journal代的只读临时副本验证唯一
+数据库只由显式init在空目标中创建。普通run要求主文件存在，并以xcss当前main/WAL/journal代的只读临时副本验证唯一
 `product_metadata`、实际 `sqlite_schema` 指纹和 reconciler singleton 状态，再打开生产写连接。已有空
 文件、非当前身份、额外列、非法租约或 Schema drift 都只读拒绝，不自动补表/补行。
 
-Schema fingerprint framing、`product_metadata` DDL/列形状和exact-current identity比较来自Foundation `xcss-schema-identity 1.0.0`；稳定副本由公共SQLite模块捕获，Xcos只保留实际业务Schema、授权码和媒体租约不变量。这样多个产品不会复制同一 fingerprint 算法，也不会引入旧 Schema reader。
+Schema fingerprint framing、`product_metadata` DDL/列形状和exact-current identity比较来自xcss `xcss::schema_identity 1.0.0`；稳定副本由公共SQLite模块捕获，Xcos只保留实际业务Schema、授权码和媒体租约不变量。这样多个产品不会复制同一 fingerprint 算法，也不会引入旧 Schema reader。
 
 ## 9. 修改代码的方法
 

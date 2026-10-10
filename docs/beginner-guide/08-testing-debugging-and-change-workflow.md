@@ -2,7 +2,7 @@
 
 ## 8.1 基础门禁
 
-Web 使用仓库 `.node-version` 固定的 Node `26.7.0`，与 Foundation 设计包的 engine 合同一致。
+Web 使用仓库 `.node-version` 固定的 Node `26.7.0`，与 xcss 设计包的 engine 合同一致。
 
 ```bash
 cargo +1.99.0 fmt --all -- --check
@@ -11,7 +11,7 @@ cargo +1.99.0 clippy --locked --all-targets -- -D warnings
 cargo +1.99.0 test --locked
 cd web
 npm ci
-npm run check:foundation
+npm run check:xcss
 npm run typecheck
 npm run build
 cd ../..
@@ -50,7 +50,7 @@ browser 排查。每跨一层保留 operation ID 和受限日志证据。
 UI 不能把网络错误自动解释为“操作失败”。
 
 Web 还必须证明设计边界：`main.tsx` 只从 `@xcss/design-tokens@1.0.0` 导入 token、scoped reset 和
-accessibility，`body` 带 `data-xcss-scope`，而 `styles.css` 保留 Xcos 品牌 token 并映射 Foundation
+accessibility，`body` 带 `data-xcss-scope`，而 `styles.css` 保留 Xcos 品牌 token 并映射 xcss
 语义。不要在 `vendor/` 复制共享 CSS，也不要添加 CDN 或运行时网络 fallback。
 
 ## 8.7 变更联动

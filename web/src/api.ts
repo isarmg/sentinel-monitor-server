@@ -1,16 +1,16 @@
-import { createAdministratorApiClient, type JsonGuard } from "@xcss/admin-web";
-import { ADMIN_AUTH_PATHS } from "@xcss/contracts";
-import { MAX_RESPONSE_BYTES } from "@xcss/http-client";
+import { createAdministratorApiClient, type JsonGuard } from "@xcss/web/admin-web";
+import { ADMIN_AUTH_PATHS } from "@xcss/web/contracts";
+import { MAX_RESPONSE_BYTES } from "@xcss/web/http-client";
 
 import protocolContract from "./protocol-contract.json";
 
 const LOGIN_SUFFIX = "/auth/login";
 if (!ADMIN_AUTH_PATHS.login.endsWith(LOGIN_SUFFIX)) {
-  throw new Error("Foundation 管理登录路径不符合当前合同");
+  throw new Error("xcss 管理登录路径不符合当前合同");
 }
-const foundationApiPrefix = ADMIN_AUTH_PATHS.login.slice(0, -LOGIN_SUFFIX.length);
-if (protocolContract.api_prefix !== foundationApiPrefix) {
-  throw new Error("Xcos 产品协议必须与 Foundation 管理 API 使用同一前缀");
+const xcssApiPrefix = ADMIN_AUTH_PATHS.login.slice(0, -LOGIN_SUFFIX.length);
+if (protocolContract.api_prefix !== xcssApiPrefix) {
+  throw new Error("Xcos 产品协议必须与 xcss 管理 API 使用同一前缀");
 }
 
 export const administratorApi = createAdministratorApiClient();

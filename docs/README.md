@@ -13,3 +13,5 @@
 | 运维 | [operations.md](operations.md) | 构建、bootstrap、配置、锁、doctor和事件响应 |
 
 当前实现说明：[版本 1.0.0](releases/1.0.0.md)。新 Source 正在完成正式发行验收，已发布旧发行记录保留。
+
+公共支撑的职责、单体依赖、平台边界与验证方法见[公共支撑说明](common-support.md)。

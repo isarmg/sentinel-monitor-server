@@ -28,7 +28,7 @@ jobs:
           node --version
           npm --version
           npm ci --prefix web
-          npm run check:foundation --prefix web
+          npm run check:xcss --prefix web
           npm run test:unit --prefix web
           npm run build --prefix web
       - name: Install acceptance browsers
@@ -48,7 +48,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Verify the pinned Foundation product manifest
+      - name: Verify the pinned xcss product manifest
         shell: bash
         run: |
           set -euo pipefail
@@ -78,7 +78,7 @@ jobs:
       - name: Build current Web compilation inputs
         run: |
           npm ci --prefix web
-          web/node_modules/.bin/xcss-build-server --config "$PWD/foundation-web-build.json" --mode development --web-only --no-install
+          web/node_modules/.bin/xcss-build-server --config "$PWD/xcss-web-build.json" --mode development --web-only --no-install
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Check all targets

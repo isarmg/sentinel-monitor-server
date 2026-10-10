@@ -1,19 +1,19 @@
-import { startAfterFonts } from "@xcss/web-fonts";
-import { DateRangeField, type CalendarDateRange } from "@xcss/admin-ui/date-range";
-import "@xcss/admin-ui/date-range.css";
+import { startAfterFonts } from "@xcss/web/web-fonts";
+import { DateRangeField, type CalendarDateRange } from "@xcss/web/admin-ui/date-range";
+import "@xcss/web/admin-ui/date-range.css";
 import { displayLabel } from "./display-labels";
-import { t, getLocale } from "@xcss/admin-ui/i18n";
+import { t, getLocale } from "@xcss/web/admin-ui/i18n";
 import { StrictMode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { createXcssAdminApplication, errorRequestId, useAdminApplication, InstancePageNavigation, InstanceHeaderActions, type InstancePage, AccountPage } from "@xcss/admin-shell";
-import { Button, ConfirmDangerDialog, Dialog, EmptyState, ErrorState, FormField, LoadingState, Select, Table, TextField } from "@xcss/admin-ui";
+import { createXcssAdminApplication, errorRequestId, useAdminApplication, InstancePageNavigation, InstanceHeaderActions, type InstancePage, AccountPage } from "@xcss/web/admin-shell";
+import { Button, ConfirmDangerDialog, Dialog, EmptyState, ErrorState, FormField, LoadingState, Select, Table, TextField } from "@xcss/web/admin-ui";
 
-import "@xcss/design-tokens/tokens.css";
-import "@xcss/design-tokens/tokens.dark.css";
-import "@xcss/web-fonts/fonts.css";
-import "@xcss/admin-ui/styles.css";
-import "@xcss/design-tokens/reset.css";
-import "@xcss/design-tokens/accessibility.css";
+import "@xcss/web/design-tokens/tokens.css";
+import "@xcss/web/design-tokens/tokens.dark.css";
+import "@xcss/web/web-fonts/fonts.css";
+import "@xcss/web/admin-ui/styles.css";
+import "@xcss/web/design-tokens/reset.css";
+import "@xcss/web/design-tokens/accessibility.css";
 import "./styles.css";
 
 import {

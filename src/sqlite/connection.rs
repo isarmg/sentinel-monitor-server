@@ -23,13 +23,13 @@ use std::{
 
 const MAX_CONNECTIONS: u32 = 10;
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
-const CONNECTION_LIMITS: xcss_sqlite::ConnectionLimits =
-    xcss_sqlite::ConnectionLimits::new(1024 * 1024)
+const CONNECTION_LIMITS: xcss::sqlite::ConnectionLimits =
+    xcss::sqlite::ConnectionLimits::new(1024 * 1024)
         .with_max_sql_bytes(256 * 1024)
         .with_max_vm_operations(100_000);
 
 async fn apply_connection_limits(connection: &mut SqliteConnection) -> Result<(), sqlx::Error> {
-    xcss_sqlite::apply_connection_limits(connection, CONNECTION_LIMITS)
+    xcss::sqlite::apply_connection_limits(connection, CONNECTION_LIMITS)
         .await
         .map(|_| ())
         .map_err(|error| sqlx::Error::Configuration(Box::new(error)))
@@ -105,7 +105,7 @@ async fn open_pool_with_limit(database_url: &str, connections: u32) -> anyhow::R
         .connect_with(options)
         .await?;
     if let Err(error) =
-        xcss_sqlite::require_pool_current_schema(&pool, &current_schema_identity()?).await
+        xcss::sqlite::require_pool_current_schema(&pool, &current_schema_identity()?).await
     {
         pool.close().await;
         return Err(error.into());
@@ -124,19 +124,19 @@ pub(crate) fn validate_current_database(path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn validated_snapshot(path: &Path) -> anyhow::Result<xcss_server_cli::ValidationSnapshot> {
+fn validated_snapshot(path: &Path) -> anyhow::Result<xcss::server_cli::ValidationSnapshot> {
     require_secure_database_file(path)?;
     // The same main/WAL/journal byte budget bounds accepted persistent state
     // and its validation copy; a default 4 GiB snapshot would reject otherwise
     // admissible state under this product's 8 GiB storage threshold.
-    let snapshot = xcss_server_cli::ValidationSnapshot::capture_with_limits(
+    let snapshot = xcss::server_cli::ValidationSnapshot::capture_with_limits(
         path,
-        xcss_server_cli::SnapshotLimits {
+        xcss::server_cli::SnapshotLimits {
             max_total_bytes: crate::history::Limits::CURRENT.bytes,
             ..Default::default()
         },
     )?;
-    xcss_sqlite::block_on_sqlite_connection(async {
+    xcss::sqlite::block_on_sqlite_connection(async {
         // Recovery is allowed only on this held private copy, never the source.
         let mut connection = SqliteConnectOptions::new()
             .filename(snapshot.database_path())
@@ -162,7 +162,7 @@ fn validated_snapshot(path: &Path) -> anyhow::Result<xcss_server_cli::Validation
 
 pub(crate) async fn current_validation_snapshot(
     path: &Path,
-) -> anyhow::Result<xcss_server_cli::ValidationSnapshotPool> {
+) -> anyhow::Result<xcss::server_cli::ValidationSnapshotPool> {
     Ok(validated_snapshot(path)?
         .into_pool_with_connection_limits(CONNECTION_LIMITS)
         .await?)
@@ -202,7 +202,7 @@ pub(crate) fn initialize_current_database(path: &Path) -> anyhow::Result<()> {
         .with_context(|| format!("create current SQLite database {}", path.display()))?;
     reserved.sync_all()?;
     drop(reserved);
-    let result = xcss_sqlite::block_on_sqlite_connection(async {
+    let result = xcss::sqlite::block_on_sqlite_connection(async {
         let mut connection = connect_existing(path, false).await?;
         let result=async {
             let mut transaction=connection.begin_with("BEGIN IMMEDIATE").await?;
@@ -212,7 +212,7 @@ pub(crate) fn initialize_current_database(path: &Path) -> anyhow::Result<()> {
                     .bind(Utc::now().timestamp_micros()).execute(&mut *transaction).await?;
                 sqlx::query("INSERT INTO media_reconciler_leases(singleton,updated_at) VALUES(1,'1970-01-01T00:00:00+00:00')")
                     .execute(&mut *transaction).await?;
-                let actual=xcss_sqlite::schema_fingerprint(&mut *transaction).await?;
+                let actual=xcss::sqlite::schema_fingerprint(&mut *transaction).await?;
                 current_schema_identity()?.verify_fingerprint(&actual)?;
                 sqlx::query("INSERT INTO product_metadata(singleton,application,application_version,schema_revision,schema_sha256) VALUES(1,?,?,?,?)")
                     .bind(APPLICATION).bind("xcos-db-v1").bind(CURRENT_SCHEMA_REVISION).bind(CURRENT_SCHEMA_SHA256)
@@ -242,10 +242,10 @@ pub(crate) fn initialize_current_database(path: &Path) -> anyhow::Result<()> {
 }
 
 async fn validate_current_connection(connection: &mut SqliteConnection) -> anyhow::Result<()> {
-    match xcss_sqlite::require_current_schema(connection, &current_schema_identity()?).await {
+    match xcss::sqlite::require_current_schema(connection, &current_schema_identity()?).await {
         Ok(_) => {}
         // Preserve the CLI's typed contract rejection across the shared adapter.
-        Err(xcss_sqlite::Error::SchemaIdentity(error)) => return Err(error.into()),
+        Err(xcss::sqlite::Error::SchemaIdentity(error)) => return Err(error.into()),
         Err(error) => return Err(error.into()),
     }
     validate_global_lease_table(connection).await?;

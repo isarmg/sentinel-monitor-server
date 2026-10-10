@@ -14,7 +14,7 @@ use sha2::{Digest, Sha256};
 use sqlx::{Executor, Sqlite, SqlitePool, Transaction};
 use std::time::Duration as StdDuration;
 use uuid::Uuid;
-use xcss_operations::{
+use xcss::operations::{
     EnqueueOutcome, NewOperation, Operation, OperationState, SqliteOperationStore, StoredOperation,
     Transition,
 };
@@ -637,12 +637,12 @@ fn operation_owner(operation: &MediaOperationView) -> Result<&str> {
     }
 }
 
-fn operation_error(error: xcss_operations::Error) -> AppError {
-    if matches!(error, xcss_operations::Error::ConcurrentModification) {
+fn operation_error(error: xcss::operations::Error) -> AppError {
+    if matches!(error, xcss::operations::Error::ConcurrentModification) {
         return AppError::Conflict("媒体操作租约已由其他执行器接管".into());
     }
-    tracing::error!(error = %error, "Foundation rejected media operation state transition");
-    AppError::Internal("媒体操作状态不符合当前 Foundation 合同".into())
+    tracing::error!(error = %error, "xcss rejected media operation state transition");
+    AppError::Internal("媒体操作状态不符合当前 xcss 合同".into())
 }
 
 async fn enqueue_operation_in(
@@ -817,7 +817,7 @@ async fn apply_claimed_operation(state: &AppState, operation: MediaOperationView
             )
             .await
         {
-            Ok(_) | Err(xcss_operations::Error::ConcurrentModification) => {}
+            Ok(_) | Err(xcss::operations::Error::ConcurrentModification) => {}
             Err(error) => return Err(operation_error(error)),
         }
     }
@@ -1325,7 +1325,7 @@ async fn ensure_drift_operation(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use xcss_admin_core::AdministratorStore as _;
+    use xcss::admin_core::AdministratorStore as _;
 
     async fn lease_test_database() -> (tempfile::TempDir, SqlitePool, String, String) {
         let temporary = tempfile::tempdir().unwrap();
@@ -1338,8 +1338,8 @@ mod tests {
         let now_micros = now.timestamp_micros();
         let camera = Uuid::new_v4();
         let operation = Uuid::new_v4().to_string();
-        let administrator = xcss_admin_core::AdministratorService::new(
-            xcss_admin_sqlite::SqliteAdministratorStore::new(pool.clone()),
+        let administrator = xcss::admin_core::AdministratorService::new(
+            xcss::admin_sqlite::SqliteAdministratorStore::new(pool.clone()),
         );
         assert!(administrator
             .bootstrap_administrator("lease-admin", "lease-admin-password", now_micros as u64)
@@ -1355,7 +1355,7 @@ mod tests {
             .to_string();
         assert!(
             Uuid::parse_str(&user).is_err(),
-            "Foundation administrator IDs are opaque, not product UUIDs"
+            "xcss administrator IDs are opaque, not product UUIDs"
         );
         sqlx::query(
             "INSERT INTO xcocs (id, name, authorization_code_enc, authorization_code_hash, \
@@ -1727,9 +1727,9 @@ mod tests {
 
         // This lower-level lease test intentionally has two owners. Production
         // startup acquires the common instance lock before opening any pool.
-        let second = xcss_sqlite::open_existing(
+        let second = xcss::sqlite::open_existing(
             crate::sqlite::database_path(&database_url).unwrap(),
-            xcss_sqlite::PoolOptions::new(2),
+            xcss::sqlite::PoolOptions::new(2),
         )
         .await
         .unwrap();

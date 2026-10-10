@@ -45,3 +45,5 @@ cargo +1.99.0 test --locked --all-features
 许可与第三方组件信息以发行包内的许可证清单为准。
 
 当前发布版本：**1.0.0**。参见 [1.0.0 发布说明](docs/releases/1.0.0.md)和[项目命名](docs/naming.md)。
+
+公共支撑的职责、单体依赖、平台边界与验证方法见[公共支撑说明](docs/common-support.md)。

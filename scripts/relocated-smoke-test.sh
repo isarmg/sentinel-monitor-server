@@ -36,7 +36,7 @@ if [[ -n "${XCOS_SMOKE_UNBOUND_BINARY:-}" ]]; then
 else
   npm ci --prefix "$REPOSITORY_ROOT/web" >/dev/null
   CARGO_PROFILE_DEV_DEBUG=0 "$REPOSITORY_ROOT/web/node_modules/.bin/xcss-build-server" \
-    --config "$REPOSITORY_ROOT/foundation-web-build.json" --mode development \
+    --config "$REPOSITORY_ROOT/xcss-web-build.json" --mode development \
     --no-install --dist "$WEB_ROOT" >"$TEST_ROOT/unified-build.log"
   # The common entry reports Cargo's actual executable path as its final output.
   BUILT_APP="$(tail -n 1 "$TEST_ROOT/unified-build.log")"
@@ -179,7 +179,7 @@ if [[ -n "${XCOS_SMOKE_BOUND_BINARY:-}" ]]; then
 else
   BOUND_REVISION="$(git -C "$REPOSITORY_ROOT" rev-parse HEAD)"
   "$REPOSITORY_ROOT/web/node_modules/.bin/xcss-build-server" \
-    --config "$REPOSITORY_ROOT/foundation-web-build.json" --mode release \
+    --config "$REPOSITORY_ROOT/xcss-web-build.json" --mode release \
     --no-install --rust-only --source-revision "$BOUND_REVISION" >"$TEST_ROOT/bound-build.log"
   BUILT_BOUND_APP="$(tail -n 1 "$TEST_ROOT/bound-build.log")"
   [[ "$BUILT_BOUND_APP" == /* && -f "$BUILT_BOUND_APP" && -x "$BUILT_BOUND_APP" && ! -L "$BUILT_BOUND_APP" ]] ||

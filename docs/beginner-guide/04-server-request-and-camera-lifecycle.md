@@ -8,7 +8,7 @@ Server 在监听前验证不可变发行树、Web fingerprint、数据库路径�
 ## 4.2 登录链路
 
 ```text
-{username,password} exact request -> Foundation username normalization
+{username,password} exact request -> xcss username normalization
  -> source/canonical-account/global admission -> bounded Argon2
  -> Session digest + CSRF -> Secure Cookie
 ```

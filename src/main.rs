@@ -21,7 +21,7 @@ mod app;
 mod cli;
 
 pub use app::AppState;
-pub(crate) use xcss_server_cli::CliError as CliFailure;
+pub(crate) use xcss::server_cli::CliError as CliFailure;
 
 #[tokio::main]
 async fn main() -> std::process::ExitCode {

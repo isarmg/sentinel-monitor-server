@@ -31,7 +31,7 @@
 
 Xcos 控制面只有 Administrator 一种身份。`_xcss_administrators` 表没有 `role` 列，登录成功的 wire response 固定
 `role:"admin"`，账户名称为 canonical `username`，业务外键引用不透明的 `administrator_id`。
-Foundation 提供管理员创建、凭据管理与停用能力。摄像头 RTSP/ONVIF 凭据只保存在 Client；实例授权码和
+xcss 提供管理员创建、凭据管理与停用能力。摄像头 RTSP/ONVIF 凭据只保存在 Client；实例授权码和
 媒体 JWT `actions` 属于数据面授权，不代表控制面角色。相同 username 文本不会把摄像头身份与 Administrator 关联。
 
 ### 1.4 删除闭包
@@ -45,13 +45,13 @@ Foundation 提供管理员创建、凭据管理与停用能力。摄像头 RTSP/
 | ID | 当前功能/特性与真实行为 | 实现/代码锚点 | 分类 | 复杂度 | 删除后的确定后果 | 最低验证/边界 |
 |---|---|---|---|---|---|---|
 | SEN-P-001 | 浏览器摄像头监控产品：Rust 控制面管理摄像头和授权，MediaMTX 承担 RTSP、WHEP、HLS 与录像 | `src/routes/`、`src/mediamtx.rs`、`config/mediamtx.yml` | 核心 | 高 | 删除任一主组件都会失去控制面或媒体面，项目不再完整 | 摄像头添加、直播、录像、重启链路 |
-| SEN-P-002 | Server 开发、测试、正式编译目标唯一为 `x86_64-unknown-linux-gnu` | `xcss-server-target`、`build.rs`、`rust-toolchain.toml` | 保障 | 高 | 放宽后会产生未经验证的平台二进制，且可能与 companion 平台失配 | 非目标编译必须失败；目标常量与 Cargo target 一致 |
+| SEN-P-002 | Server 开发、测试、正式编译目标唯一为 `x86_64-unknown-linux-gnu` | `xcss::server_target`、`build.rs`、`rust-toolchain.toml` | 保障 | 高 | 放宽后会产生未经验证的平台二进制，且可能与 companion 平台失配 | 非目标编译必须失败；目标常量与 Cargo target 一致 |
 | SEN-P-003 | 正式运行主机唯一为 Linux AMD64；原生命令再次核对 `uname` | `deploy/common.sh`、`scripts/build.sh`、`deploy/xcosctl` | 保障 | 中 | 错误架构可能走到状态创建或 companion 启动后才失败 | Linux x86_64 正例；aarch64/非 Linux 负例 |
 | SEN-P-004 | MediaMTX companion 固定为 `v1.20.0 linux_amd64` 和精确 SHA-256 | `config/mediamtx.lock`、`scripts/build.sh`、`deploy/xcosctl start` | 保障 | 高 | API、配置和媒体行为不可复现，发行身份失去意义 | version 输出、platform、binary SHA 三者同时匹配 |
 | SEN-P-005 | 控制面和媒体面分离；Rust 不代理 RTSP 输入，也不转码视频 | `src/mediamtx.rs`、`deploy/Caddyfile` | 核心 | 高 | 把媒体搬入 Rust 会重写容量、协议和攻击面；删 companion 则无直播/录像 | Rust 路由不存在 RTSP 转发；MediaMTX path 实测 |
 | SEN-P-006 | 普通运行只接受当前合同并验证当前状态身份 | `src/main.rs` CLI、`src/sqlite/` | 保障 | 高 | 加入代际 reader 会长期扩大状态和测试矩阵 | init/run/config validate/status/help/version核心命令和只读state-contract；普通运行拒绝非当前库，不提供历史转换入口 |
 | SEN-P-007 | Server 端 React 19 + TypeScript strict + Vite 8 控制台位于 `web/` | `web/package.json`、`web/src/main.tsx` | 建议保留 | 高 | API 和媒体能力仍在，但没有内置可操作控制台 | typecheck、Vite build、发行静态树验证 |
-| SEN-P-008 | Server Rust与八个Web包候选以新Foundation1.0.0完整revision、URL及真实tarball integrity受控；公共库已正式发布，产品本轮验收和发行状态单独记录 | Cargo、八个 `@xcss/*` 依赖、manifest/lock | 保障 | 高 | 平台行为分叉；独立构建通过不代表主分支改动已纳入产品 Release | [独立 CI 与消费者证据](https://github.com/isarmg/xcss/blob/main/consumers/axum-0.7.0-evidence.md)；后续更新仍须复验锁图和发行身份 |
+| SEN-P-008 | Server Rust与单个 @xcss/web 包候选以xcss 1.0.0完整revision、URL及真实tarball integrity受控；公共库已正式发布，产品本轮验收和发行状态单独记录 | Cargo、一个 `@xcss/web` 依赖、manifest/lock | 保障 | 高 | 平台行为分叉；独立构建通过不代表主分支改动已纳入产品 Release | [独立 CI 与消费者证据](https://github.com/isarmg/xcss/blob/main/consumers/axum-0.7.0-evidence.md)；后续更新仍须复验锁图和发行身份 |
 | SEN-P-009 | `config/` 只存可提交样例和受审 companion 合同；真实 Secret 不进仓库 | `config/xcos.env.example`、`.gitignore` | 开发运维 | 低 | Secret 容易误提交，或部署字段缺少审查入口 | Secret 扫描；样例字段与 parser 对照 |
 | SEN-P-010 | 原生发行树提供单一xcosctl生命周期入口，仓库另给完整systemd部署示例；两者不能同时管理相同进程和数据 | `deploy/xcosctl`、`deploy/.*-action.sh`、`deploy/*.service` | 开发运维 | 中 | 双重进程管理可能启动半套服务或竞争端口 | xcosctl临时根测试通过；systemd示例尚未在真实主机执行 |
 
@@ -78,25 +78,25 @@ Foundation 提供管理员创建、凭据管理与停用能力。摄像头 RTSP/
 
 | ID | 当前功能/特性与真实行为 | 实现/代码锚点 | 分类 | 复杂度 | 删除后的确定后果 | 最低验证/边界 |
 |---|---|---|---|---|---|---|
-| SEN-A-001 | 所有控制面账户都是 Administrator；平台表不持久化角色；管理员 ID 为不透明 TEXT，不要求 UUID | Foundation admin-core/admin-sqlite、生成 Schema | 核心 | 高 | 失去认证或业务外键错误绑定 | 当前 DDL、真实 bootstrap ID、业务外键回归 |
-| SEN-A-002 | 三个认证路径精确为 `/api/v1/auth/login`、`/api/v1/auth/session`、`/api/v1/auth/logout` | Foundation constants、`src/routes/` | 保障 | 中 | 路径漂移会让共享客户端失效，别名会形成额外攻击面 | 三路径方法矩阵；其他形状 404/405 |
-| SEN-A-003 | 登录 body 精确为 `{username,password}`，未知字段与已删除的 email 字段由 DTO 拒绝；Session 精确为 `{authenticated,user_id,username,role:"admin",csrf_token}` | `AdministratorLoginRequest`、`AdministratorSession`、Axum `Json` | 保障 | 低 | 歧义输入可能在 Server、Foundation 和 Web 产生不同解释 | 缺失、额外、类型错误、超限 body、Session exact keys |
-| SEN-A-004 | username 使用 Foundation 唯一规则：candidate 1..64 bytes printable ASCII，经 trim ASCII/lowercase 后 canonical 必须为 3..64 bytes、首尾字母数字、字符仅 `[a-z0-9._-]`；Schema 保存同一 canonical 形状 | `normalize_administrator_username`、`require_canonical_administrator_username`、`current_schema.sql` | 保障 | 中 | 同一管理员可用变体绕过唯一约束/限流，或跨产品身份语义不一致 | 大写/首尾空白正例；`@`、Unicode、内部空白、控制字符、首尾分隔符负例 |
-| SEN-A-005 | 密码只接受 Foundation 当前策略和精确 Argon2id hash 参数 | `xcss-admin-auth`、`src/auth.rs` | 保障 | 高 | 放宽 hash 会形成多策略验证分支；弱 hash 降低离线攻击成本 | 当前 PHC 正例；参数、版本、salt/output 偏差拒绝 |
-| SEN-A-006 | 未知账户使用当前 dummy hash，减少账户枚举时序差异 | Foundation AdministratorService | 保障 | 中 | 未知 username 明显更快返回 | 已知错误密码与未知账户成本 |
-| SEN-A-007 | 登录按来源 IP 与 canonical username 分别限流，全局 bucket 有界 | Foundation AdministratorService | 保障 | 高 | 暴力猜测或耗尽认证资源 | 规范化、窗口恢复、有界容量、429 |
-| SEN-A-008 | Argon2 计算使用共享 semaphore 和等待预算 | Foundation AdministratorService | 保障 | 高 | blocking worker 耗尽 | 许可上限、超时、失败释放 |
-| SEN-A-009 | Session token 为 32 随机字节，平台库仅保存 SHA-256 digest | Foundation _xcss_admin_sessions | 保障 | 高 | 明文库可转为活跃登录凭据 | token/digest 形状、无明文 |
-| SEN-A-010 | Session 具有固定 idle/absolute TTL，平台节流刷新 last_seen | Foundation authenticate_session | 保障 | 高 | 会话永久存活或写入过密 | 过期、刷新预算、CSRF 比较更新、时间不倒退 |
-| SEN-A-011 | 改密/停用增加 session_version，并原子撤销该账户全部 Session | Foundation manage_administrator | 保障 | 高 | 旧会话继续控制设备 | 改密、停用、审计回滚、失效 Cookie |
-| SEN-A-012 | 生产 Cookie 为 __Host-xcss-xcos-session，Secure/HttpOnly/SameSite=Strict/Path=/ | Foundation admin-core/admin-axum | 保障 | 低 | 窃取与跨站风险扩大 | Set-Cookie 精确属性、开发 Cookie |
-| SEN-A-013 | logout 撤销 Session、提交平台安全审计并过期 Cookie | Foundation AdministratorService/admin-axum | 建议保留 | 低 | 无法主动结束会话 | 注销后 401、Cookie 清理 |
-| SEN-A-014 | 恢复 Session 以 CAS 轮换 CSRF 摘要，迟到的 restore/touch 不能恢复旧摘要 | Foundation rotate_session_csrf | 保障 | 高 | CSRF 轮换可被并发请求撤销 | SQLite/Static CAS、旧/新摘要、错误映射 |
-| SEN-A-015 | unsafe 请求要求单个 `X-CSRF-Token` 且 constant-time 比较 digest | `enforce_browser_security`、Foundation helper | 保障 | 高 | 已登录浏览器可能被跨站触发控制动作 | 缺失、重复、逗号合并、错误、正确 token |
+| SEN-A-001 | 所有控制面账户都是 Administrator；平台表不持久化角色；管理员 ID 为不透明 TEXT，不要求 UUID | xcss admin-core/admin-sqlite、生成 Schema | 核心 | 高 | 失去认证或业务外键错误绑定 | 当前 DDL、真实 bootstrap ID、业务外键回归 |
+| SEN-A-002 | 三个认证路径精确为 `/api/v1/auth/login`、`/api/v1/auth/session`、`/api/v1/auth/logout` | xcss constants、`src/routes/` | 保障 | 中 | 路径漂移会让共享客户端失效，别名会形成额外攻击面 | 三路径方法矩阵；其他形状 404/405 |
+| SEN-A-003 | 登录 body 精确为 `{username,password}`，未知字段与已删除的 email 字段由 DTO 拒绝；Session 精确为 `{authenticated,user_id,username,role:"admin",csrf_token}` | `AdministratorLoginRequest`、`AdministratorSession`、Axum `Json` | 保障 | 低 | 歧义输入可能在 Server、xcss 和 Web 产生不同解释 | 缺失、额外、类型错误、超限 body、Session exact keys |
+| SEN-A-004 | username 使用 xcss 唯一规则：candidate 1..64 bytes printable ASCII，经 trim ASCII/lowercase 后 canonical 必须为 3..64 bytes、首尾字母数字、字符仅 `[a-z0-9._-]`；Schema 保存同一 canonical 形状 | `normalize_administrator_username`、`require_canonical_administrator_username`、`current_schema.sql` | 保障 | 中 | 同一管理员可用变体绕过唯一约束/限流，或跨产品身份语义不一致 | 大写/首尾空白正例；`@`、Unicode、内部空白、控制字符、首尾分隔符负例 |
+| SEN-A-005 | 密码只接受 xcss 当前策略和精确 Argon2id hash 参数 | `xcss::admin_auth`、`src/auth.rs` | 保障 | 高 | 放宽 hash 会形成多策略验证分支；弱 hash 降低离线攻击成本 | 当前 PHC 正例；参数、版本、salt/output 偏差拒绝 |
+| SEN-A-006 | 未知账户使用当前 dummy hash，减少账户枚举时序差异 | xcss AdministratorService | 保障 | 中 | 未知 username 明显更快返回 | 已知错误密码与未知账户成本 |
+| SEN-A-007 | 登录按来源 IP 与 canonical username 分别限流，全局 bucket 有界 | xcss AdministratorService | 保障 | 高 | 暴力猜测或耗尽认证资源 | 规范化、窗口恢复、有界容量、429 |
+| SEN-A-008 | Argon2 计算使用共享 semaphore 和等待预算 | xcss AdministratorService | 保障 | 高 | blocking worker 耗尽 | 许可上限、超时、失败释放 |
+| SEN-A-009 | Session token 为 32 随机字节，平台库仅保存 SHA-256 digest | xcss _xcss_admin_sessions | 保障 | 高 | 明文库可转为活跃登录凭据 | token/digest 形状、无明文 |
+| SEN-A-010 | Session 具有固定 idle/absolute TTL，平台节流刷新 last_seen | xcss authenticate_session | 保障 | 高 | 会话永久存活或写入过密 | 过期、刷新预算、CSRF 比较更新、时间不倒退 |
+| SEN-A-011 | 改密/停用增加 session_version，并原子撤销该账户全部 Session | xcss manage_administrator | 保障 | 高 | 旧会话继续控制设备 | 改密、停用、审计回滚、失效 Cookie |
+| SEN-A-012 | 生产 Cookie 为 __Host-xcss-xcos-session，Secure/HttpOnly/SameSite=Strict/Path=/ | xcss admin-core/admin-axum | 保障 | 低 | 窃取与跨站风险扩大 | Set-Cookie 精确属性、开发 Cookie |
+| SEN-A-013 | logout 撤销 Session、提交平台安全审计并过期 Cookie | xcss AdministratorService/admin-axum | 建议保留 | 低 | 无法主动结束会话 | 注销后 401、Cookie 清理 |
+| SEN-A-014 | 恢复 Session 以 CAS 轮换 CSRF 摘要，迟到的 restore/touch 不能恢复旧摘要 | xcss rotate_session_csrf | 保障 | 高 | CSRF 轮换可被并发请求撤销 | SQLite/Static CAS、旧/新摘要、错误映射 |
+| SEN-A-015 | unsafe 请求要求单个 `X-CSRF-Token` 且 constant-time 比较 digest | `enforce_browser_security`、xcss helper | 保障 | 高 | 已登录浏览器可能被跨站触发控制动作 | 缺失、重复、逗号合并、错误、正确 token |
 | SEN-A-016 | 浏览器请求要求严格同源 Origin/Host/URI authority 与 `Sec-Fetch-Site: same-origin` | `require_administrator_same_origin`、`src/auth.rs` | 保障 | 高 | 代理歧义或跨站请求可能绕过 CSRF 边界 | HTTP/1 Host、HTTP/2 authority、重复头、cross-site |
-| SEN-A-017 | 认证、业务和路由 rejection 使用 Foundation `ErrorEnvelope` | `src/error.rs`、`xcss-error` | 保障 | 中 | Web 无法稳定按 code/retryable 处理，内部错误可能泄漏 | 400/401/403/404/409/429/500 exact envelope |
-| SEN-A-018 | Foundation 管理接口支持创建、列表、改密和停用；无物理删除、改名或重新启用；最后一个 active 账户不能停用 | /api/v1/platform/administrators、事务内授权 | 保障 | 高 | 无账号可登录或授权快照竞态 | 并发相互停用、过期会话、CSRF 轮换 |
-| SEN-A-019 | 管理员写入与安全审计同事务；密码/停用包含会话撤销审计；成功登录与 Session 创建审计也原子提交 | Foundation admin-sqlite | 保障 | 高 | 状态与审计分叉 | 审计故障回滚、actor/subject/request ID，无凭据泄漏 |
+| SEN-A-017 | 认证、业务和路由 rejection 使用 xcss `ErrorEnvelope` | `src/error.rs`、`xcss::error` | 保障 | 中 | Web 无法稳定按 code/retryable 处理，内部错误可能泄漏 | 400/401/403/404/409/429/500 exact envelope |
+| SEN-A-018 | xcss 管理接口支持创建、列表、改密和停用；无物理删除、改名或重新启用；最后一个 active 账户不能停用 | /api/v1/platform/administrators、事务内授权 | 保障 | 高 | 无账号可登录或授权快照竞态 | 并发相互停用、过期会话、CSRF 轮换 |
+| SEN-A-019 | 管理员写入与安全审计同事务；密码/停用包含会话撤销审计；成功登录与 Session 创建审计也原子提交 | xcss admin-sqlite | 保障 | 高 | 状态与审计分叉 | 审计故障回滚、actor/subject/request ID，无凭据泄漏 |
 
 ## 5. 摄像机实例与客户端边界
 
@@ -160,27 +160,27 @@ Foundation 提供管理员创建、凭据管理与停用能力。摄像头 RTSP/
 | SEN-E-004 | 事件确认记录时间和 Administrator ID | `ack_event`、`acknowledged_*` | 建议保留 | 中 | 告警无法形成最小人工闭环 | 不存在 ID、重复确认、CSRF、账号删除后的 FK |
 | SEN-E-005 | SSE 只作实时通知，SQLite 是事实源；lagged 时发送 `resync-required` 后断开 | `event_stream`、broadcast channel | 保障 | 高 | 静默跳过会让页面误以为事件完整；删 SSE 则只能轮询 | 正常事件、lag、关闭、重新全量查询 |
 | SEN-E-006 | 审计表记录用户、动作、实体、细节和时间；查询最多 500 条 | `audit_logs`、`list_audit` | 建议保留 | 中 | 敏感变更追溯能力下降 | client create/pair/rotate/revoke/delete、PTZ queue、login；limit clamp |
-| SEN-E-007 | 实例持久变更审计与业务同事务，PTZ 排队的产品审计为 best-effort；管理员登录审计由 Foundation 同事务提交 | `write_audit_in`、`write_audit`、Foundation admin-sqlite | 保障 | 高 | 若把两类语义混同，运维会错误承诺审计不丢 | DB 故障注入；产品与平台审计语义分别说明 |
-| SEN-E-008 | 公共operations audit outbox与后台投递任务以事件ID幂等物化审计 | Foundation xcss-operations、operation-audit监督任务 | 核心 | 高 | 审计提交/确认同事务，投递失败保留积压并表达降级，不重放业务动作 | 文档、Schema 和代码搜索一致 |
+| SEN-E-007 | 实例持久变更审计与业务同事务，PTZ 排队的产品审计为 best-effort；管理员登录审计由 xcss 同事务提交 | `write_audit_in`、`write_audit`、xcss admin-sqlite | 保障 | 高 | 若把两类语义混同，运维会错误承诺审计不丢 | DB 故障注入；产品与平台审计语义分别说明 |
+| SEN-E-008 | 公共operations audit outbox与后台投递任务以事件ID幂等物化审计 | xcss xcss::operations、operation-audit监督任务 | 核心 | 高 | 审计提交/确认同事务，投递失败保留积压并表达降级，不重放业务动作 | 文档、Schema 和代码搜索一致 |
 | SEN-E-009 | system status 汇总数据库、MediaMTX 与已配置服务器录像数；实例总数和在线数由实例列表统一计算 | `/system/status` | 建议保留 | 低 | 控制台缺少一页式运行概况 | companion 不可达、坏 credential、空设备 |
 
 ## 9. React/Vite 管理 Web
 
 | ID | 当前功能/特性与真实行为 | 实现/代码锚点 | 分类 | 复杂度 | 删除后的确定后果 | 最低验证/边界 |
 |---|---|---|---|---|---|---|
-| SEN-W-001 | 共享 Shell 负责登录、恢复、退出、导航、主题、诊断、通知和安全错误；产品只传身份和业务页面 | createXcssAdminApplication | 保障 | 高 | 产品复制平台状态机 | Foundation 10 项浏览器验收及消费者浏览器回归 |
-| SEN-W-002 | 页面只在内存持有 Session/CSRF；Cookie 由浏览器 HttpOnly 管理 | `@xcss/admin-web`、`@xcss/http-client` | 保障 | 高 | 把 Secret 放 local/sessionStorage 会扩大 XSS 泄漏 | storage 扫描、刷新、401 清理 |
+| SEN-W-001 | 共享 Shell 负责登录、恢复、退出、导航、主题、诊断、通知和安全错误；产品只传身份和业务页面 | createXcssAdminApplication | 保障 | 高 | 产品复制平台状态机 | xcss 10 项浏览器验收及消费者浏览器回归 |
+| SEN-W-002 | 页面只在内存持有 Session/CSRF；Cookie 由浏览器 HttpOnly 管理 | `@xcss/web/admin-web`、`@xcss/web/http-client` | 保障 | 高 | 把 Secret 放 local/sessionStorage 会扩大 XSS 泄漏 | storage 扫描、刷新、401 清理 |
 | SEN-W-003 | 所有业务响应经过 TypeScript runtime guard 检查必需字段/类型，不只依赖静态类型 | `web/src/api.ts` | 保障 | 高 | 异常或漂移 JSON 会在组件深处被错误使用 | 缺失/错误类型、数组成员；产品 guard 当前容忍额外响应字段 |
 | SEN-W-004 | Camera 页面支持搜索、分页、添加、编辑、删除和卡片直播；授权实例列表独立地按账户名一次返回全部记录 | `CameraView`、`CameraEditor`、`list_clients` | 核心 | 高 | 失去主要管理旅程或实例选择不完整 | 空态、搜索、摄像机翻页、完整有序实例列表、mutation operation |
 | SEN-W-005 | 详情使用共享 Dialog，主码流及鼠标/键盘 PTZ；move/stop 串行，松开、取消、失焦及关闭均触发停止 | CameraDrawer | 可选 | 中 | 缺少精细控制或停止竞态 | pointer cancel、Space/Enter、窗口 blur、关闭清理 |
 | SEN-W-006 | Recordings 页面按摄像头和时间范围查询并播放 | `RecordingsView` | 建议保留 | 中 | API 尚在但普通用户难以回放 | 无摄像头、无结果、播放 URL 清理 |
 | SEN-W-007 | Events 页面筛选未确认、手动刷新和确认事件 | `EventsView`、SSE effect | 建议保留 | 中 | 事件 API 无内置操作界面 | SSE resync、确认、camera name 映射 |
-| SEN-W-008 | 系统页组合媒体状态与业务审计；管理员账号仅由 Foundation Shell 右上角人物图标设置；不请求 /users | SystemView、Foundation AccountSettings | 建议保留 | 中 | 业务状态缺失或账号入口分散 | 系统状态、业务审计、账号设置、无管理员列表 |
-| SEN-W-009 | Foundation design tokens、scoped reset、focus/reduced-motion/forced-colors 基线 | CSS imports、`data-xcss-scope` | 保障 | 中 | 基础交互和可访问性在项目间漂移 | CSS 摘要、键盘焦点、减弱动态、高对比度 |
-| SEN-W-010 | 产品 CSS 仅维护业务布局，颜色/字体/控件来自 Foundation；视频黑底属于媒体业务 | web/src/styles.css | 建议保留 | 中 | 私有平台样式导致主题和可访问性漂移 | 无 token 覆盖、无私有字体、移动明暗主题 WCAG AA |
+| SEN-W-008 | 系统页组合媒体状态与业务审计；管理员账号仅由 xcss Shell 右上角人物图标设置；不请求 /users | SystemView、xcss AccountSettings | 建议保留 | 中 | 业务状态缺失或账号入口分散 | 系统状态、业务审计、账号设置、无管理员列表 |
+| SEN-W-009 | xcss design tokens、scoped reset、focus/reduced-motion/forced-colors 基线 | CSS imports、`data-xcss-scope` | 保障 | 中 | 基础交互和可访问性在项目间漂移 | CSS 摘要、键盘焦点、减弱动态、高对比度 |
+| SEN-W-010 | 产品 CSS 仅维护业务布局，颜色/字体/控件来自 xcss；视频黑底属于媒体业务 | web/src/styles.css | 建议保留 | 中 | 私有平台样式导致主题和可访问性漂移 | 无 token 覆盖、无私有字体、移动明暗主题 WCAG AA |
 | SEN-W-011 | WHEP player 在 component cleanup、profile/camera 变化时关闭 peer/resource | `LiveVideo` effect、`WhepPlayer.close` | 保障 | 高 | 切页后仍保留媒体连接和资源 | mount/unmount、快速切换、失败重试 |
 | SEN-W-012 | 精确 Node 26.7.0、React/DOM 19.3.0、TS 7.0.2、Vite 8.3.3 工具链 | `.node-version`、`package.json`、lockfile | 开发运维 | 中 | CI/开发/发行 bundle 不可复现 | clean `npm ci`、engine、lock 来源、typecheck |
-| SEN-W-013 | `build` 强制先执行 `check:foundation`，再 strict typecheck 与 Vite build | `package.json`、`tests/design-foundation.test.mjs` | 开发运维 | 中 | 共享依赖或 CSS 漂移时仍可能生成表面可用 bundle | 故意改版本/import/scope 后 build 在 bundling 前失败 |
+| SEN-W-013 | `build` 强制先执行 `check:xcss`，再 strict typecheck 与 Vite build | `package.json`、`tests/design-xcss.test.mjs` | 开发运维 | 中 | 共享依赖或 CSS 漂移时仍可能生成表面可用 bundle | 故意改版本/import/scope 后 build 在 bundling 前失败 |
 | SEN-W-014 | 发行内嵌全部 Web；只附带 `share/web-assets.json`，不需要运行时 npm/CDN | Vite output、`scripts/build.sh`、release manifest | 保障 | 高 | 运行时网络依赖会破坏离线部署和制品身份 | 断网加载、资源引用、额外文件/篡改拒绝 |
 
 ## 10. SQLite、锁、doctor、发行与供应链
@@ -188,7 +188,7 @@ Foundation 提供管理员创建、凭据管理与停用能力。摄像头 RTSP/
 | ID | 当前功能/特性与真实行为 | 实现/代码锚点 | 分类 | 复杂度 | 删除后的确定后果 | 最低验证/边界 |
 |---|---|---|---|---|---|---|
 | SEN-R-001 | 主文件不存在时只创建当前 Schema；已有空文件或非当前库拒绝 | `sqlite::prepare_current_database` | 保障 | 高 | 自动补表会把未知状态变成不可审计混合状态 | 不存在、空文件、错 application/version/revision/SHA |
-| SEN-R-002 | Foundation `xcss-schema-identity` 统一验证 `product_metadata` DDL/完整列形状、exact identity 与现场 `sqlite_schema` fingerprint；Xcos 使用 Foundation 的 SQLx 当前 Schema adapter 和自身 lease 校验 | `validate_current_connection`、`product_metadata_rows`、`schema_rows` | 保障 | 高 | 手改 metadata 可伪装结构，DDL drift 被忽略，或多产品 fingerprint 算法分叉 | metadata 0/2 行、负 revision、错误 storage class/default/列、额外表/索引、只改 SHA、WAL 只读拒绝 |
+| SEN-R-002 | xcss `xcss::schema_identity` 统一验证 `product_metadata` DDL/完整列形状、exact identity 与现场 `sqlite_schema` fingerprint；Xcos 使用 xcss 的 SQLx 当前 Schema adapter 和自身 lease 校验 | `validate_current_connection`、`product_metadata_rows`、`schema_rows` | 保障 | 高 | 手改 metadata 可伪装结构，DDL drift 被忽略，或多产品 fingerprint 算法分叉 | metadata 0/2 行、负 revision、错误 storage class/default/列、额外表/索引、只改 SHA、WAL 只读拒绝 |
 | SEN-R-003 | 验证前从 main/WAL/journal 复制私有 generation，并复核源文件身份未变 | `snapshot_generation` | 保障 | 高 | 验证可能读到跨时刻混合字节，或在源库上产生写入 | WAL、并发变化、symlink、generation cleanup |
 | SEN-R-004 | SQLite integrity、foreign key 和 rollback write probe 用于 doctor | `doctor.rs`、`sqlite.rs` | 开发运维 | 高 | 仅靠 `SELECT 1` 无法发现损坏、FK 或不可写 | corruption、FK、read-only、写探针回滚 |
 | SEN-R-005 | global lease singleton 除 DDL 外还验证 owner UUIDv4、RFC3339 时间和字段组合 | `validate_global_lease_values` | 保障 | 高 | 非法业务不变量可通过 Schema SHA 后进入 worker | 多行、缺行、非规范 UUID/时间、expiry 顺序 |
@@ -197,7 +197,7 @@ Foundation 提供管理员创建、凭据管理与停用能力。摄像头 RTSP/
 | SEN-R-008 | doctor 验证 release、数据库、凭据、recordings 根、MediaMTX binary/config/contract | `src/doctor.rs` | 开发运维 | 高 | 上线验收只能依靠零散命令，难以证明组合一致 | offline 正反例；每项单独篡改 |
 | SEN-R-009 | online doctor 额外探测应用与 MediaMTX loopback readiness | `DoctorOptions.offline`、`live_probe` | 开发运维 | 低 | 只能证明静态状态，不能证明两个进程正在响应 | offline 不依赖进程；online 一项失败即报告 |
 | SEN-R-010 | release identity 绑定产品、版本、source revision、target、API、Schema、Web、credential 与 MediaMTX | `src/release.rs::ReleaseIdentity` | 保障 | 高 | 可把不同提交/协议/companion 拼成同名发行物 | identity JSON 与 manifest header 一致 |
-| SEN-R-011 | 全树 manifest 精确验证 path/type/mode/size/SHA，拒绝额外条目 | `verify_release`、Foundation `xcss-web-assets` | 保障 | 高 | 攻击者或误部署可插入/替换资产而仍启动 | missing/extra/tamper/mode/symlink/hardlink |
+| SEN-R-011 | 全树 manifest 精确验证 path/type/mode/size/SHA，拒绝额外条目 | `verify_release`、xcss `xcss::web_assets` | 保障 | 高 | 攻击者或误部署可插入/替换资产而仍启动 | missing/extra/tamper/mode/symlink/hardlink |
 | SEN-R-012 | release root 必须是规范物理版本路径，正式父目录 root-owned | `validate_release_root`、`PRODUCTION_RELEASE_ROOT` | 保障 | 高 | 可通过 alias 或可写父目录替换已验证内容 | symlink parent、相对路径、错误 suffix、ownership |
 | SEN-R-013 | `scripts/build.sh` 要求 clean checkout、annotated `v1.0.0` 指向 HEAD 和 Linux AMD64 | `scripts/build.sh` | 开发运维 | 中 | 无法把制品稳定追溯到源码与版本 | dirty tree、lightweight/wrong tag、wrong host |
 | SEN-R-014 | build 在同一文件系统 stage，验证后 no-clobber 安装固定发行目录 | `scripts/build.sh` | 保障 | 高 | 半写 release 或同版本覆盖会让重启内容不可预测 | 中途失败、并发 build、第二次 build |
@@ -224,7 +224,7 @@ Foundation 提供管理员创建、凭据管理与停用能力。摄像头 RTSP/
 
 | ID | 当前决定 | 实现/边界锚点 | 分类 | 复杂度 | 若改变会发生什么 | 实施前最低证据 |
 |---|---|---|---|---|---|---|
-| SEN-X-001 | 不提供 observer/operator/viewer 或任何 RBAC 开关 | 无 role 列；所有业务 route 解析 `CurrentUser` | 核心 | 高 | 需重做权限矩阵、Session contract、Web 条件展示、审计与持久结构 | 独立授权设计、逐路由测试、Schema 与 Foundation 决策 |
+| SEN-X-001 | 不提供 observer/operator/viewer 或任何 RBAC 开关 | 无 role 列；所有业务 route 解析 `CurrentUser` | 核心 | 高 | 需重做权限矩阵、Session contract、Web 条件展示、审计与持久结构 | 独立授权设计、逐路由测试、Schema 与 xcss 决策 |
 | SEN-X-002 | 不提供内置 TLS 或应用层 HTTPS 强制；由 `deploy/Caddyfile` 所示同源网关终止 HTTPS，后端默认 loopback 并必须由防火墙隔离 | `deploy/Caddyfile`、`src/config.rs`、正式环境样例 | 保障 | 高 | 后端直连会让登录密码/Session 经过明文；内置 TLS 则需承担证书、续期和监听安全 | 生产 `SITE_ADDRESS`、真实证书、三个本机上游、后端不可公网直连；默认 `:80` 仅是模板占位 |
 | SEN-X-003 | 不提供视频转码、AI、人脸识别或语义搜索 | 无相关 worker/model/schema | 核心 | 高 | 增加 GPU/CPU、模型供应链、生物特征隐私和派生物状态 | 独立 RFC、资源预算、隐私删除和失败恢复 |
 | SEN-X-004 | 不提供云多租户或组织隔离；一个部署是一套 Administrator 与摄像头 | 数据模型无 tenant | 核心 | 高 | 所有查询、JWT、录像路径和审计都要加入租户边界 | 威胁模型、逐查询隔离、计费/配额设计 |
@@ -241,7 +241,7 @@ Foundation 提供管理员创建、凭据管理与停用能力。摄像头 RTSP/
 ### 13.1 为什么只有 Administrator
 
 当前部署目标是单一可信管理域。保留一个角色让每个已认证业务路由的含义明确，避免“按钮隐藏但 API
-仍可调用”、事件查看与摄像头密码管理权限错位等问题。`role:"admin"` 留在 wire 中是 Foundation 的跨
+仍可调用”、事件查看与摄像头密码管理权限错位等问题。`role:"admin"` 留在 wire 中是 xcss 的跨
 项目身份常量，不表示数据库存在 RBAC。
 
 ### 13.2 媒体期望态与设备命令

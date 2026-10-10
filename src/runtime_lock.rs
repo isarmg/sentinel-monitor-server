@@ -5,7 +5,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
-use xcss_state_file::{FileIdentity, InstanceLock, MaintenanceLock, PrivateStateDirectory};
+use xcss::state_file::{FileIdentity, InstanceLock, MaintenanceLock, PrivateStateDirectory};
 
 pub struct ApplicationLock {
     _instance: InstanceLock,
@@ -44,10 +44,10 @@ impl ApplicationLock {
         } else {
             None
         };
-        let private = xcss_fs_safety::PrivateDirectory::open_existing(runtime_directory)?;
-        xcss_fs_safety::AtomicFile::replace(
+        let private = xcss::fs_safety::PrivateDirectory::open_existing(runtime_directory)?;
+        xcss::fs_safety::AtomicFile::replace(
             &private,
-            &xcss_fs_safety::RelativePath::new("app.pid")?,
+            &xcss::fs_safety::RelativePath::new("app.pid")?,
             format!("{}\n", std::process::id()).as_bytes(),
         )?;
         let pid_identity = runtime.open_existing("app.pid")?.identity();
@@ -104,7 +104,7 @@ impl Drop for ApplicationLock {
             if file.identity() == self.pid_identity {
                 let _ = fs::remove_file(self.runtime.path().join("app.pid"));
                 if let Ok(directory) =
-                    xcss_fs_safety::PrivateDirectory::open_existing(self.runtime.path())
+                    xcss::fs_safety::PrivateDirectory::open_existing(self.runtime.path())
                 {
                     let _ = directory.sync();
                 }
@@ -159,7 +159,7 @@ mod tests {
             ApplicationLock::acquire(&format!("sqlite://{}", link.display()), &runtime).is_err()
         );
         fs::write(
-            root.path().join(xcss_state_file::MAINTENANCE_PENDING_FILE),
+            root.path().join(xcss::state_file::MAINTENANCE_PENDING_FILE),
             b"{}",
         )
         .unwrap();
@@ -169,10 +169,10 @@ mod tests {
     fn replacing_pid_is_not_deleted_by_the_previous_owner() {
         let (_root, _database, runtime, url) = state();
         let owner = ApplicationLock::acquire(&url, &runtime).unwrap();
-        let private = xcss_fs_safety::PrivateDirectory::open_existing(&runtime).unwrap();
-        xcss_fs_safety::AtomicFile::replace(
+        let private = xcss::fs_safety::PrivateDirectory::open_existing(&runtime).unwrap();
+        xcss::fs_safety::AtomicFile::replace(
             &private,
-            &xcss_fs_safety::RelativePath::new("app.pid").unwrap(),
+            &xcss::fs_safety::RelativePath::new("app.pid").unwrap(),
             b"123456\n",
         )
         .unwrap();

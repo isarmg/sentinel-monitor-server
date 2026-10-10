@@ -10,7 +10,7 @@
 ```text
 xcos 1.0.0
 ├─ 构建
-│  ├─ Node 26.7.0 -> check:foundation -> TypeScript strict -> Vite 8
+│  ├─ Node 26.7.0 -> check:xcss -> TypeScript strict -> Vite 8
 │  ├─ Rust 1.99.0 -> x86_64-unknown-linux-gnu binary
 │  └─ Web、Rust、MediaMTX、配置 -> 不可变 release manifest
 ├─ 启动
@@ -146,14 +146,14 @@ Administrator Browser Session
 
 普通运行不扫描其他代路径、不解析非当前Schema/密文，也不通过fallback修补数据。实例、runtime和companion锁分别核对物理身份，错误输入拒绝运行。
 
-## 9. Web 构建与 Foundation 1.0.0 流程
+## 9. Web 构建与 xcss 1.0.0 流程
 
 ```text
-package.json + package-lock.json 精确锁定 Foundation 1.0.0 和工具链
+package.json + package-lock.json 精确锁定 xcss 1.0.0 和工具链
   -> npm ci
-  -> check:foundation
+  -> check:xcss
        ├─ 校验 Node/React/TypeScript/Vite 精确版本
-       ├─ 校验八个 Foundation Web 包及 lock 来源
+       ├─ 校验一个 @xcss/web 包及 lock 来源
        ├─ 校验认证 hook、运行时守卫和 data-xcss-scope
        └─ 校验 token/reset/accessibility 内容摘要和品牌语义映射
   -> TypeScript 7.0.2 strict typecheck
@@ -169,30 +169,30 @@ package.json + package-lock.json 精确锁定 Foundation 1.0.0 和工具链
 ```bash
 cd web
 npm ci
-npm run check:foundation
+npm run check:xcss
 npm run build
 ```
 
-`build` 已把 `check:foundation` 设为硬前置，因此不能通过直接执行 Vite 跳过共享边界。构建产物完全自包含；
-浏览器运行时不解析 npm 包，也不访问 npm registry、Foundation 仓库或远程 CSS。
-构建期八个Web包候选固定Foundation `v1.0.0`官方URL和真实归档的lockfile integrity；Foundation 1.0.0 已正式发布，产品输入使用官方归档与精确 SRI。
-Rust crate 由版本 `=1.0.0` 和 revision `d58b9ef0822984ee0d29fb8b8139cfd2787374fb` 双重锁定。两者都不读取
+`build` 已把 `check:xcss` 设为硬前置，因此不能通过直接执行 Vite 跳过共享边界。构建产物完全自包含；
+浏览器运行时不解析 npm 包，也不访问 npm registry、xcss 仓库或远程 CSS。
+构建期单个 @xcss/web 包候选固定xcss `v1.0.0`官方URL和真实归档的lockfile integrity；xcss 1.0.0 已正式发布，产品输入使用官方归档与精确 SRI。
+Rust crate 由版本 `=1.0.0` 和 revision `9fb5b3f8f20762cb93050bc52ea81a36ac0dc914` 双重锁定。两者都不读取
 共同父目录或 sibling checkout，也不提供旧来源 fallback。
 
-## 10. Foundation 共享层与产品层调用树
+## 10. xcss 共享层与产品层调用树
 
 ```text
 web/src/main.tsx
-├─ @xcss/admin-web
+├─ @xcss/web/admin-web
 │  ├─ createAdministratorApiClient
 │  ├─ /react: useAdministratorSession
 │  ├─ /vite: createXcssReactViteConfig
 │  └─ /tsconfig.json: strict TypeScript baseline
-├─ @xcss/contracts
+├─ @xcss/web/contracts
 │  └─ auth path、AdministratorSession、ErrorEnvelope 的类型与运行时守卫
-├─ @xcss/http-client
+├─ @xcss/web/http-client
 │  └─ same-origin、Cookie、CSRF、超时、响应大小、Content-Type 与错误解析
-├─ @xcss/design-tokens
+├─ @xcss/web/design-tokens
 │  └─ token、scoped reset、focus/reduced-motion/forced-colors 基线
 └─ Xcos 产品代码
    ├─ 摄像头/录像/事件/审计 DTO 的运行时守卫
@@ -200,10 +200,10 @@ web/src/main.tsx
    └─ 纸张/墨色/警示色、布局、组件和响应式品牌样式
 
 Rust/Axum
-├─ xcss-contracts 1.0.0 -> Administrator 认证 DTO/路径和跨语言合同
-├─ xcss-error 1.0.0 -> 严格 ErrorEnvelope/ErrorCode
-├─ xcss-schema-identity 1.0.0 -> metadata DDL/列、指纹 framing 与 exact identity
-├─ xcss-server-target 1.0.0 -> 编译期 x86_64-unknown-linux-gnu 门禁
+├─ xcss::contracts 1.0.0 -> Administrator 认证 DTO/路径和跨语言合同
+├─ xcss::error 1.0.0 -> 严格 ErrorEnvelope/ErrorCode
+├─ xcss::schema_identity 1.0.0 -> metadata DDL/列、指纹 framing 与 exact identity
+├─ xcss::server_target 1.0.0 -> 编译期 x86_64-unknown-linux-gnu 门禁
 └─ Xcos 产品代码 -> 私有 SQLite generation、Schema DDL、Cookie、Session、媒体、审计与运维
 ```
 

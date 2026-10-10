@@ -9,7 +9,7 @@ use tokio::sync::{broadcast, Notify};
 
 #[derive(Clone)]
 pub struct AppState {
-    pub web_directory: Option<Arc<xcss_web_assets::DirectoryAssets>>,
+    pub web_directory: Option<Arc<xcss::web_assets::DirectoryAssets>>,
     pub config: Arc<Config>,
     pub pool: SqlitePool,
     pub secrets: SecretBox,
@@ -18,15 +18,15 @@ pub struct AppState {
     pub events: broadcast::Sender<EventRecord>,
     pub reconcile_notify: Arc<Notify>,
     pub administrator:
-        Arc<xcss_admin_core::AdministratorService<xcss_admin_sqlite::SqliteAdministratorStore>>,
-    pub administrator_origin: xcss_admin_auth::AdministratorOriginMode,
-    pub scope: xcss_server_runtime::WorkScope,
+        Arc<xcss::admin_core::AdministratorService<xcss::admin_sqlite::SqliteAdministratorStore>>,
+    pub administrator_origin: xcss::admin_auth::AdministratorOriginMode,
+    pub scope: xcss::server_runtime::WorkScope,
 }
 
 pub(crate) async fn serve(
     config: Config,
     release_root: Option<&std::path::Path>,
-    log_layer: &xcss_log::FoundationStructuredLayer,
+    log_layer: &xcss::log::XcssStructuredLayer,
 ) -> anyhow::Result<()> {
     let config = Arc::new(config);
     if release_root.is_some() {
@@ -38,7 +38,7 @@ pub(crate) async fn serve(
     let web_directory = config
         .static_dir
         .as_ref()
-        .map(xcss_web_assets::DirectoryAssets::new)
+        .map(xcss::web_assets::DirectoryAssets::new)
         .transpose()?
         .map(Arc::new);
     static_assets::embedded_contract_sha256()?;
@@ -57,10 +57,10 @@ pub(crate) async fn serve(
     }
     let snapshot = sqlite::current_validation_snapshot(&database).await?;
     let validation = async {
-        xcss_sqlite::integrity_check(snapshot.pool()).await?;
-        xcss_sqlite::foreign_key_check(snapshot.pool()).await?;
-        let store = xcss_admin_sqlite::SqliteAdministratorStore::new(snapshot.pool().clone());
-        use xcss_admin_core::AdministratorStore as _;
+        xcss::sqlite::integrity_check(snapshot.pool()).await?;
+        xcss::sqlite::foreign_key_check(snapshot.pool()).await?;
+        let store = xcss::admin_sqlite::SqliteAdministratorStore::new(snapshot.pool().clone());
+        use xcss::admin_core::AdministratorStore as _;
         anyhow::ensure!(
             store.administrator_count().await? > 0,
             "explicit initialization is required"
@@ -95,10 +95,10 @@ pub(crate) async fn serve(
         );
         let (events, _) = broadcast::channel(256);
         let reconcile_notify = Arc::new(Notify::new());
-        let administrator = Arc::new(xcss_admin_core::AdministratorService::new(
-            xcss_admin_sqlite::SqliteAdministratorStore::new(pool.clone()),
+        let administrator = Arc::new(xcss::admin_core::AdministratorService::new(
+            xcss::admin_sqlite::SqliteAdministratorStore::new(pool.clone()),
         ));
-        use xcss_admin_core::AdministratorStore as _;
+        use xcss::admin_core::AdministratorStore as _;
         if administrator.store().administrator_count().await? == 0 {
             anyhow::bail!(
                 "current administrator state is missing; explicit init is required for new data"
@@ -107,11 +107,11 @@ pub(crate) async fn serve(
         administrator.store().validate_all_administrators().await?;
         camera_state::validate_current_camera_data(&pool).await?;
         let administrator_origin = if config.development_mode {
-            xcss_admin_auth::AdministratorOriginMode::LoopbackDevelopmentHttp
+            xcss::admin_auth::AdministratorOriginMode::LoopbackDevelopmentHttp
         } else {
-            xcss_admin_auth::AdministratorOriginMode::ProductionHttps
+            xcss::admin_auth::AdministratorOriginMode::ProductionHttps
         };
-        let scope = xcss_server_runtime::WorkScope::new();
+        let scope = xcss::server_runtime::WorkScope::new();
         let state = AppState {
             scope,
             web_directory,
@@ -131,12 +131,12 @@ pub(crate) async fn serve(
             .parent()
             .expect("validated database parent")
             .to_path_buf();
-        xcss_server_cli::validate_runtime_log_directory(&data_dir).map_err(CliFailure)?;
+        xcss::server_cli::validate_runtime_log_directory(&data_dir).map_err(CliFailure)?;
         let logs = data_dir.join("logs");
-        log_layer.set_rotating_file(xcss_log::RotatingLogFile::open(
+        log_layer.set_rotating_file(xcss::log::RotatingLogFile::open(
             logs,
             "server",
-            xcss_log::LogRetention::default(),
+            xcss::log::LogRetention::default(),
         )?)?;
         tracing::info!(event = "common.config.loaded");
         let recovered = reconciliation::recover_interrupted_operations(&state.pool).await?;
@@ -154,10 +154,10 @@ pub(crate) async fn serve(
         let audit_delivery_pool = state.pool.clone();
         let operations_pool = state.pool.clone();
         let runtime =
-            xcss_server_runtime::ServerRuntime::builder(xcss_server_runtime::ProductDescriptor {
+            xcss::server_runtime::ServerRuntime::builder(xcss::server_runtime::ProductDescriptor {
                 id: "xcos".into(),
                 version: env!("CARGO_PKG_VERSION").into(),
-                foundation_revision: env!("XCSS_FOUNDATION_REVISION").into(),
+                xcss_revision: env!("XCSS_REVISION").into(),
                 profile: "server-control-plane".into(),
                 capabilities: vec![
                     "embedded-web".into(),
@@ -171,29 +171,30 @@ pub(crate) async fn serve(
             })
             .with_schema_identity(sqlite::current_schema_identity()?)
             .register_metric(
-                xcss_server_runtime::DiagnosticMetric::AuditBacklog,
+                xcss::server_runtime::DiagnosticMetric::AuditBacklog,
                 move || {
-                    let store = xcss_operations::SqliteOperationStore::new(audit_pool.clone());
+                    let store = xcss::operations::SqliteOperationStore::new(audit_pool.clone());
                     async move { store.pending_audit_count().await.ok() }
                 },
             )
             .register_metric(
-                xcss_server_runtime::DiagnosticMetric::OperationBacklog,
+                xcss::server_runtime::DiagnosticMetric::OperationBacklog,
                 move || {
-                    let store = xcss_operations::SqliteOperationStore::new(operations_pool.clone());
+                    let store =
+                        xcss::operations::SqliteOperationStore::new(operations_pool.clone());
                     async move { store.active_operation_count().await.ok() }
                 },
             )
             .register_health_check(
                 "mediamtx",
-                xcss_server_runtime::health_check(move || {
+                xcss::server_runtime::health_check(move || {
                     let media = health_media.clone();
                     async move { media.health().await }
                 }),
             )
             .register_health_check(
                 "database",
-                xcss_server_runtime::health_check(move || {
+                xcss::server_runtime::health_check(move || {
                     let pool = health_pool.clone();
                     async move {
                         sqlx::query_scalar::<_, i64>("SELECT 1")
@@ -205,25 +206,25 @@ pub(crate) async fn serve(
             )
             .register_background_task(
                 "media-reconciliation",
-                xcss_server_runtime::TaskCriticality::Critical,
+                xcss::server_runtime::TaskCriticality::Critical,
                 move |shutdown| background::reconcile_loop(reconcile_state, shutdown),
             )
             .register_background_task(
                 "operation-audit",
-                xcss_server_runtime::TaskCriticality::Degrading,
+                xcss::server_runtime::TaskCriticality::Degrading,
                 move |shutdown| background::operation_audit_loop(audit_delivery_pool, shutdown),
             )
             .register_background_task(
                 "camera-status",
-                xcss_server_runtime::TaskCriticality::Degrading,
+                xcss::server_runtime::TaskCriticality::Degrading,
                 move |shutdown| background::status_loop(status_state, shutdown),
             )
             .build()
             .await?;
-        let signals = xcss_server_runtime::ProcessSignals::install()?;
-        let listeners = xcss_server_runtime::BoundListeners::bind([config.bind_addr])?;
+        let signals = xcss::server_runtime::ProcessSignals::install()?;
+        let listeners = xcss::server_runtime::BoundListeners::bind([config.bind_addr])?;
         tracing::info!(event = "common.runtime.started");
-        let mut transport = xcss_server_runtime::HttpServer::new(listeners, signals);
+        let mut transport = xcss::server_runtime::HttpServer::new(listeners, signals);
         transport.participant = Some(Arc::new(lifecycle::Lifecycle {
             scope: state.scope.clone(),
             pool: state.pool.clone(),
@@ -235,7 +236,7 @@ pub(crate) async fn serve(
             .serve(transport, routes::router(state, runtime_handle)?)
             .await
         {
-            if matches!(error, xcss_server_runtime::Error::ShutdownIncomplete(_)) {
+            if matches!(error, xcss::server_runtime::Error::ShutdownIncomplete(_)) {
                 eprintln!("{error}");
                 std::process::exit(1);
             }

@@ -199,7 +199,7 @@ async fn current_schema_committed_only_in_wal_is_validated_without_changes() {
         .unwrap();
     sqlx::query("INSERT INTO media_reconciler_leases(singleton,updated_at) VALUES(1,'1970-01-01T00:00:00+00:00')")
         .execute(&mut connection).await.unwrap();
-    let fingerprint = xcss_sqlite::schema_fingerprint(&mut connection)
+    let fingerprint = xcss::sqlite::schema_fingerprint(&mut connection)
         .await
         .unwrap();
     sqlx::query("INSERT INTO product_metadata(singleton,application,application_version,schema_revision,schema_sha256) VALUES(1,?,?,?,?)")

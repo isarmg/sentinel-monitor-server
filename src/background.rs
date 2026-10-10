@@ -25,7 +25,7 @@ pub async fn operation_audit_loop(
     interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
     loop {
         tokio::select! {
-            _ = xcss_server_runtime::wait_for_shutdown(&mut shutdown) => return Ok(()),
+            _ = xcss::server_runtime::wait_for_shutdown(&mut shutdown) => return Ok(()),
             _ = interval.tick() => {
                 reconciliation::flush_operation_audit(&pool).await
                     .map_err(|_| "operation audit delivery failed".to_owned())?;

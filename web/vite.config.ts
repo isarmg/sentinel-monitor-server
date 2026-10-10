@@ -1,9 +1,9 @@
-import { foundationFontLicenses } from "./font-licenses.mjs";
-import { createXcssReactViteConfig } from "@xcss/web-toolchain/vite";
+import { xcssFontLicenses } from "./font-licenses.mjs";
+import { createXcssReactViteConfig } from "@xcss/web/web-toolchain/vite";
 import { mergeConfig } from "vite";
 
 export default mergeConfig(createXcssReactViteConfig(), {
-  plugins: [foundationFontLicenses()],
+  plugins: [xcssFontLicenses()],
   server: {
     port: 5173,
     proxy: {

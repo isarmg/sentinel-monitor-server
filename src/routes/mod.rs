@@ -38,7 +38,7 @@ use std::{
 use tower_http::{compression::CompressionLayer, trace::TraceLayer};
 use url::Url;
 use uuid::Uuid;
-use xcss_server_cli::{ContractPath as Path, ContractQuery as Query};
+use xcss::server_cli::{ContractPath as Path, ContractQuery as Query};
 
 mod cameras;
 mod clients;
@@ -56,8 +56,8 @@ use recordings::*;
 mod request_contract_tests;
 
 const CAMERA_SELECT: &str = "SELECT id, name, location, source_kind, client_id, adapter_kind, manufacturer, model, firmware_version, serial_number, capabilities_json, streams_json, health_message, device_status, has_sub_stream, enabled, record_enabled, storage_mode, status, last_seen_at, created_at, updated_at FROM cameras";
-pub fn router(state: AppState, runtime: xcss_server_runtime::RuntimeHandle) -> Result<Router> {
-    let platform = xcss_server_runtime::platform_router(
+pub fn router(state: AppState, runtime: xcss::server_runtime::RuntimeHandle) -> Result<Router> {
+    let platform = xcss::server_runtime::platform_router(
         runtime,
         "xcos",
         state.administrator_origin,
@@ -112,8 +112,8 @@ pub fn router(state: AppState, runtime: xcss_server_runtime::RuntimeHandle) -> R
         .method_not_allowed_fallback(|| async {
             (
                 StatusCode::METHOD_NOT_ALLOWED,
-                Json(xcss_error::ErrorEnvelope::with_code(
-                    xcss_error::ErrorCode::new("method_not_allowed").expect("static code"),
+                Json(xcss::error::ErrorEnvelope::with_code(
+                    xcss::error::ErrorCode::new("method_not_allowed").expect("static code"),
                     "The request method is not supported by this route.",
                 )),
             )
@@ -123,7 +123,7 @@ pub fn router(state: AppState, runtime: xcss_server_runtime::RuntimeHandle) -> R
                 .make_span_with(|request: &axum::extract::Request| {
                     let request_id = request
                         .extensions()
-                        .get::<xcss_contracts::RequestId>()
+                        .get::<xcss::contracts::RequestId>()
                         .map(|value| value.as_str())
                         .unwrap_or("");
                     tracing::info_span!("http.request", request_id)
@@ -146,23 +146,23 @@ pub fn router(state: AppState, runtime: xcss_server_runtime::RuntimeHandle) -> R
         .layer(axum::middleware::from_fn_with_state(scope, admit_request))
         .layer(axum::middleware::from_fn_with_state(
             "xcos".to_string(),
-            xcss_server_cli::service_identity_middleware,
+            xcss::server_cli::service_identity_middleware,
         ))
         .layer(axum::middleware::from_fn(
-            xcss_server_cli::request_context_middleware,
+            xcss::server_cli::request_context_middleware,
         )))
 }
 
 async fn admit_request(
-    State(scope): State<xcss_server_runtime::WorkScope>,
+    State(scope): State<xcss::server_runtime::WorkScope>,
     request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Response {
     let Some(_admitted) = scope.enter_request().await else {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
-            Json(xcss_error::ErrorEnvelope::new(
-                xcss_error::HttpStatus::ServiceUnavailable,
+            Json(xcss::error::ErrorEnvelope::new(
+                xcss::error::HttpStatus::ServiceUnavailable,
                 "The service is stopping.",
             )),
         )

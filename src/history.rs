@@ -239,7 +239,7 @@ mod tests {
     }
     #[tokio::test]
     async fn uuid_owner_limits_and_unknown_operation_final_audit_remain_enforced() {
-        use xcss_operations::{NewOperation, SqliteOperationStore, Transition};
+        use xcss::operations::{NewOperation, SqliteOperationStore, Transition};
         let directory = tempfile::tempdir().unwrap();
         let pool = crate::sqlite::initialize_test_pool(&format!(
             "sqlite://{}",
@@ -349,7 +349,7 @@ mod tests {
         SqliteOperationStore::resolve_in(
             &mut tx,
             &id,
-            xcss_operations::Resolution::ConfirmedSucceeded,
+            xcss::operations::Resolution::ConfirmedSucceeded,
             now + 2,
         )
         .await
@@ -358,7 +358,7 @@ mod tests {
         assert_eq!(store.pending_audit_count().await.unwrap(), 4);
         assert_eq!(
             store.get(&id).await.unwrap().unwrap().operation.state,
-            xcss_operations::OperationState::Resolved
+            xcss::operations::OperationState::Resolved
         );
         assert_eq!(
             sqlx::query_scalar::<_, i64>("SELECT count(*) FROM audit_logs")

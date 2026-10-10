@@ -27,7 +27,7 @@ impl FromRequestParts<AppState> for CurrentUser {
         parts: &mut Parts,
         state: &AppState,
     ) -> std::result::Result<Self, Self::Rejection> {
-        let identity = xcss_admin_axum::authenticate_request(
+        let identity = xcss::admin_axum::authenticate_request(
             &state.administrator,
             &parts.headers,
             &parts.uri,
@@ -113,7 +113,7 @@ pub fn decode_media_token(token: &str, config: &Config) -> Result<MediaClaims> {
         || claims.iss != CONTRACT.media_jwt_issuer
         || claims.aud != CONTRACT.media_jwt_audience
         || claims.kind != CONTRACT.media_jwt_kind
-        || xcss_admin_core::Identifier::new(claims.sub.clone()).is_err()
+        || xcss::admin_core::Identifier::new(claims.sub.clone()).is_err()
         || claims.camera_id.is_nil()
         || claims.jti.is_nil()
         || claims.path.is_empty()
@@ -227,11 +227,11 @@ mod tests {
 
     #[test]
     fn media_claims_preserve_opaque_foundation_administrator_ids() {
-        let identifier = xcss_admin_auth::random_token().unwrap();
+        let identifier = xcss::admin_auth::random_token().unwrap();
         let mut value = current_claims();
         value["sub"] = json!(identifier);
         let claims: MediaClaims = serde_json::from_value(value).unwrap();
         assert_eq!(claims.sub, identifier);
-        assert!(xcss_admin_core::Identifier::new(claims.sub).is_ok());
+        assert!(xcss::admin_core::Identifier::new(claims.sub).is_ok());
     }
 }

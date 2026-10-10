@@ -98,8 +98,8 @@ pub fn load(
     file: Option<&Path>,
     data_dir: Option<&Path>,
     cli: &Overrides,
-) -> anyhow::Result<xcss_config::Loaded<Settings>> {
-    use xcss_config::{EnvMapping, EnvValueKind, Override};
+) -> anyhow::Result<xcss::config::Loaded<Settings>> {
+    use xcss::config::{EnvMapping, EnvValueKind, Override};
     let mappings = [
         EnvMapping {
             variable: "XCOS_RELEASE_ROOT",
@@ -213,19 +213,20 @@ pub fn load(
         },
     ];
     let mut invalid_unicode = false;
-    let environment = xcss_config::read_environment(&mappings, |name| match std::env::var(name) {
-        Ok(value) => Some(value),
-        Err(std::env::VarError::NotPresent) => None,
-        Err(_) => {
-            invalid_unicode = true;
-            None
-        }
-    })?;
+    let environment =
+        xcss::config::read_environment(&mappings, |name| match std::env::var(name) {
+            Ok(value) => Some(value),
+            Err(std::env::VarError::NotPresent) => None,
+            Err(_) => {
+                invalid_unicode = true;
+                None
+            }
+        })?;
     anyhow::ensure!(
         !invalid_unicode,
         "mapped environment settings must be valid Unicode"
     );
-    let bytes = file.map(xcss_config::read_private_file).transpose()?;
+    let bytes = file.map(xcss::config::read_private_file).transpose()?;
     let mut explicit = Vec::new();
     if let Some(value) = data_dir {
         explicit.push(Override::new("/data_dir", serde_json::json!(value)));
@@ -242,7 +243,7 @@ pub fn load(
             serde_json::json!(if value { "development" } else { "production" }),
         ));
     }
-    Ok(xcss_config::resolve_validated(
+    Ok(xcss::config::resolve_validated(
         &Settings::default(),
         bytes.as_deref(),
         &environment,
@@ -253,10 +254,10 @@ pub fn load(
 
 fn validate_intrinsic(
     value: &Settings,
-    source: xcss_config::ConfigSource,
-) -> Result<(), xcss_config::ConfigError> {
+    source: xcss::config::ConfigSource,
+) -> Result<(), xcss::config::ConfigError> {
     let invalid =
-        |path| xcss_config::ConfigError::new(xcss_config::Reason::InvalidValue, path, source);
+        |path| xcss::config::ConfigError::new(xcss::config::Reason::InvalidValue, path, source);
     for (field, path) in [
         ("/release_root", &value.release_root),
         ("/data_dir", &value.data_dir),
@@ -395,8 +396,8 @@ impl Settings {
                 .data_dir
                 .as_ref()
                 .ok_or_else(|| {
-                    crate::CliFailure(xcss_server_cli::ErrorEnvelope::with_code(
-                        xcss_server_cli::ErrorCode::new("config.data_directory_required")
+                    crate::CliFailure(xcss::server_cli::ErrorEnvelope::with_code(
+                        xcss::server_cli::ErrorCode::new("config.data_directory_required")
                             .expect("static code"),
                         "An explicit data directory or database is required.",
                     ))
@@ -429,8 +430,8 @@ impl Settings {
             .jwt_secret
             .as_ref()
             .ok_or_else(|| {
-                crate::CliFailure(xcss_server_cli::ErrorEnvelope::with_code(
-                    xcss_server_cli::ErrorCode::new("config.jwt_secret_required")
+                crate::CliFailure(xcss::server_cli::ErrorEnvelope::with_code(
+                    xcss::server_cli::ErrorCode::new("config.jwt_secret_required")
                         .expect("static code"),
                     "A private jwt_secret is required.",
                 ))
@@ -443,8 +444,8 @@ impl Settings {
         );
         let credentials_key: [u8; 32] = STANDARD
             .decode(self.credentials_key.as_ref().ok_or_else(|| {
-                crate::CliFailure(xcss_server_cli::ErrorEnvelope::with_code(
-                    xcss_server_cli::ErrorCode::new("config.credentials_key_required")
+                crate::CliFailure(xcss::server_cli::ErrorEnvelope::with_code(
+                    xcss::server_cli::ErrorCode::new("config.credentials_key_required")
                         .expect("static code"),
                     "A private credentials_key is required.",
                 ))
@@ -462,12 +463,14 @@ impl Settings {
             "runtime directory must be absolute"
         );
         if self.static_dir.is_some() && !development_mode {
-            return Err(crate::CliFailure(xcss_server_cli::ErrorEnvelope::with_code(
-                xcss_server_cli::ErrorCode::new("invalid_development_override")
-                    .expect("static code"),
-                "External Web overrides require explicit loopback development mode.",
-            ))
-            .into());
+            return Err(
+                crate::CliFailure(xcss::server_cli::ErrorEnvelope::with_code(
+                    xcss::server_cli::ErrorCode::new("invalid_development_override")
+                        .expect("static code"),
+                    "External Web overrides require explicit loopback development mode.",
+                ))
+                .into(),
+            );
         }
         if let Some(path) = &self.static_dir {
             anyhow::ensure!(path.is_absolute(), "static_dir must be absolute");
