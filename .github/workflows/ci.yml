@@ -185,10 +185,10 @@ jobs:
           set -euo pipefail
           test ! -e Caddyfile
           test -f deploy/Caddyfile
-          test "$(grep -Fxc '        reverse_proxy 127.0.0.1:8889' deploy/Caddyfile)" -eq 1
-          test "$(grep -Fxc '        reverse_proxy 127.0.0.1:8888 {' deploy/Caddyfile)" -eq 1
+          test "$(grep -Fxc '        reverse_proxy {$XCOS_WEBRTC_UPSTREAM:127.0.0.1:8889}' deploy/Caddyfile)" -eq 1
+          test "$(grep -Fxc '        reverse_proxy {$XCOS_HLS_UPSTREAM:127.0.0.1:8888} {' deploy/Caddyfile)" -eq 1
           test "$(grep -Fxc '            header_down Location "^/(.*)$" "/media-hls/$1"' deploy/Caddyfile)" -eq 1
-          test "$(grep -Fxc '        reverse_proxy 127.0.0.1:8080' deploy/Caddyfile)" -eq 1
+          test "$(grep -Fxc '        reverse_proxy {$XCOS_HTTP_UPSTREAM:127.0.0.1:8080}' deploy/Caddyfile)" -eq 1
           if grep -Eq 'reverse_proxy[[:space:]]+(app|mediamtx):' deploy/Caddyfile; then
             echo 'Container-only proxy names are outside the current native contract.' >&2
             exit 1
