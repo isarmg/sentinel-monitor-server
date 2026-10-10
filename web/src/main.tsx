@@ -471,6 +471,8 @@ function RecordingsView({ cameras, toast }: { cameras: Camera[]; toast(message: 
   const [end, setEnd] = useState(() => localDateInput(new Date()));
   const [spans, setSpans] = useState<RecordingSpan[]>([]);
   const [playing, setPlaying] = useState<RecordingSpan | null>(null);
+  const [searchState, setSearchState] = useState<"idle" | "loading" | "ready" | "failed">("idle");
+  const [searchFailure, setSearchFailure] = useState<{ requestId?: string } | null>(null);
   const selectedCamera = useRef(cameraId);
   const searchGeneration = useRef(0);
   useEffect(() => {
@@ -478,20 +480,31 @@ function RecordingsView({ cameras, toast }: { cameras: Camera[]; toast(message: 
       setCameraId(cameras[0]?.id ?? "");
     }
   }, [cameraId, cameras]);
-  useEffect(() => { selectedCamera.current = cameraId; searchGeneration.current += 1; setSpans([]); setPlaying(null); }, [cameraId]);
+  useEffect(() => {
+    selectedCamera.current = cameraId;
+    searchGeneration.current += 1;
+    setSpans([]); setPlaying(null); setSearchState("idle"); setSearchFailure(null);
+  }, [cameraId, start, end]);
   const search = async () => {
     if (cameraId === "") return toast(t("请先添加摄像头", "Add a camera first"), "warning");
     const requestedCamera = cameraId;
     const generation = ++searchGeneration.current;
-    const query = new URLSearchParams({ camera_id: requestedCamera, start: new Date(start).toISOString(), end: new Date(end).toISOString() });
-    const value = await request(`/recordings?${query}`, isRecordingSpans);
-    if (selectedCamera.current === requestedCamera && searchGeneration.current === generation) {
-      setSpans(value);
-      setPlaying(null);
+    const currentSearch = () => selectedCamera.current === requestedCamera && searchGeneration.current === generation;
+    setSpans([]); setPlaying(null); setSearchState("loading"); setSearchFailure(null);
+    try {
+      const rangeStart = new Date(start), rangeEnd = new Date(end);
+      if (!Number.isFinite(rangeStart.getTime()) || !Number.isFinite(rangeEnd.getTime()) || rangeStart > rangeEnd) {
+        throw new Error("Invalid recording time range");
+      }
+      const query = new URLSearchParams({ camera_id: requestedCamera, start: rangeStart.toISOString(), end: rangeEnd.toISOString() });
+      const value = await request(`/recordings?${query}`, isRecordingSpans);
+      if (currentSearch()) { setSpans(value); setSearchState("ready"); }
+    } catch (error) {
+      if (currentSearch()) { setSearchFailure({ requestId: errorRequestId(error) }); setSearchState("failed"); }
     }
   };
   const playback = playing === null ? "" : apiPath(`/recordings/play?${new URLSearchParams({ camera_id: cameraId, start: playing.start, duration: String(playing.duration), format: "fmp4" })}`);
-  return <section className="view active xcss-content-stack"><div className="filter-panel xcss-content-panel"><label>{t("摄像头", "Camera")}<Select value={cameraId} onChange={(event) => setCameraId(event.target.value)}>{cameras.map((camera) => <option key={camera.id} value={camera.id}>{camera.name}</option>)}</Select></label><label>{t("开始时间", "Start time")}<TextField type="datetime-local" value={start} onChange={(event) => setStart(event.target.value)} /></label><label>{t("结束时间", "End time")}<TextField type="datetime-local" value={end} onChange={(event) => setEnd(event.target.value)} /></label><Button className="button button-primary" onClick={() => void search().catch((error) => toast(errorText(error), "error"))}>{t("查询录像", "Search recordings")}</Button></div><div className="recording-layout xcss-content-panel"><div><div className="section-heading"><h3>{t("录像时间段", "Recording segments")}</h3><span>{spans.length} {t("条", "segments")}</span></div><div className="record-list">{spans.length === 0 ? <div className="empty-state">{t("所选范围内没有录像", "No recordings in the selected range")}</div> : spans.map((span) => <Button key={`${span.start}-${span.duration}`} className="record-item" onClick={() => setPlaying(span)}><span>{formatDate(span.start)}</span><strong>{formatDuration(span.duration)}</strong><i>{t("播放", "Play")}</i></Button>)}</div></div><div className="playback-stage"><video src={playback || undefined} controls playsInline autoPlay /><div>{playing === null ? t("尚未选择录像", "No recording selected") : `${formatDate(playing.start)} · ${formatDuration(playing.duration)}`}</div></div></div></section>;
+  return <section className="view active xcss-content-stack"><div className="filter-panel xcss-content-panel"><label>{t("摄像头", "Camera")}<Select value={cameraId} onChange={(event) => setCameraId(event.target.value)}>{cameras.map((camera) => <option key={camera.id} value={camera.id}>{camera.name}</option>)}</Select></label><label>{t("开始时间", "Start time")}<TextField type="datetime-local" value={start} onChange={(event) => setStart(event.target.value)} /></label><label>{t("结束时间", "End time")}<TextField type="datetime-local" value={end} onChange={(event) => setEnd(event.target.value)} /></label><Button className="button button-primary" onClick={() => void search()}>{t("查询录像", "Search recordings")}</Button></div><div className="recording-layout xcss-content-panel"><div><div className="section-heading"><h3>{t("录像时间段", "Recording segments")}</h3><span>{spans.length} {t("条", "segments")}</span></div><div className="record-list">{searchState === "loading" ? <LoadingState>{t("正在查询录像…", "Loading recordings…")}</LoadingState> : searchState === "failed" ? <ErrorState requestId={searchFailure?.requestId}>{t("录像未能加载，请检查时间范围后重新查询。", "Recordings could not be loaded. Check the time range and search again.")}</ErrorState> : searchState === "idle" ? <EmptyState>{t("选择时间范围后查询录像。", "Choose a time range and search for recordings.")}</EmptyState> : spans.length === 0 ? <EmptyState>{t("所选范围内没有录像", "No recordings in the selected range")}</EmptyState> : spans.map((span) => <Button key={`${span.start}-${span.duration}`} className="record-item" onClick={() => setPlaying(span)}><span>{formatDate(span.start)}</span><strong>{formatDuration(span.duration)}</strong><i>{t("播放", "Play")}</i></Button>)}</div></div><div className="playback-stage"><video key={playback} src={playback || undefined} controls playsInline autoPlay /><div>{playing === null ? t("尚未选择录像", "No recording selected") : `${formatDate(playing.start)} · ${formatDuration(playing.duration)}`}</div></div></div></section>;
 }
 
 function EventsView({ events, cameras, acknowledge }: { events: MonitorEvent[]; cameras: Camera[]; acknowledge(id: string): void }) {
@@ -547,6 +560,8 @@ function safeAuditDetails(details: Record<string, unknown>): string {
 
 function CameraDrawer({ camera, close, toast }: { camera: Camera; close(): void; toast(message: string, type?: string): void }) {
   const [commandReceipt,setCommandReceipt]=useState<DeviceCommandReceipt|null>(null);
+  const [receiptFailure, setReceiptFailure] = useState<{ requestId?: string } | null>(null);
+  const [receiptRefresh, setReceiptRefresh] = useState(0);
   const moving = useRef(false);
   const busy = useRef(false);
   const moveInFlight = useRef(false);
@@ -585,15 +600,16 @@ function CameraDrawer({ camera, close, toast }: { camera: Camera; close(): void;
   }, [stop]);
   useEffect(()=>{
     if (commandReceipt === null || !["queued","awaiting_result"].includes(commandReceipt.state)) return;
+    setReceiptFailure(null);
     let cancelled=false;
     const controller=new AbortController();
     const timer=window.setTimeout(()=>{
       void request(`/cameras/${camera.id}/commands/${commandReceipt.command_id}`,isDeviceCommandReceipt,{signal:controller.signal})
         .then(receipt=>{if (!cancelled) setCommandReceipt(receipt);})
-        .catch(error=>{if (!cancelled) toast(errorText(error),"error");});
+        .catch(error=>{if (!cancelled) setReceiptFailure({ requestId: errorRequestId(error) });});
     },1000);
     return ()=>{cancelled=true;controller.abort();window.clearTimeout(timer);};
-  },[camera.id,commandReceipt,toast]);
+  },[camera.id,commandReceipt,receiptRefresh]);
   const commandStateText=commandReceipt === null ? null : {
     queued:t("已排队，尚未发送到设备", "Queued; not yet sent to the device"),
     awaiting_result:t("已发送，等待设备回执", "Sent; waiting for the device result"),
@@ -611,7 +627,8 @@ function CameraDrawer({ camera, close, toast }: { camera: Camera; close(): void;
     <div className="xcos-business"><LiveVideo camera={camera} profile="main" controls />
       <section className="xcss-content-panel"><h3>{t("设备信息", "Device information")}</h3><CameraStatus camera={camera} /><CameraObservationDetails camera={camera} /><p>{[camera.manufacturer, camera.model, camera.firmware_version].filter(Boolean).join(" · ") || t("设备未报告厂商信息", "The device did not report make information")}</p><p>{t("适配器", "Adapter")}: {camera.adapter_kind.toUpperCase()} · {t("能力", "Capabilities")}: {capabilityLabels(camera).join(" / ")}</p>{camera.health_message && <p>{t("健康状态", "Health")}: {camera.health_message}</p>}</section>
       {camera.capabilities.ptz === "supported" && <section className="ptz-panel" aria-label={t("云台控制", "PTZ controls")}><h3>{t("云台控制", "PTZ controls")}</h3><p>{t("按住方向键或用空格、回车启动移动，松开即停止。窗口失焦也会发送停止。", "Hold a direction button, Space or Enter to move; release to stop. Losing window focus also sends a stop command.")}</p>
-        {commandStateText && <p role="status">{commandStateText}</p>}
+        {commandStateText && !receiptFailure && <p role="status">{commandStateText}</p>}
+        {receiptFailure && <ErrorState requestId={receiptFailure.requestId}>{t("暂时无法查询命令状态。", "The command status could not be checked.")}<Button onClick={() => setReceiptRefresh(value => value + 1)}>{t("重试状态查询", "Retry status lookup")}</Button></ErrorState>}
         <div className="ptz-grid"><span />{movement("0,0.55,0", t("云台向上", "Tilt up"), "↑")}<span />
           {movement("-0.55,0,0", t("云台向左", "Pan left"), "←")}<Button aria-label={t("停止云台", "Stop movement")} onClick={() => {
             if (moving.current) stop();

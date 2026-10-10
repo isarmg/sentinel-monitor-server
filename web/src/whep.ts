@@ -68,6 +68,7 @@ function parseIceServers(header: string | null): RTCIceServer[] {
 
 export class WhepPlayer {
   private peer: RTCPeerConnection | null = null;
+  private stream: MediaStream | null = null;
   private resource: string | null = null;
   private readonly controller = new AbortController();
   private closed = false;
@@ -98,8 +99,12 @@ export class WhepPlayer {
       peer.addTransceiver("video", { direction: "recvonly" });
       peer.addTransceiver("audio", { direction: "recvonly" });
       peer.ontrack = (event) => {
+        if (this.closed) return;
         const stream = event.streams[0];
-        if (stream !== undefined) this.video.srcObject = stream;
+        if (stream !== undefined) {
+          this.stream = stream;
+          this.video.srcObject = stream;
+        }
       };
 
       const offer = await peer.createOffer();
@@ -143,7 +148,8 @@ export class WhepPlayer {
       this.peer.close();
     }
     this.peer = null;
-    this.video.srcObject = null;
+    if (this.stream !== null && this.video.srcObject === this.stream) this.video.srcObject = null;
+    this.stream = null;
   }
 
   private deleteResource(): void {
