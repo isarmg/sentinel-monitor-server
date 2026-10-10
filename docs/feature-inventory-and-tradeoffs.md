@@ -66,7 +66,7 @@ xcss 提供管理员创建、凭据管理与停用能力。摄像头 RTSP/ONVIF 
 | SEN-C-005 | `BIND_ADDR` 缺省值和正式模板均为 `127.0.0.1:8080`；`APP_ENV=development` 进一步禁止显式外部绑定；生产使用 Secure `__Host-` Cookie | `src/config.rs`、`config/xcos.env.example`、`deploy/.bootstrap-action.sh`、`src/auth.rs` | 保障 | 中 | 默认监听任意网卡会绕开 TLS 网关；非 Secure 开发 Cookie 可能暴露到局域网 | 缺省 loopback、IPv4/IPv6 loopback正例；development 外部地址负例；正式样例一致 |
 | SEN-C-006 | `APP_JWT_SECRET` 至少 32 bytes，`CREDENTIALS_KEY` 必须标准 Base64 且解码恰为 32 bytes | `src/config.rs` | 保障 | 中 | 弱密钥或歧义 key 长度会降低媒体授权和凭据保护 | 缺失、短值、非法 Base64、31/33 bytes 负例 |
 | SEN-C-007 | `XCOS_RUNTIME_DIR` 与开发 `XCSS_DEV_WEB_DIR` 必须绝对路径 | `src/config.rs` | 保障 | 低 | cwd 变化会把锁或前端指到不同位置 | 相对路径拒绝；绝对路径接受 |
-| SEN-C-008 | 登录 body、bucket 容量、来源/账户窗口、Argon2 并发与超时均有范围 | `src/config.rs`、`src/login_security.rs` | 保障 | 中 | 错误配置可能关闭限流或耗尽 CPU/内存 | 最小/最大/越界值；超时后许可回收 |
+| SEN-C-008 | 登录 body、bucket 容量、来源/账户窗口、Argon2 并发与超时采用 xcss 固定认证策略 | `xcss::admin_core::AdministratorPolicyV1` | 保障 | 中 | 私有策略或失效环境变量会让运维误判保护边界 | 共享策略与产品实际登录入口；超时后许可回收；无产品参数覆盖 |
 | SEN-C-009 | Media token TTL、状态刷新、reconcile 周期、上游请求超时均显式配置 | `src/config.rs` | 建议保留 | 中 | 删除可调性会把不同网络/规模强行绑定同一节奏 | 0/极端值行为；周期任务不重叠失控 |
 | SEN-C-010 | Server 不接收摄像机网络地址或设备凭据；发现、地址校验和适配器配置全部位于 Client | xcoc `device`/`onvif` 模块、Server 当前 Schema | 保障 | 中 | Server 重新接触摄像机内网会绕过授权实例边界 | Server direct API 为 405、Schema 拒绝未绑定摄像机 |
 | SEN-C-011 | 正式 `run --release-root` 只使用内嵌 Web，并验证 `share/web-assets.json` 与 binary 清单精确相等 | `src/main.rs` | 保障 | 中 | 可把已验证 Rust 与任意前端混搭 | 内嵌资源完整 HTTP 验收；目录覆盖/重写清单负例 |
@@ -95,7 +95,7 @@ xcss 提供管理员创建、凭据管理与停用能力。摄像头 RTSP/ONVIF 
 | SEN-A-015 | unsafe 请求要求单个 `X-CSRF-Token` 且 constant-time 比较 digest | `enforce_browser_security`、xcss helper | 保障 | 高 | 已登录浏览器可能被跨站触发控制动作 | 缺失、重复、逗号合并、错误、正确 token |
 | SEN-A-016 | 浏览器请求要求严格同源 Origin/Host/URI authority 与 `Sec-Fetch-Site: same-origin` | `require_administrator_same_origin`、`src/auth.rs` | 保障 | 高 | 代理歧义或跨站请求可能绕过 CSRF 边界 | HTTP/1 Host、HTTP/2 authority、重复头、cross-site |
 | SEN-A-017 | 认证、业务和路由 rejection 使用 xcss `ErrorEnvelope` | `src/error.rs`、`xcss::error` | 保障 | 中 | Web 无法稳定按 code/retryable 处理，内部错误可能泄漏 | 400/401/403/404/409/429/500 exact envelope |
-| SEN-A-018 | xcss 管理接口支持创建、列表、改密和停用；无物理删除、改名或重新启用；最后一个 active 账户不能停用 | /api/v1/platform/administrators、事务内授权 | 保障 | 高 | 无账号可登录或授权快照竞态 | 并发相互停用、过期会话、CSRF 轮换 |
+| SEN-A-018 | 管理 Web 通过公共当前账号接口修改自己的 username 和密码，不挂载管理员创建/列表/停用路由 | `xcss::admin_axum` 当前账号路由、Shell 账号设置 | 保障 | 高 | 账号入口或凭据变更绕过同源/CSRF 和原子会话撤销 | 原密码核验、改名/改密、旧会话撤销、过期 Session 与 CSRF 拒绝 |
 | SEN-A-019 | 管理员写入与安全审计同事务；密码/停用包含会话撤销审计；成功登录与 Session 创建审计也原子提交 | xcss admin-sqlite | 保障 | 高 | 状态与审计分叉 | 审计故障回滚、actor/subject/request ID，无凭据泄漏 |
 
 ## 5. 摄像机实例与客户端边界
@@ -117,9 +117,9 @@ xcss 提供管理员创建、凭据管理与停用能力。摄像头 RTSP/ONVIF 
 | ID | 当前功能/特性与真实行为 | 实现/代码锚点 | 分类 | 复杂度 | 删除后的确定后果 | 最低验证/边界 |
 |---|---|---|---|---|---|---|
 | SEN-O-001 | Client 快照新增/变更摄像机，以及授权更换/撤销，在同一 SQLite 事务写 desired state 与 operation | `client_snapshot`、`queue_camera_change` | 核心 | 高 | HTTP 成功后没有可恢复的 MediaMTX 意图 | 事务失败零部分写；operation 持久化 |
-| SEN-O-002 | 每摄像头 desired `generation` 单调增长，operation 绑定 generation | `media_desired_states`、`media_operations` | 保障 | 高 | 陈旧 worker 可能覆盖更新后的期望状态 | 连续变更、旧 generation 完成、删除后更新 |
-| SEN-O-003 | operation 状态包含 pending/running/succeeded/failed/unknown/dead_letter/resolved | `src/current_schema.sql`、`MediaOperationView` | 核心 | 高 | 无法区分可重试失败、成功和外部效果不确定 | 合法转换、非法组合、终态字段 |
-| SEN-O-004 | 活跃 generation 唯一索引避免同一摄像头同代重复 active operation | `media_operations_active_generation_idx` | 保障 | 高 | 同一期望态可能被多次下发 | 并发 queue；相同 generation 冲突 |
+| SEN-O-002 | 每摄像头 desired `generation` 单调增长，operation 绑定 generation | `media_desired_states`、`_common_operations` | 保障 | 高 | 陈旧 worker 可能覆盖更新后的期望状态 | 连续变更、旧 generation 完成、删除后更新 |
+| SEN-O-003 | operation 状态包含 pending/running/succeeded/failed/unknown/dead_letter/resolved | `schema/generated/current_schema.sql`、`MediaOperationView` | 核心 | 高 | 无法区分可重试失败、成功和外部效果不确定 | 合法转换、非法组合、终态字段 |
+| SEN-O-004 | 公共 operation 的去重身份绑定摄像头与 generation；活跃 target 唯一索引避免同一 namespace/target 同时存在 running/unknown 操作 | `_common_operations`、`_common_operations_active_target`、`enqueue_operation_in` | 保障 | 高 | 同一期望或同一目标可能被重复执行 | generation 去重、并发领取、同 target 活跃冲突 |
 | SEN-O-005 | 全局 singleton lease 保证同一时刻只有一个 reconciler owner | `media_reconciler_leases`、`acquire_reconciler_lease` | 保障 | 高 | 多 worker 可同时操作 companion | 双 claim、过期接管、健康 owner 不被抢占 |
 | SEN-O-006 | 每条 running operation 也有 lease owner/expiry，并在远端调用前后续租 | `claim_next_operation`、`renew_claimed_leases` | 保障 | 高 | 失去 ownership 的 worker 仍可能 finalize | 过期、慢调用、owner mismatch、fencing |
 | SEN-O-007 | 启动只把 lease 已过期的 running operation标为 unknown，保留健康 lease | `recover_interrupted_operations` | 保障 | 高 | 全量改写会破坏仍在工作的实例事实；完全不恢复会永久卡住 | 活跃/过期两组 fixture；无副作用验证 |
@@ -141,7 +141,7 @@ xcss 提供管理员创建、凭据管理与停用能力。摄像头 RTSP/ONVIF 
 | SEN-M-003 | 浏览器读取与 Client 发布都使用短时 JWT；严格绑定 protocol、issuer、audience、kind、subject、camera、path、actions、jti、iat/nbf/exp，长期 Client API Token 不进入媒体 URL | `client_publish_url`、`MediaClaims`、`decode_media_token` | 保障 | 高 | Token 可跨产品、跨摄像头、跨用途重放，或媒体链路泄漏扩大到控制面 | 每字段篡改、未知字段、read/publish 隔离、时间窗、jti |
 | SEN-M-004 | MediaMTX HTTP auth callback 有 4 KiB/字段上限并核对 path 与 action | `/internal/v1/media/auth`、`MediaAuthRequest` | 保障 | 高 | callback 可被超大字段耗尽，或 Token 越权到其他 path | 超限、错 path/action、过期、额外字段 |
 | SEN-M-005 | WHEP 浏览器播放器生成 recvonly offer、等待 ICE、设置 answer 并 DELETE resource | `web/src/whep.ts` | 核心 | 高 | 失去低延迟直播或遗留服务端 WHEP Session | 成功连接、12 秒 timeout、close、unmount |
-| SEN-M-006 | WHEP OPTIONS/POST 与资源 DELETE 携带短时 Bearer；ticket runtime guard 当前只验证 URL 是字符串 | `WhepPlayer`、`isStreamTicket` | 保障 | 高 | 媒体入口可能未授权或把 Token 发往意外 origin | 生产 `PUBLIC_WEBRTC_BASE_URL` 必须保持同源相对路径；当前播放器接受绝对 ticket/Location 且会携带 Bearer，尚无 same-origin 强制 |
+| SEN-M-006 | WHEP OPTIONS/POST 与资源 DELETE 携带短时 Bearer；请求前验证 ticket 和资源 Location 与应用同源且无 userinfo | `WhepPlayer`、`requireSameOriginMediaUrl`、`whepResourceUrl` | 保障 | 高 | 删除校验可能把 Token 发往意外 origin | 同源相对/绝对地址正例、跨源及 userinfo 拒绝；生产代理路径匹配 |
 | SEN-M-007 | 录像列表通过 MediaMTX playback API，查询可选 start/end 和指定 camera/profile | `list_recordings`、`MediaMtxClient::recordings` | 建议保留 | 高 | 直播保留，但无法定位历史片段 | 时间范围、main/sub、无录像、上游错误 |
 | SEN-M-008 | 录像播放只允许 mp4/fmp4，单次 0.1 秒至 6 小时 | `play_recording` | 保障 | 中 | 无边界请求可放大上游和带宽资源消耗 | duration 边界、format、非法时间 |
 | SEN-M-009 | 播放代理只转发 Content-Type/Length/Range/Disposition 白名单响应头并流式正文 | `play_recording` | 保障 | 高 | 全量透传上游头可能改变安全策略；整段缓冲会耗内存 | 200/206、Range、上游错误、大正文 |
@@ -171,7 +171,7 @@ xcss 提供管理员创建、凭据管理与停用能力。摄像头 RTSP/ONVIF 
 | SEN-W-001 | 共享 Shell 负责登录、恢复、退出、导航、主题、诊断、通知和安全错误；产品只传身份和业务页面 | createXcssAdminApplication | 保障 | 高 | 产品复制平台状态机 | xcss 10 项浏览器验收及消费者浏览器回归 |
 | SEN-W-002 | 页面只在内存持有 Session/CSRF；Cookie 由浏览器 HttpOnly 管理 | `@xcss/web/admin-web`、`@xcss/web/http-client` | 保障 | 高 | 把 Secret 放 local/sessionStorage 会扩大 XSS 泄漏 | storage 扫描、刷新、401 清理 |
 | SEN-W-003 | 所有业务响应经过 TypeScript runtime guard 检查必需字段/类型，不只依赖静态类型 | `web/src/api.ts` | 保障 | 高 | 异常或漂移 JSON 会在组件深处被错误使用 | 缺失/错误类型、数组成员；产品 guard 当前容忍额外响应字段 |
-| SEN-W-004 | Camera 页面支持搜索、分页、添加、编辑、删除和卡片直播；授权实例列表独立地按账户名一次返回全部记录 | `CameraView`、`CameraEditor`、`list_clients` | 核心 | 高 | 失去主要管理旅程或实例选择不完整 | 空态、搜索、摄像机翻页、完整有序实例列表、mutation operation |
+| SEN-W-004 | 授权实例列表按名称一次返回全部记录；详情展示 Client 上报摄像机、搜索和卡片直播，并由实例设置管理媒体期望 | `ClientDetails`、`CameraView`、`ClientSettings`、`list_clients` | 核心 | 高 | 失去实例管理旅程或无法核对 Client 上报设备 | 空态、搜索、完整有序实例列表、实例设置与媒体操作；Server 不直接添加/编辑摄像头凭据 |
 | SEN-W-005 | 详情使用共享 Dialog，主码流及鼠标/键盘 PTZ；move/stop 串行，松开、取消、失焦及关闭均触发停止 | CameraDrawer | 可选 | 中 | 缺少精细控制或停止竞态 | pointer cancel、Space/Enter、窗口 blur、关闭清理 |
 | SEN-W-006 | Recordings 页面按摄像头和时间范围查询并播放 | `RecordingsView` | 建议保留 | 中 | API 尚在但普通用户难以回放 | 无摄像头、无结果、播放 URL 清理 |
 | SEN-W-007 | Events 页面筛选未确认、手动刷新和确认事件 | `EventsView`、SSE effect | 建议保留 | 中 | 事件 API 无内置操作界面 | SSE resync、确认、camera name 映射 |
@@ -231,7 +231,7 @@ xcss 提供管理员创建、凭据管理与停用能力。摄像头 RTSP/ONVIF 
 | SEN-X-005 | 不提供运行时 Schema migration、双读或非当前密文 keyring | `src/sqlite/`、`src/crypto.rs` | 保障 | 高 | 产品复杂度会随代数增长，并在启动期写未知数据 | 产品保留单一当前格式；非当前格式明确拒绝 |
 | SEN-X-006 | 不提供通用操作 Idempotency-Key；camera desired generation 是当前收敛语义 | Schema/queue 实现 | 保障 | 高 | 新 header 必须定义存储期限、payload digest、冲突和重放响应 | API/Schema/容量/清理/并发完整设计 |
 | SEN-X-007 | PTZ 持久化为有期限设备命令，HTTP 202 仅证明已排队；媒体 operation API 不提供设备命令终态查询 | `routes::ptz`、`device_commands`、Client snapshot | 可选 | 高 | 若提供设备副作用终态查询需定义专用查询与不确定结果模型 | 命令到期、Client 去重、回执、重复动作风险 |
-| SEN-X-008 | 不提供审计外部必达 sink/outbox | 只有 `audit_logs` | 可选 | 高 | 若要合规导出需新增持久投递、重试、死信、脱敏和容量控制 | sink 合同、outbox Schema、故障注入、保留策略 |
+| SEN-X-008 | 提供媒体 operation 到本地业务审计的持久 outbox，不提供外部必达 sink | `_common_operation_audit_outbox`、`flush_operation_audit` | 可选 | 高 | 外部导出仍需独立投递、重试、死信、脱敏和容量模型，不能把本地确认当外部送达 | 本地投递/确认同事务；若新增外部 sink 须有独立合同与故障验收 |
 | SEN-X-009 | 不承诺应用核对每个录像文件的 Hash/inventory；doctor 目前检查安全目录和写探针 | `doctor::recording_write_probe` | 建议保留 | 高 | 若新增完整 inventory，doctor 时间、存储和备份合同都会扩大 | 百万文件预算、增量索引、特殊文件与并发写设计 |
 | SEN-X-010 | 发行树提供 xcosctl；仓库另提供需审阅的 systemd 部署示例 | `deploy/`、release layout | 开发运维 | 中 | systemd 直接跟踪应用和 companion，不能与 xcosctl 后台模式并用 | 发行/运维文档明确；lifecycle 测试 |
 | SEN-X-011 | Server 只支持 Linux x86_64 GNU；管理界面为浏览器，边缘客户端平台由独立 Client 仓库定义 | compile/runtime gates、xcoc | 核心 | 高 | 扩平台不能只删除 compile gate，还需 companion、脚本、锁和发行等价证明 | 新平台完整 CI、真实媒体和部署安全验证 |

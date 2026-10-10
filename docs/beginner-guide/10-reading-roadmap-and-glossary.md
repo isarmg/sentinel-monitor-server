@@ -40,7 +40,7 @@
 | unknown | 外部副作用无法证明的终态 |
 | envelope | 包含格式版本、nonce 与认证密文的当前密文结构；产品不存储独立的 key ID |
 | AAD | 认证但不加密、用于绑定上下文的数据 |
-| audit log | 与部分业务事务共同写入 SQLite 的审计记录；当前没有 outbox 或外部必达投递 |
+| audit log | 实例持久变更与业务同事务写入；媒体操作通过持久 outbox 幂等物化到业务审计；PTZ 产品审计为 best-effort，未提供外部必达 sink |
 | WHEP | 浏览器 WebRTC 接收协议 |
 | fail closed | 无法验证合同时拒绝继续 |
 

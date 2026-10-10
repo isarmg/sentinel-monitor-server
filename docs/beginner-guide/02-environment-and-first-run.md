@@ -14,8 +14,8 @@ cargo +1.99.0 check --locked --all-targets
 ## 2.2 临时实验环境
 
 为数据库、runtime、recordings、MediaMTX config 与 binary 分别创建受保护临时路径；生成仅用于实验的
-32字节credential key和本地管理员密码；用`init --username admin`（或其他xcss canonical username），把密码经stdin传入，不放在命令行。这个显式命令只初始化Server管理账户；摄像头的 RTSP/ONVIF username 仍在摄像头表中
-独立加密。所有路径使用绝对路径，避免工作目录变化改变身份。
+32字节credential key和本地管理员密码；用`init --username admin`（或其他xcss canonical username），把密码经stdin传入，不放在命令行。这个显式命令只初始化 Server 管理账户；摄像头的 RTSP/ONVIF 地址、用户名和密码
+只保存在 Client，Server 摄像头表没有对应凭据列。所有路径使用绝对路径，避免工作目录变化改变身份。
 
 ## 2.3 第一次开发启动
 

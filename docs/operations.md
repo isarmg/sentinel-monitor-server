@@ -92,7 +92,7 @@ Web 和 Rust 由 xcss `xcss-build-server` 按锁图依次构建；配置入口�
   --release-root /opt/isarmg/xcos/current
 ```
 
-安装两个 unit 后以 `xcos.service` 管理部署。主 unit 的 Requires/After 确认 companion 启动依赖；companion 的 PartOf 使停服/重启同时停止其进程，再从 `current` 取得相同已验证版本。所有长驻进程由 systemd 直接跟踪，不能后台化。程序、companion、immutable YAML/lock 和 Web 清单都属于签名发行 bundle，不列为可变 `state_paths`；数据库、录像、私有JSON和其他业务状态由只读state-contract与config validate报告。
+安装两个 unit 后以 `xcos.service` 管理部署。主 unit 的 Requires/After 确认 companion 启动依赖；companion 的 PartOf 使停服/重启同时停止其进程，再从 `current` 取得相同已验证版本。所有长驻进程由 systemd 直接跟踪，不能后台化。程序、companion、immutable YAML/lock 和 Web 清单都属于受验证的不可变发行 bundle，不列为可变 `state_paths`；数据库、录像、私有JSON和其他业务状态由只读state-contract与config validate报告。
 
 ## 3. 核心配置
 
@@ -105,7 +105,7 @@ Web 和 Rust 由 xcss `xcss-build-server` 按锁图依次构建；配置入口�
 | 凭据 | `CREDENTIALS_KEY` | Base64 编码的 32 字节随机值，必须备份到独立秘密系统 |
 | 首管 | `BOOTSTRAP_ADMIN_USERNAME/PASSWORD` | 仅全新数据库初始化；默认 username 为 `admin` |
 | 环境 | `APP_ENV=production` | 开发模式只允许 loopback |
-| 登录 | body/rate/Argon2 concurrency/timeout | 按 CPU/内存容量调整，不取消边界 |
+| 登录 | xcss `AdministratorPolicyV1` 的 body/rate/Argon2 concurrency/timeout | 使用固定公共策略，不提供产品环境变量覆盖 |
 | MediaMTX | API、playback、config、contract、binary | 必须指向同一固定 release |
 | Web | 内嵌资源与 `share/web-assets.json` | 由实际 binary 精确验证，无生产目录覆盖 |
 | 监听 | `BIND_ADDR=127.0.0.1:8080` | 代码默认值和正式样例一致；仅可信本机网关访问 |
@@ -182,8 +182,9 @@ binary/version/SHA/config。在线模式再检查两个 loopback readiness，并
 
 ## 6. 锁顺序
 
-应用全生命周期持有数据库 instance 排他、maintenance 共享和 runtime app lock；MediaMTX 由
-正常运行持数据库父目录`.state-maintenance.lock`共享与`.state-instance.lock`独占；runtime目录使用同一公共协议并维护PID。`flock --no-fork`持companion lock。维护工具必须按database maintenance -> runtime -> MediaMTX
+应用全生命周期持有数据库 instance 排他、maintenance 共享和 runtime app lock。正常运行持有数据库父目录
+`.state-maintenance.lock` 共享锁与 `.state-instance.lock` 独占锁；runtime 目录使用同一公共锁协议并维护 PID。
+MediaMTX 由 `flock --no-fork` 持有 companion lock。维护工具必须按database maintenance -> runtime -> MediaMTX
 取得排他锁。不要用不同 runtime 指向同一数据库；database identity lock 仍会拒绝第二实例。
 
 ## 8. 发布测试
@@ -217,8 +218,10 @@ lifecycle test 仅使用临时根，覆盖 no-clobber、合同外环境拒绝、
 管理页的录像摄像头选择限定为当前实例的服务器录像设备。实例或设备列表变化时，当前选择会指向仍可用的摄像头；重新查询录像后，播放选择会清空，避免把上一查询的片段显示为本次结果。
 
 管理页“日志”使用服务器操作系统的本地日期。打开页面时从受保护的 `GET /api/v1/logs/calendar`
-取得服务器当天；日期选择器切换后，事件、媒体协调操作和业务审计分别以 `date=YYYY-MM-DD`
-每页最多 100 条，使用绑定日期和记录类型的游标继续读取；同一时间戳以记录 ID 排序，不遗漏后续页。页面保留当前页，支持第一页和下一页。每组响应上限 8 MiB，服务端响应等待最多 5 秒；每条历史 SQLite 连接最多等待 2 秒，查询执行在 3 秒进度截止时中断。全局最多 4 个查询，连接及响应 body 结束前持续占用名额，至少 6 个连接留给命令及状态。
+取得服务器当天；单日查询使用 `date=YYYY-MM-DD`，范围查询使用 `start_date=YYYY-MM-DD&end_date=YYYY-MM-DD`，
+包含起止当天且不与 `date` 混用。事件、媒体协调操作和业务审计每页最多 100 条，
+返回 `next_cursor`，游标绑定日期范围和记录类型；同一时间戳以记录 ID 排序，不遗漏后续页。
+页面保留当前页及已访问的游标栈，支持首页、上一页和下一页；上一页不是服务端 `previous_cursor` 字段。每组响应上限 8 MiB，服务端响应等待最多 5 秒；每条历史 SQLite 连接最多等待 2 秒，查询执行在 3 秒进度截止时中断。全局最多 4 个查询，连接及响应 body 结束前持续占用名额，至少 6 个连接留给命令及状态。
 
 新历史写入和媒体操作在同一写事务中检查持久预算：所有事件、审计、操作和 outbox 合计最多 100 万行，每摄像头最多 10 万行且记录内容、索引元数据计费与回执预留最多 2 GiB，数据库、WAL 与已接受操作后续回执/审计预留合计最多 8 GiB；新增操作还要求可用空间保留 1 GiB 加预留量。达到任一边界时返回明确的 `history_storage_capacity`，不接受新操作、不删除已有事实。已有警报确认、PTZ 回执、操作完成及人工结果确认使用预留空间继续处理。容量上限是拒绝条件，不是实测性能保证，也不等同于真实磁盘已满。
 服务端按该日期的本地起点到次日本地起点
@@ -256,7 +259,7 @@ auth body、媒体 JWT、WHEP/HLS 播放与录像状态不使用 Administrator u
 当前 Web 使用 xcss 的 admin-web、admin-shell、admin-ui、contracts、design-tokens、http-client、
 web-fonts、web-toolchain 八个内部模块，作为一个 @xcss/web 构建期包发布，不是生产运行服务。Node 固定为 `.node-version` 的 `26.7.0`。
 
-- 候选Rust输入固定 xcss `=1.0.0` / `627d988a4ed471469ed4fdce8af0ea6b5c131ce6`，一个 @xcss/web 包使用对应新tag URL与真实tarball的lock integrity。xcss 1.0.0 已正式发布，官方单包已逐字节验证；产品仍须完成自身正式构建和发行验收。
+- 候选Rust输入固定 xcss `=1.0.0` / `b0524c4fb018b5ba4f27ad71bf32b74c8ef0a972`，一个 @xcss/web 包使用对应新tag URL与真实tarball的lock integrity。xcss 1.0.0 已正式发布，官方单包已逐字节验证；产品仍须完成自身正式构建和发行验收。
 - 旧消费者CI证明只属于其记录的旧revision；本次新源码和真实发行物必须分别验收。统一manifest、lockfile和发布身份，不改写旧tag/资产。
 
 ```bash
@@ -300,10 +303,10 @@ xcss 512 KiB 硬限制且不发布 source map。浏览器验收使用真实 dist
 | 包内模块 | 共享能力 | Xcos 保留的产品责任 | 删除后果 |
 |---|---|---|---|
 | `xcss::contracts` | Administrator 路径/DTO、跨语言合同类型 | 业务 DTO | Rust/Web 认证合同可能静默漂移 |
-| `xcss::admin_core` / `admin-sqlite` / `admin-axum` | 管理员、固定密码策略、Session、Cookie、CSRF、限流、事务审计与管理路由 | 启动时选择 Profile 并挂载平台 Router | 产品再次拥有第二套认证策略 |
+| `xcss::admin_core` / `xcss::admin_sqlite` / `xcss::admin_axum` | 管理员、固定密码策略、Session、Cookie、CSRF、限流、事务审计与管理路由 | 启动时选择 Profile 并挂载平台 Router | 产品再次拥有第二套认证策略 |
 | `xcss::error` | `ErrorCode`、严格 `ErrorEnvelope` | 业务状态映射和脱敏诊断 | 错误可能泄漏内部结构 |
-| `xcss::schema_identity` / `platform-db` | metadata、当前平台表、fingerprint 和数据库初始化边界 | Xcos 业务 Schema、快照与全局调和租约不变量 | 平台 Schema 发生分叉 |
-| `xcss::server_runtime` / `server-target` | 生命周期、任务监督、健康/诊断与正式 target | 注册业务任务、业务 Router、MediaMTX 伴随进程合同 | 生命周期与运行目标漂移 |
+| `xcss::schema_identity` / `xcss::platform_db` | metadata、当前平台表、fingerprint 和数据库初始化边界 | Xcos 业务 Schema、快照与全局调和租约不变量 | 平台 Schema 发生分叉 |
+| `xcss::server_runtime` / `xcss::server_target` | 生命周期、任务监督、健康/诊断与正式 target | 注册业务任务、业务 Router、MediaMTX 伴随进程合同 | 生命周期与运行目标漂移 |
 
 这些共享包不提供旧合同兼容。升级包版本时同时替换依赖、lockfile、代码消费者、检查和整套发行物，
 不在 Xcos 内加入双读、别名或 fallback。

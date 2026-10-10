@@ -36,8 +36,9 @@ browser 排查。每跨一层保留 operation ID 和受限日志证据。
 ## 8.4 Operation 测试
 
 覆盖 generation 单调性、同代 active operation 唯一、per-camera 收敛、远端明确失败、响应丢失、进程
-重启、unknown、健康/过期 lease 和 fencing。当前没有 Idempotency-Key 或审计 outbox，不得编写假合同
-测试；应验证摄像头持久变更的审计与业务同事务，以及 PTZ/登录审计的 best-effort 边界。
+重启、unknown、健康/过期 lease 和 fencing。当前没有通用请求 `Idempotency-Key`；媒体操作状态与
+公共 operation audit outbox 同事务，后台投递按事件 ID 幂等写入业务审计并确认。还须分别验证实例变更的事务审计、
+PTZ 排队的 best-effort 产品审计，以及管理员登录的公共事务审计，不能混为同一种保证。
 
 ## 8.5 媒体/发行测试
 
@@ -49,9 +50,8 @@ browser 排查。每跨一层保留 operation ID 和受限日志证据。
 除渲染外测试 Session 失效、CSRF、operation polling、unknown 展示、播放 Token 过期和错误 redaction。
 UI 不能把网络错误自动解释为“操作失败”。
 
-Web 还必须证明设计边界：`main.tsx` 只从 `@xcss/design-tokens@1.0.0` 导入 token、scoped reset 和
-accessibility，`body` 带 `data-xcss-scope`，而 `styles.css` 保留 Xcos 品牌 token 并映射 xcss
-语义。不要在 `vendor/` 复制共享 CSS，也不要添加 CDN 或运行时网络 fallback。
+Web 还必须证明设计边界：`main.tsx` 从单个 `@xcss/web` 包的 `design-tokens` 子路径导入 token、scoped reset 和
+accessibility，`body` 带 `data-xcss-scope`，`styles.css` 只维护业务布局，颜色、字体和控件语义来自公共模块。不要在 `vendor/` 复制共享 CSS，也不要添加 CDN 或运行时网络 fallback。
 
 ## 8.7 变更联动
 

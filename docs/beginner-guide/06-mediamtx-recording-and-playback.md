@@ -12,15 +12,16 @@ Xcos 绑定精确 MediaMTX binary version/SHA 和规范 config。启动脚本验
 
 ## 6.3 摄像头到媒体服务器
 
-credential 在 Server 内解密，只在调用/生成受保护配置的最短范围存在。日志、进程参数、Web JSON 和
-审计都不能出现原始 RTSP 密码。网络上应把摄像头放在受限 VLAN，并限制 MediaMTX 出站/入站。
+摄像头 RTSP/ONVIF 凭据只由 Client 保管，Client 拉取摄像头后用短期媒体授权向 MediaMTX 发布；
+Server 不直连摄像头，也不解密其设备密码。日志、进程参数、Web JSON 和审计都不能出现原始 RTSP 密码。
+将摄像头放在 Client 所在的受限 VLAN，分别限制设备访问、Client RTSPS 发布和 MediaMTX 入站。
 
 ## 6.4 播放
 
 浏览器先向 Xcos 获取短期授权，再经 TLS 代理访问 WHEP/HLS。代理路由必须保持 Host、真实 peer 和
-WebSocket握手语义，且不能公开 companion 管理 API。当前 `isStreamTicket` 只校验 URL 字段类型，WHEP player
-对绝对 ticket/Location 也会携带 Bearer；生产必须把 WebRTC base URL 锁定为同源相对路径，直到客户端
-实现显式 same-origin 拒绝。
+WebSocket 握手语义，且不能公开 companion 管理 API。`isStreamTicket` 检查字段类型；实际 WHEP 请求在携带 Bearer 前，
+通过 `requireSameOriginMediaUrl` 拒绝跨源和含用户名/密码的 URL，返回的 `Location` 也经 `whepResourceUrl` 同源校验。
+同源绝对地址可以使用，生产模板仍采用同源相对路径以匹配 Caddy 路由。
 
 当前原生部署模板只有 `deploy/Caddyfile`：`/media-webrtc/*`、`/media-hls/*` 和其余应用流量分别转发到
 `127.0.0.1:8889`、`127.0.0.1:8888`、`127.0.0.1:8080`。这些是同主机进程端口，不是容器服务名；仓库
@@ -38,7 +39,7 @@ WebSocket握手语义，且不能公开 companion 管理 API。当前 `isStreamT
 
 ## 6.8 无画面排查顺序
 
-1. 摄像头 RTSP 是否从 MediaMTX 主机可达。
+1. 摄像头 RTSP 是否从 Client 主机可达，以及 Client 的 RTSPS 发布是否能到达 Server。
 2. MediaMTX path/publisher 是否存在。
 3. Xcos operation 是否成功而非 unknown。
 4. 系统时间和播放授权是否有效。

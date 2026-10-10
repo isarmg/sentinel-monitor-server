@@ -18,12 +18,12 @@
 
 ## 1. 先认识控制面和媒体面
 
-摄像头视频不经过 Rust 应用转发。MediaMTX 连接 RTSP 摄像头并向浏览器提供 WHEP/HLS；Rust 应用保存
-“应该有哪些 MediaMTX Path”的期望态，通过 MediaMTX 本地 API 协调实际态，并负责 Administrator 身份、
-临时媒体授权和 ONVIF 控制。
+摄像头视频不经过 Rust 应用转发。Client 使用 RTSP/ONVIF 连接摄像头，并通过受限 RTSPS 发布到 MediaMTX；
+MediaMTX 向浏览器提供 WHEP/HLS。Rust 应用保存媒体路径期望态，通过本机 MediaMTX API 协调实际态，
+管理 Administrator 身份、短期媒体授权，并把 PTZ 命令交给所属 Client 执行。
 
 ```text
-IP Camera --RTSP/ONVIF--> MediaMTX --WHEP/HLS--> Caddy --> Browser
+IP Camera --RTSP/ONVIF--> Client --RTSPS--> MediaMTX --WHEP/HLS--> Caddy --> Browser
                               ^                    |
                               | local API/auth     | /api/v1
                               +------ Rust/Axum <--+
@@ -45,7 +45,7 @@ IP Camera --RTSP/ONVIF--> MediaMTX --WHEP/HLS--> Caddy --> Browser
 
 ## 3. 开发环境
 
-需要 Rust `1.98`、Node/npm，以及可供集成测试使用的 Linux 工具。Web：
+需要 Rust `1.99.0`、Node/npm，以及可供集成测试使用的 Linux 工具。Web：
 
 ```bash
 npm ci --prefix web
@@ -101,9 +101,9 @@ create/update/delete 或 ONVIF 发现 API。
 
 ## 7. 播放和录像
 
-浏览器先向当前 API 申请短时媒体 JWT，再通过同源 Caddy 入口访问 WHEP/HLS。当前前端 guard 只证明
-ticket URL 是字符串，播放器也会接受绝对 URL/Location 并携带 Bearer；因此生产配置必须把
-`PUBLIC_WEBRTC_BASE_URL` 保持为受审同源相对路径，不能把该约束误写成代码已强制。MediaMTX 调用唯一
+浏览器先向当前 API 申请短时媒体 JWT，再通过同源 Caddy 入口访问 WHEP/HLS。ticket guard 检查字段类型；
+WHEP 播放器另在携带 Bearer 前验证 ticket 与资源 `Location` 同源且不含 userinfo，拒绝跨源地址。
+同源绝对 URL 可用，生产 `PUBLIC_WEBRTC_BASE_URL` 保持为受审的同源相对路径以匹配代理路由。MediaMTX 调用唯一
 `/internal/v1/media/auth` 校验。JWT 使用从 `APP_JWT_SECRET` 派生的当前签名 key，严格绑定 protocol、
 issuer、audience、kind、camera、jti 与时间窗；不验证旧 token。
 

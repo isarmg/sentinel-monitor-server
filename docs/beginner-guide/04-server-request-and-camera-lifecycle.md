@@ -49,8 +49,8 @@ Client 保管的 RTSP/ONVIF 凭据、完整上游错误或播放 signing secret�
 
 ## 4.8 调试
 
-使用时间、operation ID 和 camera ID 关联日志，不打印 URL credential。当前只启用 tower TraceLayer，没有
-请求 ID 中间件，不能让排障流程依赖不存在的字段。先证明操作是否已持久化，再检查 claim/lease、
+使用时间、request ID、operation ID 和 camera ID 关联日志，不打印 URL credential。公共运行时建立请求 ID 边界，
+HTTP TraceLayer 读取同一请求 ID；后台操作仍用 operation/camera ID 关联。先证明操作是否已持久化，再检查 claim/lease、
 MediaMTX 请求与终态事务，最后才看 Web 刷新。
 
 ## 4.9 API 变更
