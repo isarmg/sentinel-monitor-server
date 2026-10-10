@@ -51,7 +51,7 @@ xcss 提供管理员创建、凭据管理与停用能力。摄像头 RTSP/ONVIF 
 | SEN-P-005 | 控制面和媒体面分离；Rust 不代理 RTSP 输入，也不转码视频 | `src/mediamtx.rs`、`deploy/Caddyfile` | 核心 | 高 | 把媒体搬入 Rust 会重写容量、协议和攻击面；删 companion 则无直播/录像 | Rust 路由不存在 RTSP 转发；MediaMTX path 实测 |
 | SEN-P-006 | 普通运行只接受当前合同并验证当前状态身份 | `src/main.rs` CLI、`src/sqlite/` | 保障 | 高 | 加入代际 reader 会长期扩大状态和测试矩阵 | init/run/config validate/status/help/version核心命令和只读state-contract；普通运行拒绝非当前库，不提供历史转换入口 |
 | SEN-P-007 | Server 端 React 19 + TypeScript strict + Vite 8 控制台位于 `web/` | `web/package.json`、`web/src/main.tsx` | 建议保留 | 高 | API 和媒体能力仍在，但没有内置可操作控制台 | typecheck、Vite build、发行静态树验证 |
-| SEN-P-008 | Server Rust与单个 @xcss/web 包候选以xcss 1.0.1完整revision、URL及真实tarball integrity受控；公共库已正式发布，产品本轮验收和发行状态单独记录 | Cargo、一个 `@xcss/web` 依赖、manifest/lock | 保障 | 高 | 平台行为分叉；独立构建通过不代表主分支改动已纳入产品 Release | [本项目 CI](https://github.com/isarmg/xcos/actions)及[正式发行资产](https://github.com/isarmg/xcos/releases)；后续更新仍须复验锁图和发行身份 |
+| SEN-P-008 | Server Rust与单个 @xcss/web 包候选以xcss 1.0.2完整revision、URL及真实tarball integrity受控；公共库已正式发布，产品本轮验收和发行状态单独记录 | Cargo、一个 `@xcss/web` 依赖、manifest/lock | 保障 | 高 | 平台行为分叉；独立构建通过不代表主分支改动已纳入产品 Release | [本项目 CI](https://github.com/isarmg/xcos/actions)及[正式发行资产](https://github.com/isarmg/xcos/releases)；后续更新仍须复验锁图和发行身份 |
 | SEN-P-009 | `config/` 只存可提交样例和受审 companion 合同；真实 Secret 不进仓库 | `config/xcos.env.example`、`.gitignore` | 开发运维 | 低 | Secret 容易误提交，或部署字段缺少审查入口 | Secret 扫描；样例字段与 parser 对照 |
 | SEN-P-010 | 原生发行树提供单一xcosctl生命周期入口，仓库另给完整systemd部署示例；两者不能同时管理相同进程和数据 | `deploy/xcosctl`、`deploy/.*-action.sh`、`deploy/*.service` | 开发运维 | 中 | 双重进程管理可能启动半套服务或竞争端口 | xcosctl临时根测试通过；systemd示例尚未在真实主机执行 |
 
