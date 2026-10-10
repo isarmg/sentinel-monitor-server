@@ -1,16 +1,26 @@
 # xcos
 
-xcos `1.0.0` 是自托管的浏览器摄像头监控系统。1.0.0 候选采用 SQLx 0.9、Rust 1.99，并按 CLI、服务组装、数据库和 HTTP 业务职责整理模块；完整依赖与正式发行验收仍在执行。Rust/Axum 控制面负责管理员、Client 实例、摄像头状态、PTZ 和录像索引；固定版本的 MediaMTX companion 负责视频接入、播放与 Server 侧录像。
+## 项目简要介绍
 
-正式 Server 仅支持 Linux AMD64 GNU（`x86_64-unknown-linux-gnu`）。摄像头地址和密码保存在独立的 xcoc，Server 只管理统一设备状态和短期媒体发布授权。
+自托管的摄像头监控服务。Rust 控制面管理设备和录像，配套 MediaMTX 处理媒体接入与播放，摄像头凭据由独立的 xcoc 客户端保存。
 
-设备侧从安装、配对/重新配对到服务或后台任务管理、诊断与卸载，见独立 [Client 分平台部署指南](https://github.com/isarmg/xcoc/blob/main/docs/platform-setup.md)。
+## 项目功能
 
-## 配置概览
+- 管理管理员、客户端实例与摄像头，查看设备和媒体状态
+- 浏览器实时播放、云台控制、主/子码流及录像索引
+- 短期媒体发布授权、服务端录像与媒体状态协调
 
-安装发行树后，由生命周期脚本创建生产环境文件，再编辑其中的密钥、管理员密码、公开媒体地址和证书路径：
+## 适用平台
+
+服务端仅支持 Linux AMD64 GNU（`x86_64-unknown-linux-gnu`）。生产环境需要 HTTPS 反向代理，以及客户端可访问、证书受信的 RTSPS 入口。
+
+## 如何快速部署
+
+从 [下载页](https://github.com/isarmg/xcos/releases) 取得同版 Linux 归档与 `SHA256SUMS`。以下用于全新安装，不能覆盖已有发行树；公开 v1.0.0 归档早于当前 `xcos-db-v2` 合同，应使用各自版本的部署配置。
 
 ```sh
+sha256sum --check SHA256SUMS
+sudo tar -xzf xcos-1.0.0-x86_64-unknown-linux-gnu.tar.gz -C / --keep-old-files --no-overwrite-dir opt
 sudo /opt/isarmg/xcos/releases/1.0.0/deploy/xcosctl bootstrap
 sudoedit /etc/isarmg/xcos.env
 sudo /opt/isarmg/xcos/releases/1.0.0/deploy/xcosctl bootstrap --confirm-config
@@ -18,34 +28,18 @@ sudo /opt/isarmg/xcos/releases/1.0.0/deploy/xcosctl start
 sudo /opt/isarmg/xcos/releases/1.0.0/deploy/xcosctl status
 ```
 
-`bootstrap`只生成私有配置；`bootstrap --confirm-config`审阅后显式执行`init`并只读校验既有状态，成功后移除临时初始密码。`start`仅运行当前已初始化数据，不能自动建库或创建管理员。核心CLI为`init`、`run`、`config validate`和`status`；`--config`读取私有JSON，显式CLI覆盖环境、文件和默认值，`--json`提供单条机器错误。
+确认配置前，填写管理员密码、独立密钥、公开 RTSPS 地址和证书路径，并配置 HTTPS 网关。`bootstrap --confirm-config` 显式初始化；普通启动不建库。控制面和 MediaMTX 管理端口只向本机网关开放。
 
-当前数据格式为`xcos-db-v2`（Schema2），Client设备协议为`xcos-edge-v1`，能力使用`supported/unsupported/unknown`三态；浏览器wire身份为`xcos-wire-v2`（HTTP路径前缀仍为`/api/v1`），媒体JWT为v1，几种身份不可混用。普通运行只接受当前格式，非当前输入明确拒绝且不改写。
+## 如何编译部署
 
-摄像机 API 单独提供 `observation_status`（`fresh/stale/unknown`）、最后有效观测时间和到期时间。依赖清单读取失败会显示观测过期并保留已知状态，不直接判定设备离线；字段语义与当前结构初始化见[运维文档](docs/operations.md#摄像机状态与观测时效)。
-
-控制面和 MediaMTX 管理端口应只监听 loopback。生产入口由 HTTPS 反向代理提供；RTSPS 发布地址及证书必须能被所有 Client 验证。网络端口、反向代理和录像目录配置见[运维文档](docs/operations.md)。
-
-## 开发验证
+在 Linux AMD64 上准备 Rust 1.99.0、Node.js 26.7.0、C 编译工具、Python 3、curl、OpenSSL 和 GNU 工具。正式打包要求干净源码，且同版本 annotated tag 精确指向 HEAD；不能把未发布源码当成已有标签的制品。
 
 ```sh
-cargo +1.99.0 fmt --all -- --check
-cargo +1.99.0 clippy --locked --all-targets -- -D warnings
-cargo +1.99.0 test --locked --all-features
-(cd web && npm ci && npm run build)
-./scripts/lifecycle-test.sh
+rustup target add --toolchain 1.99.0 x86_64-unknown-linux-gnu
+output="$(mktemp -d /var/tmp/xcos-release.XXXXXXXX)"
+bash scripts/package-release.sh "$output"
 ```
 
-## 文档
+脚本下载并校验固定的 MediaMTX，构建内嵌 Web 的服务端，输出归档与校验文件。随后按上面的全新安装步骤部署生成的包。
 
-- [文档总览](docs/README.md)
-- [初学者指南](docs/beginner-guide/README.md)
-- [项目工作流程](docs/project-workflow.md)
-- [功能范围与取舍](docs/feature-inventory-and-tradeoffs.md)
-- [部署与运维](docs/operations.md)
-
-许可与第三方组件信息以发行包内的许可证清单为准。
-
-当前发布版本：**1.0.0**。参见 [1.0.0 发布说明](docs/releases/1.0.0.md)。
-
-公共支撑的职责、单体依赖、平台边界与验证方法见[公共支撑说明](docs/common-support.md)。
+[详细文档](docs/README.md)
