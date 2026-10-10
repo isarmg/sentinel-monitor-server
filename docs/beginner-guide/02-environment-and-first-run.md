@@ -37,8 +37,7 @@ target/x86_64-unknown-linux-gnu/debug/xcos run
 
 ## 2.4 启动 companion
 
-使用 `deploy/xcosctl start` 让统一命令验证 binary SHA、版本、配置、目录权限和锁，再启动 MediaMTX；不要绕过
-脚本直接后台运行。随后启动 Xcos，并分别检查应用与 companion 的 loopback readiness。
+正式发行实验使用已安装版本树内的 `deploy/xcosctl start`，由它统一验证并启动 MediaMTX 和 xcos。它与上节未绑定的开发进程分别运行在独立实验目录，选择其中一种方式即可。自动化媒体与生命周期实验使用[开发指南](../development.md)中的脚本，再分别检查应用和 companion readiness。
 
 ## 2.5 第一个摄像机实例练习
 

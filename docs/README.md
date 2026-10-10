@@ -1,18 +1,19 @@
-# xcos 文档总览
+# xcos 文档
 
-本文档集只描述 `1.0.0` 当前实现。协议 JSON、当前 Schema、MediaMTX lock、发行 manifest 和自动化测试
-是约束事实源。
+先完成服务端部署，再配对摄像头客户端。本文档面向当前源码；公开 v1.0.0 归档与当前源码的数据库格式不同，部署时按实际程序和同一提交的文档操作。
 
-| 分类 | 文档 | 重点 |
-|---|---|---|
-| 初学者学习指南 | [beginner-guide/README.md](beginner-guide/README.md) | 控制面、媒体面、ONVIF、WHEP/HLS、凭据与协调器基础 |
-| 工作流程与流程树 | [project-workflow.md](project-workflow.md) | 启动、登录、摄像头变更、播放、录像与发布流程 |
-| 完整功能与取舍 | [feature-inventory-and-tradeoffs.md](feature-inventory-and-tradeoffs.md) | 当前能力、Administrator 权限边界、删除后果和明确不做的事项 |
-| 项目入口 | [../README.md](../README.md) | 项目简介、功能、平台和部署入口 |
-| 开发与验证 | [development.md](development.md) | 工具链、验证命令与协议身份 |
-| 安全与工程边界 | [unsafe-audit.md](unsafe-audit.md) | unsafe 约束、目录职责与真实验证范围 |
-| 运维 | [operations.md](operations.md) | 构建、bootstrap、配置、锁、doctor和事件响应 |
+## 开始使用
 
-当前实现说明：[版本 1.0.0](releases/1.0.0.md)。新 Source 正在完成正式发行验收，已发布旧发行记录保留。
+1. [安装与首次运行](getting-started.md)：准备主机、配置 HTTPS/RTSPS、初始化并检查服务。
+2. [添加摄像头与日常使用](usage.md)：创建实例、配对 xcoc、播放、录像和查看日志。
+3. [配置与运维](operations.md)：配置字段、systemd、健康检查与安全事件。
+4. [故障排查](troubleshooting.md)：从症状定位客户端、控制面或媒体面。
 
-公共支撑的职责、单体依赖、平台边界与验证方法见[公共支撑说明](common-support.md)。
+## 开发与参考
+
+- [开发与验证](development.md)：工具链、构建、测试和发行检查。
+- [运行状态与协议参考](runtime-reference.md)：观测时效、操作结果、数据库与历史容量。
+- [请求和媒体流程](project-workflow.md)、[功能设计参考](feature-inventory-and-tradeoffs.md)。
+- [从零读懂 xcos](beginner-guide/README.md)：按章节学习 Rust、Web 和媒体服务。
+- [账号设置](account-settings.md)、[仓库职责](repository-boundary.md)、[公共支撑](common-support.md)、[安全审查](unsafe-audit.md)。
+- [1.0.0 发行记录](releases/1.0.0.md)、[项目首页](../README.md)。

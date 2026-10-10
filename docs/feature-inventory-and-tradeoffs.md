@@ -2,7 +2,7 @@
 
 本文按当前 `1.0.0` 工作树逐项盘点 xcos 的真实能力、保证、交付工具和明确边界。代码、
 `schema/generated/current_schema.sql`、`web/src/protocol-contract.json`、`config/mediamtx.lock` 与发行 manifest 是
-最终事实源；本文不是未来愿望清单，也不把测试中不存在的行为写成已实现功能。
+实现依据。本文供设计和代码评审使用；日常任务从[文档入口](README.md)进入。
 
 本清单帮助开发人员回答四个问题：某段代码保护什么；删除后哪条用户旅程或安全不变量会消失；删除
 需要同时清理哪些消费者；变更完成至少要取得什么证据。
@@ -181,7 +181,7 @@ xcss 提供管理员创建、凭据管理与停用能力。摄像头 RTSP/ONVIF 
 | SEN-W-010 | 产品 CSS 仅维护业务布局，颜色/字体/控件来自 xcss；视频黑底属于媒体业务 | web/src/styles.css | 建议保留 | 中 | 私有平台样式导致主题和可访问性漂移 | 无 token 覆盖、无私有字体、移动明暗主题 WCAG AA |
 | SEN-W-011 | WHEP player 在 component cleanup、profile/camera 变化时关闭 peer/resource | `LiveVideo` effect、`WhepPlayer.close` | 保障 | 高 | 切页后仍保留媒体连接和资源 | mount/unmount、快速切换、失败重试 |
 | SEN-W-012 | 精确 Node 26.7.0、React/DOM 19.3.0、TS 7.0.2、Vite 8.3.3 工具链 | `.node-version`、`package.json`、lockfile | 开发运维 | 中 | CI/开发/发行 bundle 不可复现 | clean `npm ci`、engine、lock 来源、typecheck |
-| SEN-W-013 | `build` 强制先执行 `check:xcss`，再 strict typecheck 与 Vite build | `package.json`、`tests/design-xcss.test.mjs` | 开发运维 | 中 | 共享依赖或 CSS 漂移时仍可能生成表面可用 bundle | 故意改版本/import/scope 后 build 在 bundling 前失败 |
+| SEN-W-013 | `build` 强制先执行 `check:xcss`，再 strict typecheck 与 Vite build | `package.json`、`web/tests/design-xcss.test.mjs` | 开发运维 | 中 | 共享依赖或 CSS 漂移时仍可能生成表面可用 bundle | 故意改版本/import/scope 后 build 在 bundling 前失败 |
 | SEN-W-014 | 发行内嵌全部 Web；只附带 `share/web-assets.json`，不需要运行时 npm/CDN | Vite output、`scripts/build.sh`、release manifest | 保障 | 高 | 运行时网络依赖会破坏离线部署和制品身份 | 断网加载、资源引用、额外文件/篡改拒绝 |
 
 ## 10. SQLite、锁、doctor、发行与供应链
@@ -263,18 +263,8 @@ companion，无法复现实际媒体面；因此 binary version、platform、SHA
 
 ## 14. 功能删除检查表
 
-删除前先在本清单记录目标 ID 和接受的用户后果；随后逐项完成：
+变更某项能力时，按其 ID 核对生产者、消费者、状态、配置、测试和发行材料。记录用户影响，再以[开发验证](development.md)及对应专项测试确认结果。
 
-1. 删除或替代 Rust route、DTO、查询、后台任务和配置字段。
-2. 若涉及状态，定义新的完整当前Schema/格式，并同步生产者与消费者当前合同；普通启动不加旧reader。
-3. 删除 React 入口、runtime guard、样式和异步清理逻辑。
-4. 更新 MediaMTX config/lock、Caddy 路由与 native 生命周期闭包。
-5. 从 release identity、manifest、CI 和依赖图中移除对应资产。
-6. 添加“已删除入口不可访问、已删除字段不可解析”的当前合同负例。
-7. 同步 README、初学者指南、流程树、本清单和运维文档。
-
-只有上述闭包完成，才能认为功能真正删除。若只是关闭配置、隐藏页面或停止测试，它仍然存在于项目
-边界中，并继续产生维护和安全责任。
 多品牌设备边界固定在 `xcoc`：`rtsp` 与 `onvif` 适配器输出相同的设备身份、能力、码流和
 健康模型；Server 不持有 Client 摄像头的地址与密码。Client PTZ 使用有期限的 `device_commands` 信封，执行结果随
 下一次快照回报。设备状态与 MediaMTX 管线状态分别持久化，任何一层故障都不会被另一层的心跳覆盖。
