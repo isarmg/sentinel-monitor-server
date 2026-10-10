@@ -215,7 +215,7 @@ pub(crate) fn initialize_current_database(path: &Path) -> anyhow::Result<()> {
                 let actual=xcss::sqlite::schema_fingerprint(&mut *transaction).await?;
                 current_schema_identity()?.verify_fingerprint(&actual)?;
                 sqlx::query("INSERT INTO product_metadata(singleton,application,application_version,schema_revision,schema_sha256) VALUES(1,?,?,?,?)")
-                    .bind(APPLICATION).bind("xcos-db-v1").bind(CURRENT_SCHEMA_REVISION).bind(CURRENT_SCHEMA_SHA256)
+                    .bind(APPLICATION).bind("xcos-db-v2").bind(CURRENT_SCHEMA_REVISION).bind(CURRENT_SCHEMA_SHA256)
                     .execute(&mut *transaction).await?;
                 validate_current_connection(&mut transaction).await
             }.await;

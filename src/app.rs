@@ -139,11 +139,12 @@ pub(crate) async fn serve(
             xcss::log::LogRetention::default(),
         )?)?;
         tracing::info!(event = "common.config.loaded");
+        background::invalidate_status_observations(&state.pool).await?;
         let recovered = reconciliation::recover_interrupted_operations(&state.pool).await?;
         if recovered > 0 {
             tracing::warn!(
                 recovered_operations = recovered,
-                "expired media operation leases were marked unknown for safe reconciliation"
+                "interrupted media operations from the previous instance were marked unknown for safe reconciliation"
             );
         }
         let health_pool = state.pool.clone();

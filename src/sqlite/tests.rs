@@ -69,7 +69,7 @@ async fn current_schema_fingerprint_matches_the_compiled_contract() {
         metadata,
         (
             APPLICATION.to_string(),
-            "xcos-db-v1".to_string(),
+            "xcos-db-v2".to_string(),
             CURRENT_SCHEMA_REVISION,
             CURRENT_SCHEMA_SHA256.to_string()
         )
@@ -203,7 +203,7 @@ async fn current_schema_committed_only_in_wal_is_validated_without_changes() {
         .await
         .unwrap();
     sqlx::query("INSERT INTO product_metadata(singleton,application,application_version,schema_revision,schema_sha256) VALUES(1,?,?,?,?)")
-        .bind(APPLICATION).bind("xcos-db-v1").bind(CURRENT_SCHEMA_REVISION).bind(fingerprint)
+        .bind(APPLICATION).bind("xcos-db-v2").bind(CURRENT_SCHEMA_REVISION).bind(fingerprint)
         .execute(&mut connection).await.unwrap();
     assert!(sqlite_sidecar(&database, "-wal").exists());
 

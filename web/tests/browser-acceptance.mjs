@@ -58,7 +58,8 @@ const session = { authenticated: true, user_id: administratorId, username: "admi
 const activeId = "018f1f4b-7a5d-7b5f-8d31-123456789abc";
 const pendingId = "018f1f4b-7a5d-7b5f-8d31-123456789abd";
 const secondId = "018f1f4b-7a5d-7b5f-8d31-123456789ac0";
-const camera = { id: activeId, name: "验收摄像头", location: "测试现场", has_sub_stream: false, source_kind: "client", client_id: activeId, adapter_kind: "onvif", manufacturer: "Acme", model: "IPC-1", firmware_version: null, serial_number: null, capabilities: { video: "supported", main_stream: "supported", sub_stream: "unsupported", local_recording: "unsupported", server_recording: "supported", ptz: "supported", events: "unsupported", audio_input: "unsupported", audio_output: "unsupported" }, streams: [{ profile: "main", video_codec: null, audio_codec: null, width: null, height: null, frame_rate: null }], health_message: null, device_status: "disabled", storage_mode: "server", enabled: false, record_enabled: false, status: "disabled", last_seen_at: null, created_at: time, updated_at: time };
+const camera = { id: activeId, name: "验收摄像头", location: "测试现场", has_sub_stream: false, source_kind: "client", client_id: activeId, adapter_kind: "onvif", manufacturer: "Acme", model: "IPC-1", firmware_version: null, serial_number: null, capabilities: { video: "supported", main_stream: "supported", sub_stream: "unsupported", local_recording: "unsupported", server_recording: "supported", ptz: "supported", events: "unsupported", audio_input: "unsupported", audio_output: "unsupported" }, streams: [{ profile: "main", video_codec: null, audio_codec: null, width: null, height: null, frame_rate: null }], health_message: null, device_status: "disabled", storage_mode: "server", enabled: false, record_enabled: false, status: "disabled", observation_status: "unknown", last_observed_at: null, observation_expires_at: null, last_seen_at: null, created_at: time, updated_at: time };
+const freshObservation = () => ({ observation_status: "fresh", last_observed_at: new Date().toISOString(), observation_expires_at: new Date(Date.now() + 300_000).toISOString() });
 const activeInstance = { id: activeId, installation_id: "018f1f4b-7a5d-7b5f-8d31-123456789abe", name: "门口摄像机实例", client_version: "0.3.0", authorization_code: "a".repeat(36), status: "online", last_seen_at: time, created_at: time, updated_at: time };
 const pendingInstance = { id: pendingId, installation_id: null, name: "待配对摄像机", client_version: null, authorization_code: "s".repeat(36), status: "pending", last_seen_at: null, created_at: time, updated_at: time };
 const server = await preview({ preview: { host: "127.0.0.1", port: 0, strictPort: true } });
@@ -346,17 +347,23 @@ try {
       assert.ok(paths.some(path => path.endsWith("/media/operations")));
       assert.ok(!paths.some(path => path.includes("/users")));
       await checkWebLanguage(page, {"routes":[["instances","Instance list"],["logs","Logs"]],"names":["新实例","验收摄像头","门口摄像机实例","仓库摄像机","测试现场"]});
-      cameras = [{ ...camera, enabled: true, device_status: "pending", status: "offline" }];
+      cameras = [{ ...camera, ...freshObservation(), enabled: true, device_status: "pending", status: "offline" }];
       await page.getByRole("button", { name: "实例列表", exact: true }).click();
       await page.getByRole("banner").getByRole("button", { name: "刷新", exact: true }).click();
       const activeRow = instanceTable.locator("tbody tr").filter({ hasText: "Renamed instance" });
       await expect(activeRow.getByRole("cell", { name: "等待检测", exact: true })).toBeVisible();
-      cameras = [{ ...camera, enabled: true, device_status: "error", status: "offline", health_message: "media process exited; retrying" }];
+      cameras = [{ ...camera, ...freshObservation(), enabled: true, device_status: "error", status: "offline", health_message: "media process exited; retrying" }];
       await page.getByRole("banner").getByRole("button", { name: "刷新", exact: true }).click();
       await expect(activeRow.getByRole("cell", { name: "设备异常", exact: true })).toBeVisible();
+      cameras = [{ ...camera, ...freshObservation(), enabled: true, device_status: "online", status: "online", observation_status: "stale", observation_expires_at: null }];
+      await page.getByRole("banner").getByRole("button", { name: "刷新", exact: true }).click();
+      await expect(activeRow.getByRole("cell", { name: "观测已过期", exact: true })).toBeVisible();
+      cameras = [{ ...camera, enabled: true, device_status: "online", status: "online" }];
+      await page.getByRole("banner").getByRole("button", { name: "刷新", exact: true }).click();
+      await expect(activeRow.getByRole("cell", { name: "尚无有效观测", exact: true })).toBeVisible();
       if (engine === chromium) {
         await page.clock.install();
-        cameras = [{ ...camera, enabled: true, device_status: "online", status: "online" }];
+        cameras = [{ ...camera, ...freshObservation(), enabled: true, device_status: "online", status: "online" }];
         await page.getByRole("banner").getByRole("button", { name: "刷新", exact: true }).click();
         await activeRow.getByRole("link", { name: "选择实例 Renamed instance", exact: true }).click();
         await page.clock.runFor(5_000);

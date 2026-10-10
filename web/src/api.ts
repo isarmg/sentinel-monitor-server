@@ -2,6 +2,8 @@ import { createAdministratorApiClient, type JsonGuard } from "@xcss/web/admin-we
 import { ADMIN_AUTH_PATHS } from "@xcss/web/contracts";
 import { MAX_RESPONSE_BYTES } from "@xcss/web/http-client";
 
+import { isCameraObservation, type CameraObservation } from "./camera-status";
+
 import protocolContract from "./protocol-contract.json";
 
 const LOGIN_SUFFIX = "/auth/login";
@@ -15,7 +17,7 @@ if (protocolContract.api_prefix !== xcssApiPrefix) {
 
 export const administratorApi = createAdministratorApiClient();
 
-export type Camera = {
+export type Camera = CameraObservation & {
   id: string;
   name: string;
   location: string;
@@ -199,7 +201,7 @@ export const isDeviceCommandReceipt: JsonGuard<DeviceCommandReceipt> = (value):v
 export const isUndefined = (value: unknown): value is undefined => value === undefined;
 
 export const isCamera: JsonGuard<Camera> = (value): value is Camera =>
-  isRecord(value) &&
+  isRecord(value) && isCameraObservation(value) &&
   ["id", "name", "location", "status", "device_status", "adapter_kind", "created_at", "updated_at"].every((key) =>
     isString(value[key]),
   ) &&

@@ -939,7 +939,7 @@ mod tests {
         assert_eq!(identity.application, PRODUCT);
         assert_eq!(identity.application_version, env!("CARGO_PKG_VERSION"));
         assert_eq!(identity.target, env!("XCOS_BUILD_TARGET"));
-        assert_eq!(identity.wire_protocol, "xcos-wire-v1");
+        assert_eq!(identity.wire_protocol, "xcos-wire-v2");
         assert_eq!(identity.api_prefix, "/api/v1");
         assert_eq!(
             identity.schema_revision,

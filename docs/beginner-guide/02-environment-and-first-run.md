@@ -52,7 +52,7 @@ target/x86_64-unknown-linux-gnu/debug/xcos run
 - 两个进程各自只存在一个实例；
 - 创建操作持久化并到达可解释终态；
 - 浏览器只拿短期播放授权；
-- 重启后 pending 可继续；只有 operation lease 已过期的 running 才转为 unknown，健康 owner 不被改写；
+- 重启取得独占实例锁后，pending 可继续，上一进程遗留的所有 running 转为 unknown，即使 operation lease 尚未到期；全局 lease 保留，运行期不抢占健康 owner；
 - offline/online doctor 都通过。
 
 ## 2.7 常见失败

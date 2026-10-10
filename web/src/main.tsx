@@ -2,6 +2,7 @@ import { startAfterFonts } from "@xcss/web/web-fonts";
 import { DateRangeField, type CalendarDateRange } from "@xcss/web/admin-ui/date-range";
 import "@xcss/web/admin-ui/date-range.css";
 import { displayLabel } from "./display-labels";
+import { effectiveStatus } from "./camera-status";
 import { t, getLocale } from "@xcss/web/admin-ui/i18n";
 import { StrictMode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -257,7 +258,7 @@ function Console() {
         {logNavigation(2, t("审计日志分页", "Audit history pages"))}
       </section>
     </section>}
-    {drawerCamera !== null && <CameraDrawer camera={drawerCamera} close={() => setDrawerCamera(null)} toast={toast} />}
+    {drawerCamera !== null && cameras.some(camera => camera.id === drawerCamera.id) && <CameraDrawer camera={cameras.find(camera => camera.id === drawerCamera.id)!} close={() => setDrawerCamera(null)} toast={toast} />}
   </div>;
 }
 
@@ -266,7 +267,7 @@ function CameraView({ cameras, search, setSearch, inspect }: {
   inspect(camera: Camera): void;
 }) {
   return <section className="view active xcss-content-stack"><div className="command-bar"><div className="search-wrap"><span>⌕</span><TextField type="search" aria-label={t("搜索摄像头", "Search cameras")} value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("搜索名称或位置", "Search by name or location")} /></div></div>
-    <div className="camera-grid">{cameras.length === 0 ? <div className="empty-state full-span">{t("该客户端还没有上报匹配的摄像头。", "This client has not reported any matching cameras yet.")}</div> : cameras.map((camera, index) => <article key={camera.id} className="camera-card xcss-content-panel reveal" style={{ animationDelay: `${index * 45}ms` }}><LiveVideo camera={camera} profile={camera.has_sub_stream ? "sub" : "main"} /><div className="camera-meta"><div><span className={`status-dot ${effectiveStatus(camera)}`} /><strong>{camera.name}</strong><small>{camera.location || t("未标注位置", "Location not specified")} · {[camera.manufacturer, camera.model].filter(Boolean).join(" ") || camera.adapter_kind.toUpperCase()} · {camera.storage_mode === "server" ? t("服务器录像", "Server recording") : t("客户端录像", "Client recording")}</small></div><span className="camera-status">{statusLabel(effectiveStatus(camera))}</span></div><div className="camera-actions"><Button onClick={() => inspect(camera)}>{t("查看与控制", "View and control")}</Button></div></article>)}</div>
+    <div className="camera-grid">{cameras.length === 0 ? <div className="empty-state full-span">{t("该客户端还没有上报匹配的摄像头。", "This client has not reported any matching cameras yet.")}</div> : cameras.map((camera, index) => <article key={camera.id} className="camera-card xcss-content-panel reveal" style={{ animationDelay: `${index * 45}ms` }}><LiveVideo camera={camera} profile={camera.has_sub_stream ? "sub" : "main"} /><div className="camera-meta"><div><strong>{camera.name}</strong><small>{camera.location || t("未标注位置", "Location not specified")} · {[camera.manufacturer, camera.model].filter(Boolean).join(" ") || camera.adapter_kind.toUpperCase()} · {camera.storage_mode === "server" ? t("服务器录像", "Server recording") : t("客户端录像", "Client recording")}</small></div><CameraStatus camera={camera} /></div><div className="camera-actions"><Button onClick={() => inspect(camera)}>{t("查看与控制", "View and control")}</Button></div></article>)}</div>
     </section>;
 }
 
@@ -410,7 +411,7 @@ function ClientsView({ clients, cameras, changed, toast, select }: {
   return <div className="xcss-content-stack">
     {deleteFailure && <ErrorState requestId={deleteFailure.requestId}>{t("删除未能确认，请刷新实例列表核对。", "Deletion could not be confirmed. Refresh and check the instance list.")}</ErrorState>}
     <Table aria-label={t("摄像机实例列表", "Camera instance list")}><thead><tr><th>{t("实例名称", "Instance name")}</th><th>{t("配对状态", "Pairing status")}</th><th>{t("摄像机状态", "Camera status")}</th><th>{t("厂商 / 型号", "Make / model")}</th><th>{t("操作", "Actions")}</th><th>{t("删除", "Delete")}</th></tr></thead><tbody>
-      {clients.length === 0 ? <tr><td colSpan={6} className="empty-state">{t("尚无摄像机实例", "No camera instances")}</td></tr> : clients.map(client => { const camera = cameraByInstance.get(client.id); return <tr key={client.id}><th scope="row"><a className="xcss-instance-link" aria-label={t("选择实例 {0}", "Select instance {0}", [client.name])} href="#details" onClick={() => select(client.id)}>{client.name}</a></th><td>{displayLabel(client.status)}</td><td>{camera ? statusLabel(effectiveStatus(camera)) : t("尚未上报", "Not yet reported")}</td><td>{camera ? [camera.manufacturer, camera.model].filter(Boolean).join(" / ") || camera.adapter_kind.toUpperCase() : "—"}</td><td><div className="xcss-actions">{client.status !== "revoked" && <><Button disabled={pending} onClick={() => setRotating(client)}>{t("更换密码", "Change password")}</Button><Button disabled={pending} onClick={() => setRemoving(client)}>{client.status === "pending" ? t("取消配对", "Cancel pairing") : t("撤销实例", "Revoke instance")}</Button></>}</div></td><td><div className="xcss-actions">{deleteCandidate === client.id ? <><Button disabled={pending} onClick={() => setDeleteCandidate(null)}>{t("取消", "Cancel")}</Button><Button className="xcss-danger" disabled={pending} onClick={() => void remove(client).then(() => { setDeleteCandidate(null); setDeleteFailure(null); }).catch(error => setDeleteFailure({ requestId: errorRequestId(error) }))}>{pending ? t("正在删除…", "Deleting…") : t("确认删除", "Confirm delete")}</Button></> : <Button disabled={pending} onClick={() => { setDeleteFailure(null); setDeleteCandidate(client.id); }}>{t("删除", "Delete")}</Button>}</div></td></tr>; })}
+      {clients.length === 0 ? <tr><td colSpan={6} className="empty-state">{t("尚无摄像机实例", "No camera instances")}</td></tr> : clients.map(client => { const camera = cameraByInstance.get(client.id); return <tr key={client.id}><th scope="row"><a className="xcss-instance-link" aria-label={t("选择实例 {0}", "Select instance {0}", [client.name])} href="#details" onClick={() => select(client.id)}>{client.name}</a></th><td>{displayLabel(client.status)}</td><td>{camera ? <CameraStatus camera={camera} /> : t("尚未上报", "Not yet reported")}</td><td>{camera ? [camera.manufacturer, camera.model].filter(Boolean).join(" / ") || camera.adapter_kind.toUpperCase() : "—"}</td><td><div className="xcss-actions">{client.status !== "revoked" && <><Button disabled={pending} onClick={() => setRotating(client)}>{t("更换密码", "Change password")}</Button><Button disabled={pending} onClick={() => setRemoving(client)}>{client.status === "pending" ? t("取消配对", "Cancel pairing") : t("撤销实例", "Revoke instance")}</Button></>}</div></td><td><div className="xcss-actions">{deleteCandidate === client.id ? <><Button disabled={pending} onClick={() => setDeleteCandidate(null)}>{t("取消", "Cancel")}</Button><Button className="xcss-danger" disabled={pending} onClick={() => void remove(client).then(() => { setDeleteCandidate(null); setDeleteFailure(null); }).catch(error => setDeleteFailure({ requestId: errorRequestId(error) }))}>{pending ? t("正在删除…", "Deleting…") : t("确认删除", "Confirm delete")}</Button></> : <Button disabled={pending} onClick={() => { setDeleteFailure(null); setDeleteCandidate(client.id); }}>{t("删除", "Delete")}</Button>}</div></td></tr>; })}
     </tbody></Table>
     {rotating && <ConfirmDangerDialog title={t("更换密码", "Change password")} description={t("这会立即撤销当前客户端凭据并停用它管理的摄像头。客户端必须使用新密码重新配对并重新上报摄像头。", "This immediately revokes the current client credential and disables its cameras. The client must pair again with the new password and report its cameras again.")} pending={pending} onClose={() => { if (!pending) setRotating(null); }} onConfirm={() => { const target = rotating; setRotating(null); void rotate(target).catch(error => toast(errorText(error), "error")); }} />}
     {removing && <ConfirmDangerDialog title={removing.status === "revoked" ? t("删除实例", "Delete instance") : removing.status === "pending" ? t("取消配对", "Cancel pairing") : t("撤销实例", "Revoke instance")} description={removing.status === "revoked" ? t("媒体路径清理确认完成后，永久删除该摄像机状态和授权实例；若清理尚未收敛，服务端会拒绝并要求稍后重试。", "Permanently delete the camera state and authorization instance after media-path removal is confirmed. If cleanup has not converged, the server rejects the request and asks you to retry later.") : t("当前密码和客户端凭据将失效；服务端会先清理媒体路径，完成后可再永久删除该实例。", "The password and client credential will be invalidated. The server first removes media paths; after cleanup, the instance can be permanently deleted.")} pending={pending} onClose={() => { if (!pending) setRemoving(null); }} onConfirm={() => { const target = removing; setRemoving(null); void remove(target).catch(error => toast(errorText(error), "error")); }} />}
@@ -427,11 +428,13 @@ function ClientDetails({ client, cameras }: { client: XcosClient; cameras: Camer
     </dl></section>
 
     <section className="xcss-content-panel" aria-label={t("摄像机状态", "Camera status")}><h2>{t("摄像机状态", "Camera status")}</h2><dl className="xcos-detail-list">
-      <dt>{t("在线状态", "Online status")}</dt><dd>{client.status === "online" ? t("在线", "Online") : t("离线", "Offline")}</dd>
+      <dt>{t("客户端连接", "Client connection")}</dt><dd>{client.status === "online" ? t("在线", "Online") : t("离线", "Offline")}</dd>
       <dt>{t("版本", "Version")}</dt><dd>{client.client_version ?? "—"}</dd>
       <dt>{t("最后在线", "Last online")}</dt><dd>{client.last_seen_at === null ? "—" : formatDate(client.last_seen_at)}</dd>
       <dt>{t("摄像头", "Cameras")}</dt><dd>{cameras.length}</dd>
-    </dl></section>
+    </dl>
+      {cameras.map(camera => <section key={camera.id}><h3>{camera.name}</h3><CameraStatus camera={camera} /><CameraObservationDetails camera={camera} /></section>)}
+    </section>
   </section>;
 }
 
@@ -606,7 +609,7 @@ function CameraDrawer({ camera, close, toast }: { camera: Camera; close(): void;
     onKeyUp={event => { if (event.key === " " || event.key === "Enter") { event.preventDefault(); stop(); } }}>{glyph}</Button>;
   return <Dialog title={camera.name} description={camera.location || t("未标注位置", "Location not specified")} onClose={() => { stop(); close(); }}>
     <div className="xcos-business"><LiveVideo camera={camera} profile="main" controls />
-      <section className="xcss-content-panel"><h3>{t("设备信息", "Device information")}</h3><p>{[camera.manufacturer, camera.model, camera.firmware_version].filter(Boolean).join(" · ") || t("设备未报告厂商信息", "The device did not report make information")}</p><p>{t("适配器", "Adapter")}: {camera.adapter_kind.toUpperCase()} · {t("能力", "Capabilities")}: {capabilityLabels(camera).join(" / ")}</p>{camera.health_message && <p>{t("健康状态", "Health")}: {camera.health_message}</p>}</section>
+      <section className="xcss-content-panel"><h3>{t("设备信息", "Device information")}</h3><CameraStatus camera={camera} /><CameraObservationDetails camera={camera} /><p>{[camera.manufacturer, camera.model, camera.firmware_version].filter(Boolean).join(" · ") || t("设备未报告厂商信息", "The device did not report make information")}</p><p>{t("适配器", "Adapter")}: {camera.adapter_kind.toUpperCase()} · {t("能力", "Capabilities")}: {capabilityLabels(camera).join(" / ")}</p>{camera.health_message && <p>{t("健康状态", "Health")}: {camera.health_message}</p>}</section>
       {camera.capabilities.ptz === "supported" && <section className="ptz-panel" aria-label={t("云台控制", "PTZ controls")}><h3>{t("云台控制", "PTZ controls")}</h3><p>{t("按住方向键或用空格、回车启动移动，松开即停止。窗口失焦也会发送停止。", "Hold a direction button, Space or Enter to move; release to stop. Losing window focus also sends a stop command.")}</p>
         {commandStateText && <p role="status">{commandStateText}</p>}
         <div className="ptz-grid"><span />{movement("0,0.55,0", t("云台向上", "Tilt up"), "↑")}<span />
@@ -622,9 +625,28 @@ function CameraDrawer({ camera, close, toast }: { camera: Camera; close(): void;
 
 
 const viewTitle = (view: View) => ({ instances: t("实例列表", "Instance list"), details: t("详细信息", "Details"), logs: t("日志", "Logs"), account: t("账号设置", "Account settings") })[view];
-const statusLabel = (status: string) => ({ pending: t("等待检测", "Waiting for detection"), online: t("在线", "Online"), offline: t("离线", "Offline"), disabled: t("已停用", "Disabled"), error: t("设备异常", "Device error") } as Record<string, string>)[status] ?? t("未知", "Unknown");
+const statusLabel = (status: string) => ({ pending: t("等待检测", "Waiting for detection"), online: t("在线", "Online"), offline: t("离线", "Offline"), disabled: t("已停用", "Disabled"), error: t("设备异常", "Device error"), stale: t("观测已过期", "Observation stale"), unknown: t("尚无有效观测", "No valid observation") } as Record<string, string>)[status] ?? t("未知", "Unknown");
 const severityLabel = (severity: string) => ({ info: t("信息", "Information"), warning: t("警告", "Warning"), critical: t("严重", "Critical") } as Record<string, string>)[severity] ?? t("未知", "Unknown");
-const effectiveStatus = (camera: Camera) => camera.device_status === "online" ? camera.status : camera.device_status;
+function CameraStatus({ camera }: { camera: Camera }) {
+  const [, refreshExpiry] = useState(0);
+  useEffect(() => {
+    if (camera.observation_status !== "fresh" || camera.observation_expires_at === null) return;
+    const delay = Date.parse(camera.observation_expires_at) - Date.now();
+    if (delay < 0) return;
+    const timer = window.setTimeout(() => refreshExpiry(value => value + 1), delay + 1);
+    return () => window.clearTimeout(timer);
+  }, [camera.observation_status, camera.observation_expires_at]);
+  const status = effectiveStatus(camera);
+  return <span className="camera-status">{statusLabel(status)}</span>;
+}
+
+function CameraObservationDetails({ camera }: { camera: Camera }) {
+  return <dl className="xcos-detail-list">
+    <dt>{t("最后有效媒体观测", "Last valid media observation")}</dt><dd>{camera.last_observed_at === null ? t("尚无", "None yet") : formatDate(camera.last_observed_at)}</dd>
+    <dt>{t("最近保存的媒体状态", "Last stored media state")}</dt><dd>{statusLabel(camera.status)}</dd>
+    <dt>{t("客户端最近上报的设备状态", "Last client-reported device state")}</dt><dd>{statusLabel(camera.device_status)}</dd>
+  </dl>;
+}
 const capabilityLabels = (camera: Camera) => ([
   ["video", t("视频", "Video")], ["sub_stream", t("子码流", "Sub-stream")], ["ptz", "PTZ"],
   ["events", t("事件", "Events")], ["audio_input", t("音频", "Audio")],

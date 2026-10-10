@@ -14,7 +14,7 @@ use uuid::Uuid;
 const CAMERA_SELECT: &str = "SELECT id, name, location, source_kind, client_id, \
     adapter_kind, manufacturer, model, firmware_version, serial_number, capabilities_json, \
     streams_json, health_message, device_status, has_sub_stream, \
-    enabled, record_enabled, storage_mode, status, last_seen_at, created_at, updated_at \
+    enabled, record_enabled, storage_mode, status, last_seen_at, last_observed_at, observation_expires_at, created_at, updated_at \
     FROM cameras WHERE deleted_at IS NULL";
 
 pub async fn operation_audit_loop(
@@ -122,10 +122,34 @@ async fn emit_event_in(
     Ok(event)
 }
 
+pub async fn invalidate_status_observations(pool: &sqlx::SqlitePool) -> Result<()> {
+    // Keep the last known media/device state and the last successful observation.
+    // Losing the observer is not evidence that a camera went offline.
+    sqlx::query(
+        "UPDATE cameras SET observation_expires_at = NULL WHERE observation_expires_at IS NOT NULL",
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 async fn refresh_statuses(state: &AppState) -> Result<()> {
     reconciliation::validate_stored_camera_credentials(state).await?;
     let observation_started_at = Utc::now();
-    let paths = state.media.paths().await?;
+    let paths = match state.media.paths().await {
+        Ok(paths) => paths,
+        Err(error) => {
+            invalidate_status_observations(&state.pool).await?;
+            return Err(error);
+        }
+    };
+    // Bound freshness even if the status task stops making progress. The budget
+    // allows two missed polls and one bounded inventory request.
+    let freshness = state.config.status_interval * 3 + state.config.request_timeout;
+    let observation_expires_at = observation_started_at
+        + chrono::Duration::from_std(freshness).map_err(|_| {
+            crate::error::AppError::Internal("observation lifetime overflow".into())
+        })?;
     let cameras = sqlx::query_as::<_, CameraRecord>(CAMERA_SELECT)
         .fetch_all(&state.pool)
         .await?;
@@ -139,17 +163,19 @@ async fn refresh_statuses(state: &AppState) -> Result<()> {
             "offline"
         };
         if new_status == camera.status {
-            if new_status == "online" {
-                sqlx::query(
-                    "UPDATE cameras SET last_seen_at = datetime('now') WHERE id = ? \
-                    AND enabled = ? AND deleted_at IS NULL AND updated_at <= ?",
-                )
-                .bind(camera.id)
-                .bind(camera.enabled)
-                .bind(observation_started_at)
-                .execute(&state.pool)
-                .await?;
-            }
+            sqlx::query(
+                "UPDATE cameras SET last_observed_at = ?, observation_expires_at = ?, \
+                 last_seen_at = CASE WHEN status = 'online' THEN ? ELSE last_seen_at END \
+                 WHERE id = ? AND enabled = ? AND deleted_at IS NULL AND updated_at <= ?",
+            )
+            .bind(observation_started_at)
+            .bind(observation_expires_at)
+            .bind(observation_started_at)
+            .bind(camera.id)
+            .bind(camera.enabled)
+            .bind(observation_started_at)
+            .execute(&state.pool)
+            .await?;
             continue;
         }
 
@@ -159,6 +185,7 @@ async fn refresh_statuses(state: &AppState) -> Result<()> {
             new_status,
             snapshot,
             observation_started_at,
+            observation_expires_at,
             crate::history::Limits::CURRENT,
         )
         .await
@@ -184,15 +211,19 @@ async fn persist_status_observation(
     new_status: &str,
     snapshot: Option<&crate::mediamtx::PathSnapshot>,
     observation_started_at: chrono::DateTime<Utc>,
+    observation_expires_at: chrono::DateTime<Utc>,
     limits: crate::history::Limits,
 ) -> Result<Option<EventRecord>> {
     let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
     let updated = sqlx::query(
-            "UPDATE cameras SET status = ?, last_seen_at = CASE WHEN ? = 'online' THEN datetime('now') ELSE last_seen_at END, updated_at = datetime('now') \
+            "UPDATE cameras SET status = ?, last_seen_at = CASE WHEN ? = 'online' THEN ? ELSE last_seen_at END, last_observed_at = ?, observation_expires_at = ?, updated_at = datetime('now') \
              WHERE id = ? AND enabled = ? AND deleted_at IS NULL AND updated_at <= ?",
         )
         .bind(new_status)
         .bind(new_status)
+        .bind(observation_started_at)
+        .bind(observation_started_at)
+        .bind(observation_expires_at)
         .bind(camera.id)
         .bind(camera.enabled)
         .bind(observation_started_at)
@@ -239,75 +270,4 @@ async fn persist_status_observation(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    #[tokio::test]
-    async fn full_camera_rolls_back_its_observation_while_another_camera_updates() {
-        let directory = tempfile::tempdir().unwrap();
-        let pool = crate::sqlite::initialize_test_pool(&format!(
-            "sqlite://{}",
-            directory.path().join("observations.sqlite3").display()
-        ))
-        .await
-        .unwrap();
-        let mut cameras = Vec::new();
-        let now = Utc::now();
-        for marker in [1u8, 2] {
-            let id = Uuid::new_v4();
-            sqlx::query("INSERT INTO xcocs(id,name,authorization_code_enc,authorization_code_hash,created_at,updated_at) VALUES(?,'test',?,?,?,?)")
-                .bind(id).bind(vec![0u8;64]).bind(vec![marker;32]).bind(now).bind(now).execute(&pool).await.unwrap();
-            sqlx::query("INSERT INTO cameras(id,name,client_id,client_camera_id,adapter_kind,status,created_at,updated_at) VALUES(?,'test',?,?,'rtsp','online',?,?)")
-                .bind(id).bind(id).bind(id.to_string()).bind(now).bind(now).execute(&pool).await.unwrap();
-            cameras.push(
-                sqlx::query_as::<_, CameraRecord>(CAMERA_SELECT)
-                    .fetch_all(&pool)
-                    .await
-                    .unwrap()
-                    .into_iter()
-                    .find(|camera| camera.id == id)
-                    .unwrap(),
-            );
-        }
-        sqlx::query("INSERT INTO events(id,camera_id,kind,severity,message,created_at) VALUES(?,?,'test','warning','retain',?)")
-            .bind(Uuid::new_v4()).bind(cameras[0].id).bind(now).execute(&pool).await.unwrap();
-        let limits = crate::history::Limits {
-            rows: 100,
-            owner_rows: 1,
-            bytes: u64::MAX,
-            owner_bytes: u64::MAX,
-            free_floor: 0,
-        };
-        let mut rejected = 0;
-        for camera in &cameras {
-            match persist_status_observation(&pool, camera, "offline", None, Utc::now(), limits)
-                .await
-            {
-                Err(crate::error::AppError::HistoryStorageCapacity) => rejected += 1,
-                result => assert!(result.unwrap().is_some()),
-            }
-        }
-        assert_eq!(rejected, 1);
-        let status: String = sqlx::query_scalar("SELECT status FROM cameras WHERE id=?")
-            .bind(cameras[0].id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        assert_eq!(
-            status, "online",
-            "capacity rejection published the status without its alert"
-        );
-        let status: String = sqlx::query_scalar("SELECT status FROM cameras WHERE id=?")
-            .bind(cameras[1].id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        assert_eq!(status, "offline");
-        assert_eq!(
-            sqlx::query_scalar::<_, i64>("SELECT count(*) FROM events")
-                .fetch_one(&pool)
-                .await
-                .unwrap(),
-            2
-        );
-    }
-}
+mod tests;

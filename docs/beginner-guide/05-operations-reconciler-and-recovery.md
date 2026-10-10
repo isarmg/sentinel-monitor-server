@@ -32,9 +32,11 @@ claim -> decrypt current credential -> validate again
 
 ## 5.5 重启恢复
 
-启动时 pending 可继续；只有 operation lease 已过期的 running 转为 unknown，因为其外部效果无法证明。
-租约仍有效的 owner 保持不变，启动过程不会清空健康所有权。系统不把 unknown 当普通失败盲目重发；
-操作者核对 actual state 后采取新的明确意图。
+启动先取得独占实例锁，确认旧进程不再持有该数据目录，然后将上一进程遗留的全部 running 转为 unknown，
+包括 operation lease 尚未到期的记录。它们的外部效果无法证明，不能等待租约到期后假装从未执行。
+pending 仍可继续；全局 reconciler lease 不在启动恢复中清空，新 worker 必须等它到期后再领取。
+这与运行期间只回收过期 operation lease 的路径不同：常规调和不会抢占仍有效的 owner，finalize 仍受双重租约 fencing。
+系统不把 unknown 当普通失败盲目重发；操作者核对 actual state 后采取新的明确意图。
 
 ## 5.6 审计的当前边界
 

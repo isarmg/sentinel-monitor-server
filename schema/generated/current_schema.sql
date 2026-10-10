@@ -172,6 +172,11 @@ CREATE TABLE cameras (
     storage_mode TEXT NOT NULL DEFAULT 'server' CHECK (storage_mode IN ('client', 'server')),
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'online', 'offline', 'disabled', 'error')),
     last_seen_at TEXT,
+    last_observed_at TEXT CHECK (last_observed_at IS NULL OR julianday(last_observed_at) IS NOT NULL),
+    observation_expires_at TEXT CHECK (observation_expires_at IS NULL OR (
+        last_observed_at IS NOT NULL AND julianday(observation_expires_at) IS NOT NULL
+        AND julianday(observation_expires_at) > julianday(last_observed_at)
+    )),
     created_by TEXT REFERENCES _common_administrators(administrator_id) ON DELETE SET NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,

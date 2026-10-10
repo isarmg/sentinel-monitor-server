@@ -292,6 +292,9 @@ impl OperationListRow {
     }
 }
 
+/// Startup-only recovery after acquiring the exclusive application instance lock.
+/// Any remaining running operation belongs to the stopped instance, including
+/// operations whose leases have not expired. Normal live recovery is expiry-only.
 pub async fn recover_interrupted_operations(pool: &SqlitePool) -> Result<u64> {
     SqliteOperationStore::new(pool.clone())
         .recover_running(
@@ -962,7 +965,7 @@ async fn finish_success(
     .await?;
     sqlx::query(
         "UPDATE cameras SET status = CASE WHEN deleted_at IS NOT NULL OR enabled = 0 \
-         THEN 'disabled' ELSE 'pending' END, updated_at = ? WHERE id = ?",
+         THEN 'disabled' ELSE 'pending' END, observation_expires_at = NULL, updated_at = ? WHERE id = ?",
     )
     .bind(now)
     .bind(desired.camera_id)
@@ -1041,7 +1044,7 @@ async fn finish_failure(
         },
     };
     let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
-    sqlx::query("UPDATE cameras SET status = 'error', updated_at = ? WHERE id = ? \
+    sqlx::query("UPDATE cameras SET status = 'error', observation_expires_at = NULL, updated_at = ? WHERE id = ? \
         AND EXISTS (SELECT 1 FROM media_desired_states WHERE camera_id = cameras.id AND generation = ?)")
         .bind(now)
         .bind(operation.camera_id)

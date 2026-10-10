@@ -112,8 +112,9 @@ Administrator 创建授权实例 -> 加密保存授权码
   -> 删除：先 revoked + 清理路径，再永久删除实例
 ```
 
-只有仍同时持有未过期全局/操作租约的 owner 能 finalize。启动恢复只处理确实过期或缺失租约的 running，
-不会清空健康 owner。首次删除会撤销并隐藏摄像机，二次删除只在 MediaMTX 清理已确认后执行；
+只有仍同时持有未过期全局/操作租约的 owner 能 finalize。启动先取得独占实例锁，再把上一进程遗留的全部
+running 标为 unknown，包括 operation lease 尚未过期的记录；全局 lease 保留至到期。运行中的常规租约回收
+只处理已过期的 operation，不抢占健康 owner。首次删除会撤销并隐藏摄像机，二次删除只在 MediaMTX 清理已确认后执行；
 录像字节不会因删除页面条目而被隐式擦除。
 
 PTZ 不由 Server 直连 ONVIF：`POST /api/v1/cameras/{id}/ptz` 将有期限命令排队给所属 Client，

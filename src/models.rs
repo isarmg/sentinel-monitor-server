@@ -25,12 +25,15 @@ pub struct CameraRecord {
     pub storage_mode: String,
     pub status: String,
     pub last_seen_at: Option<DateTime<Utc>>,
+    pub last_observed_at: Option<DateTime<Utc>>,
+    pub observation_expires_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Clone, Serialize)]
 pub struct CameraView {
+    pub observation_status: ObservationStatus,
     pub id: Uuid,
     pub name: String,
     pub location: String,
@@ -51,18 +54,43 @@ pub struct CameraView {
     pub record_enabled: bool,
     pub status: String,
     pub last_seen_at: Option<DateTime<Utc>>,
+    pub last_observed_at: Option<DateTime<Utc>>,
+    pub observation_expires_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ObservationStatus {
+    Fresh,
+    Stale,
+    Unknown,
+}
+
+impl CameraRecord {
+    fn observation_status_at(&self, now: DateTime<Utc>) -> ObservationStatus {
+        match self.last_observed_at {
+            None => ObservationStatus::Unknown,
+            Some(observed)
+                if observed <= now
+                    && self
+                        .observation_expires_at
+                        .is_some_and(|expires| expires > now) =>
+            {
+                ObservationStatus::Fresh
+            }
+            Some(_) => ObservationStatus::Stale,
+        }
+    }
 }
 
 #[cfg(test)]
 mod camera_view_tests {
     use super::*;
 
-    #[test]
-    fn stored_camera_metadata_must_be_decoded_without_silent_defaults() {
-        let now = Utc::now();
-        let mut record = CameraRecord {
+    fn camera_record(now: DateTime<Utc>) -> CameraRecord {
+        CameraRecord {
             id: Uuid::new_v4(),
             name: "front".to_owned(),
             location: String::new(),
@@ -83,9 +111,41 @@ mod camera_view_tests {
             storage_mode: "server".to_owned(),
             status: "online".to_owned(),
             last_seen_at: Some(now),
+            last_observed_at: None,
+            observation_expires_at: None,
             created_at: now,
             updated_at: now,
-        };
+        }
+    }
+
+    #[test]
+    fn observation_freshness_has_an_expiry_and_does_not_refresh_on_clock_rollback() {
+        let now = Utc::now();
+        let mut record = camera_record(now);
+        assert_eq!(
+            record.observation_status_at(now),
+            ObservationStatus::Unknown
+        );
+        record.last_observed_at = Some(now);
+        record.observation_expires_at = Some(now + chrono::Duration::seconds(30));
+        assert_eq!(record.observation_status_at(now), ObservationStatus::Fresh);
+        assert_eq!(
+            record.observation_status_at(now + chrono::Duration::seconds(30)),
+            ObservationStatus::Stale
+        );
+        assert_eq!(
+            record.observation_status_at(now - chrono::Duration::seconds(1)),
+            ObservationStatus::Stale
+        );
+        record.observation_expires_at = None;
+        assert_eq!(record.observation_status_at(now), ObservationStatus::Stale);
+        assert_eq!(record.status, "online");
+        assert_eq!(record.last_observed_at, Some(now));
+    }
+
+    #[test]
+    fn stored_camera_metadata_must_be_decoded_without_silent_defaults() {
+        let mut record = camera_record(Utc::now());
         let view = CameraView::from_record(&record).unwrap();
         assert!(view.capabilities.video.is_supported());
         assert_eq!(view.streams[0].video_codec.as_deref(), Some("h264"));
@@ -101,6 +161,7 @@ mod camera_view_tests {
 impl CameraView {
     pub fn from_record(value: &CameraRecord) -> Result<Self, serde_json::Error> {
         Ok(Self {
+            observation_status: value.observation_status_at(Utc::now()),
             id: value.id,
             name: value.name.clone(),
             location: value.location.clone(),
@@ -121,6 +182,8 @@ impl CameraView {
             record_enabled: value.record_enabled,
             status: value.status.clone(),
             last_seen_at: value.last_seen_at,
+            last_observed_at: value.last_observed_at,
+            observation_expires_at: value.observation_expires_at,
             created_at: value.created_at,
             updated_at: value.updated_at,
         })

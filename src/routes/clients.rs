@@ -15,6 +15,7 @@ pub(super) const CLIENT_CAMERA_UPSERT: &str =
      device_status = excluded.device_status, \
      has_sub_stream = excluded.has_sub_stream, enabled = excluded.enabled, \
      record_enabled = excluded.record_enabled, storage_mode = excluded.storage_mode, \
+     observation_expires_at = CASE WHEN cameras.enabled = excluded.enabled THEN cameras.observation_expires_at ELSE NULL END, \
      status = CASE WHEN excluded.enabled THEN cameras.status ELSE 'disabled' END, \
      last_seen_at = excluded.last_seen_at, updated_at = excluded.updated_at, deleted_at = NULL \
      WHERE cameras.source_kind = 'client' AND cameras.client_id = excluded.client_id";

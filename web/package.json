@@ -10,7 +10,7 @@
     "dev": "vite --host 0.0.0.0",
     "typecheck": "tsc --noEmit",
     "check:xcss": "node tests/design-xcss.test.mjs",
-    "test:unit": "node --test tests/snapshot-refresh.test.mjs tests/media-url.test.mjs tests/display-labels.test.mjs",
+    "test:unit": "node --test tests/snapshot-refresh.test.mjs tests/media-url.test.mjs tests/display-labels.test.mjs tests/camera-status.test.mjs",
     "build": "npm run check:xcss && npm run typecheck && vite build",
     "test:browser": "npm run build && node tests/browser-acceptance.mjs",
     "build:server": "xcss-build-server --config ../xcss-web-build.json --mode development"

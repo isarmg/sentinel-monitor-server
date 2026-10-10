@@ -20,7 +20,7 @@ pub struct ProtocolContract {
 pub static CONTRACT: LazyLock<ProtocolContract> = LazyLock::new(|| {
     let contract: ProtocolContract = serde_json::from_str(CONTRACT_SOURCE)
         .expect("embedded protocol contract must be valid JSON");
-    assert_eq!(contract.wire_protocol, "xcos-wire-v1");
+    assert_eq!(contract.wire_protocol, "xcos-wire-v2");
     assert_eq!(
         contract.edge_protocol,
         crate::models::CLIENT_PAIRING_PROTOCOL

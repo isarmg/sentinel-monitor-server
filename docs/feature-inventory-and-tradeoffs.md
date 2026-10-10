@@ -122,7 +122,7 @@ xcss 提供管理员创建、凭据管理与停用能力。摄像头 RTSP/ONVIF 
 | SEN-O-004 | 公共 operation 的去重身份绑定摄像头与 generation；活跃 target 唯一索引避免同一 namespace/target 同时存在 running/unknown 操作 | `_common_operations`、`_common_operations_active_target`、`enqueue_operation_in` | 保障 | 高 | 同一期望或同一目标可能被重复执行 | generation 去重、并发领取、同 target 活跃冲突 |
 | SEN-O-005 | 全局 singleton lease 保证同一时刻只有一个 reconciler owner | `media_reconciler_leases`、`acquire_reconciler_lease` | 保障 | 高 | 多 worker 可同时操作 companion | 双 claim、过期接管、健康 owner 不被抢占 |
 | SEN-O-006 | 每条 running operation 也有 lease owner/expiry，并在远端调用前后续租 | `claim_next_operation`、`renew_claimed_leases` | 保障 | 高 | 失去 ownership 的 worker 仍可能 finalize | 过期、慢调用、owner mismatch、fencing |
-| SEN-O-007 | 启动只把 lease 已过期的 running operation标为 unknown，保留健康 lease | `recover_interrupted_operations` | 保障 | 高 | 全量改写会破坏仍在工作的实例事实；完全不恢复会永久卡住 | 活跃/过期两组 fixture；无副作用验证 |
+| SEN-O-007 | 启动取得独占实例锁后，把上一进程遗留的全部 running operation 标为 unknown，包括未过期操作租约；全局 lease 保留，运行期仅回收过期操作 | `recover_interrupted_operations` | 保障 | 高 | 混淆重启恢复与运行期回收会误判中断结果或破坏健康所有权 | 重启未过期/过期两组 fixture；全局 lease 保留与 finalize fencing |
 | SEN-O-008 | 对上游明确 HTTP 失败与无法证明响应分别分类 failed/unknown | `AppError::Upstream`、`UpstreamUnknown`、`sanitized_failure` | 保障 | 高 | 网络断线会被误报“失败”并诱发重复副作用 | timeout、连接断、明确 4xx/5xx、解析失败 |
 | SEN-O-009 | retry 有 attempt、max_attempts、`retry_at` 和有界退避；不可安全重试进入终态 | `retry_delay`、`finish_failure` | 保障 | 高 | 远端故障会热循环或永久不再收敛 | attempt 边界、时间推进、dead_letter |
 | SEN-O-010 | superseded operation 明确收口，不执行已被新 generation 取代的意图 | `finish_superseded` | 保障 | 高 | 快速连改会下发过时配置 | 连续更新/删除、队列次序、审计状态 |
@@ -131,6 +131,7 @@ xcss 提供管理员创建、凭据管理与停用能力。摄像头 RTSP/ONVIF 
 | SEN-O-013 | 周期比较 expected 与 MediaMTX path config/actual publisher/recording 并排队 drift operation | `observe_and_schedule_drift` | 建议保留 | 高 | 外部手改或 companion 重启后持续漂移 | 缺 path、错误 source/record、已一致不重复排队 |
 | SEN-O-014 | operation 查询/人工核对 API 返回持久状态；当前实例 Web 不单独暴露任务页 | `/media/operations/{id}`、`resolve_media_operation` | 建议保留 | 中 | 无法诊断 unknown/dead-letter 的收敛结果 | pending→终态、unknown/resolved、404 |
 | SEN-O-015 | 当前没有通用请求 Idempotency-Key 或客户端 revision CAS；幂等来自 generation/唯一索引和 desired-state 收敛 | `queue_camera_change`、Schema 索引 | 保障 | 高 | 误以为有 header 级幂等会导致调用方不安全重放 | 文档/API 不声明不存在的 header；并发测试按实际 generation 语义 |
+| SEN-O-016 | 媒体状态与观测时效分离：失败/重启保留已知状态，暴露 fresh/stale/unknown、最后成功时间及到期时间 | `background`、`CameraView`、`camera-status.ts` | 保障 | 高 | 清单失败或刷新停止后可能无限显示历史在线；误置离线会歪曲设备事实 | 本地合成清单 503/无效响应、空清单、恢复、过期与启动失效 |
 
 ## 7. MediaMTX、直播、录像和媒体授权
 
@@ -206,7 +207,7 @@ xcss 提供管理员创建、凭据管理与停用能力。摄像头 RTSP/ONVIF 
 | SEN-R-017 | CI 同时门禁 Rust fmt/check/clippy/test、Web、native 生命周期与 Caddy 当前代理合同 | `.github/workflows/ci.yml` | 开发运维 | 高 | 任一语言或交付层可独立漂移进入 main；代理可能重新指向不存在的容器 | clean checkout 全 job；锁文件模式；根级 Caddyfile/容器上游负例；三个 loopback 上游精确一次 |
 | SEN-R-018 | Rust 固定 1.99.0，Cargo.lock 与 npm package-lock 都纳入提交 | `rust-toolchain.toml`、lockfiles | 开发运维 | 中 | 依赖解析随时间变化，构建结果不可复现 | `--locked`、`npm ci`、工具链版本 |
 | SEN-R-019 | 源配置统一为 `config/`，主机部署资产为 `deploy/`，客户端为 `web/`，生命周期为 `deploy/`，构建、检查、打包入口为 `scripts/`；根目录不放散落部署文件 | 仓库目录结构、CI proxy gate | 开发运维 | 低 | 配置、客户端和部署资产散落，开发者难以判断事实源；双份代理模板会漂移 | 目录清单；根级 `Caddyfile` 不存在；脚本/文档不引用已移除位置 |
-| SEN-R-020 | 当前Schema identity为application `xcos`、数据格式`xcos-db-v1`、revision1、SHA `c648d0eb3dc04e3b32e774775072ba826c5a3f7b9945d306920f2f34f23223d0`；`_common_administrators` 使用 username，不保存 email/role | `schema/generated/current_schema.sql`、`src/sqlite/`、`scripts/lifecycle-test.sh` | 保障 | 高 | 发行物、运行库和运维文档可能各自接受不同管理身份 DDL | code-owned fingerprint 重算、metadata/现场 schema、列清单、lifecycle identity 一致 |
+| SEN-R-020 | 当前Schema identity为application `xcos`、数据格式`xcos-db-v2`、revision2、SHA `4d20083821ff39d78792d0795b26206e851c2e6d0523109ee49cfc06666a1d4a`；`_common_administrators` 使用 username，不保存 email/role | `schema/generated/current_schema.sql`、`src/sqlite/`、`scripts/lifecycle-test.sh` | 保障 | 高 | 发行物、运行库和运维文档可能各自接受不同管理身份 DDL | code-owned fingerprint 重算、metadata/现场 schema、列清单、lifecycle identity 一致 |
 
 ## 11. 可观测性、容量和故障边界
 

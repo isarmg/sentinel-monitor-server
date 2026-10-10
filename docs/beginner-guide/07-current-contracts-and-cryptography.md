@@ -7,16 +7,18 @@
 
 ## 7.2 Schema 身份
 
-`product_metadata`精确绑定application、数据格式xcos-db-v1、revision1和code-owned DDL SHA；软件版本1.0.0另由release identity记录。启动/doctor 从实际
+`product_metadata`精确绑定application、数据格式xcos-db-v2、revision2和code-owned DDL SHA；软件版本1.0.0另由release identity记录。启动/doctor 从实际
 `sqlite_schema` 重新规范计算，不信任 metadata 自报。当前 SHA 为
-`c648d0eb3dc04e3b32e774775072ba826c5a3f7b9945d306920f2f34f23223d0`；管理员表只有 canonical
+`4d20083821ff39d78792d0795b26206e851c2e6d0523109ee49cfc06666a1d4a`；管理员表只有 canonical
 `username`，没有 email/role。空文件、非当前库和漂移库都只读拒绝。
 
 共享 xcss `xcss::schema_identity 1.0.0` 定义 fingerprint v1 的字节 framing、metadata 五列 DDL/
 shape 和 exact identity 比较；Xcos 在私有 SQLx 校验代际上复用共享
-`ProductMetadataRow` 后执行验证。SQLite当前WAL/journal代的只读临时副本由xcss公共snapshot捕获；产品验证精确业务Schema、路径身份和lease。普通运行只接受当前revision1。非当前格式只读拒绝，不改写输入。
+`ProductMetadataRow` 后执行验证。SQLite当前WAL/journal代的只读临时副本由xcss公共snapshot捕获；产品验证精确业务Schema、路径身份和lease。普通运行只接受当前revision2。非当前格式只读拒绝，不改写输入。
 
-Client配对/设备快照是xcos-edge-v1，能力字段必须使用supported/unsupported/unknown；浏览器wire身份为xcos-wire-v1，HTTP路径前缀仍为/api/v1，media JWT为v1。
+Client配对/设备快照是xcos-edge-v1，能力字段必须使用supported/unsupported/unknown；浏览器wire身份为xcos-wire-v2，HTTP路径前缀仍为/api/v1，media JWT为v1。
+浏览器当前契约要求摄像机响应包含观测时效及最后成功时间，不把保留的历史 online 状态直接当作当前在线。
+当前结构加入媒体观测时间与有效期，不读取旧结构或自动迁移；显式初始化只作用于新的空数据目录。
 
 ## 7.3 管理员身份契约
 

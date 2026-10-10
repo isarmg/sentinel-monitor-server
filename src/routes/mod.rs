@@ -55,7 +55,7 @@ use recordings::*;
 #[cfg(test)]
 mod request_contract_tests;
 
-const CAMERA_SELECT: &str = "SELECT id, name, location, source_kind, client_id, adapter_kind, manufacturer, model, firmware_version, serial_number, capabilities_json, streams_json, health_message, device_status, has_sub_stream, enabled, record_enabled, storage_mode, status, last_seen_at, created_at, updated_at FROM cameras";
+const CAMERA_SELECT: &str = "SELECT id, name, location, source_kind, client_id, adapter_kind, manufacturer, model, firmware_version, serial_number, capabilities_json, streams_json, health_message, device_status, has_sub_stream, enabled, record_enabled, storage_mode, status, last_seen_at, last_observed_at, observation_expires_at, created_at, updated_at FROM cameras";
 pub fn router(state: AppState, runtime: xcss::server_runtime::RuntimeHandle) -> Result<Router> {
     let platform = xcss::server_runtime::platform_router(
         runtime,

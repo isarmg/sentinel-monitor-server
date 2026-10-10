@@ -7,13 +7,38 @@
 确认成功/失败将 Unknown、Failed 或 DeadLetter 标为 Resolved；无法确认仅将 Unknown 标为 DeadLetter。
 这些决定不重放原请求。处理前必须核对 MediaMTX 的实际状态；操作者审计与平台状态同事务提交。
 
-调和结果、摄像头状态、当前 owner 的完成转换与 outbox 同事务。租约过期或本地结果提交失败进入 Unknown，
+调和结果、摄像头状态、当前 owner 的完成转换与 outbox 同事务。启动取得独占实例锁后，上一进程遗留的
+所有 running 操作都进入 Unknown，包括尚未到期的操作租约；全局 lease 保留至到期。运行期仅回收过期操作，
+仍有效的 owner 不被抢占。租约过期或本地结果提交失败进入 Unknown，
 不作为可重试失败。`operation-audit` 监督任务按事件 ID 幂等物化审计；插入和 outbox 确认同事务。
 投递失败会将该 Degrading 任务标为失败并保留积压，诊断可见；排除存储故障后重启恢复投递。
 
 本产品的正式服务端构建和运行平台只有 `x86_64-unknown-linux-gnu`。Linux aarch64、musl、Windows、macOS
 以及其他 target 都不属于可部署范围，也没有兼容分支。Rust 工具链固定为 `1.99.0`；Web 构建机固定为
 Node `26.7.0`。
+
+## 摄像机状态与观测时效
+
+`GET /api/v1/cameras` 的 `status` 是最近保存的媒体状态，`device_status` 是 Client 最近上报的设备状态，
+两者都不能脱离 `observation_status` 被解释为当前状态：
+
+- `fresh`：最近一次完整的 MediaMTX 路径清单已成功保存，且观测仍在有效期内。
+- `stale`：曾有成功观测，但清单请求失败、服务重启、媒体配置重新调和，或有效期已结束；保留最后已知状态。
+- `unknown`：尚无成功的媒体观测。依赖不可用不能证明设备离线。
+
+`last_observed_at` 是最后一次成功保存的清单观测的请求开始时间（Server UTC），在线与离线观测都会更新它；
+失败不更新。`observation_expires_at` 是其有效期上限，按请求开始时间加上
+`3 × status_interval_secs + request_timeout_secs` 计算。失败或启动时将有效期清空，但保留成功时间与状态；
+API 按当前时间再次判定过期，时钟回拨到观测之前也不能把它当作新观测。
+`last_seen_at` 仍可能由 Client 快照刷新，不表示媒体清单读取成功，不能用作媒体观测时间。
+
+Web 显示“观测已过期”或“尚无有效观测”，详情同时显示最后有效媒体观测时间、保存的媒体状态和 Client
+上报的设备状态。已停用设备保持“已停用”。浏览器快照也在服务端给出的有效期结束后失效；即使没有新响应，
+旧在线徽标也不会一直保留。`/v3/info` 成功只说明 MediaMTX 信息接口可用，不能证明路径清单或摄像机在线。
+
+当前数据库格式为 `xcos-db-v2`、Schema revision `2`，浏览器契约为 `xcos-wire-v2`；Client 设备协议和媒体 JWT
+未变化。普通运行直接拒绝旧结构，不自动迁移、不回退读取、不改写旧数据库的身份。只运行当前结构；
+需要建立当前数据时，在新的空数据目录执行显式 `xcos init` 并重新配对。此次代码修复不操作现有运行数据。
 
 ## 1. 唯一生产布局
 
@@ -145,9 +170,9 @@ sudo systemctl reload caddy
 
 ```text
 application=xcos
-application_version=xcos-db-v1
-schema_revision=1
-schema_sha256=c648d0eb3dc04e3b32e774775072ba826c5a3f7b9945d306920f2f34f23223d0
+application_version=xcos-db-v2
+schema_revision=2
+schema_sha256=4d20083821ff39d78792d0795b26206e851c2e6d0523109ee49cfc06666a1d4a
 ```
 
 xcss `_common_administrators` 表保存不透明 TEXT `administrator_id`、canonical `username`、密码摘要、启停状态、Session version 和微秒整数时间

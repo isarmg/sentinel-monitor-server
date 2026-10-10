@@ -20,7 +20,9 @@ sudo /opt/isarmg/xcos/releases/1.0.0/deploy/xcosctl status
 
 `bootstrap`只生成私有配置；`bootstrap --confirm-config`审阅后显式执行`init`并只读校验既有状态，成功后移除临时初始密码。`start`仅运行当前已初始化数据，不能自动建库或创建管理员。核心CLI为`init`、`run`、`config validate`和`status`；`--config`读取私有JSON，显式CLI覆盖环境、文件和默认值，`--json`提供单条机器错误。
 
-当前数据格式为`xcos-db-v1`（Schema1），Client设备协议为`xcos-edge-v1`，能力使用`supported/unsupported/unknown`三态；浏览器wire身份为`xcos-wire-v1`（HTTP路径前缀仍为`/api/v1`），媒体JWT为v1，几种身份不可混用。普通运行只接受当前格式，非当前输入明确拒绝且不改写。
+当前数据格式为`xcos-db-v2`（Schema2），Client设备协议为`xcos-edge-v1`，能力使用`supported/unsupported/unknown`三态；浏览器wire身份为`xcos-wire-v2`（HTTP路径前缀仍为`/api/v1`），媒体JWT为v1，几种身份不可混用。普通运行只接受当前格式，非当前输入明确拒绝且不改写。
+
+摄像机 API 单独提供 `observation_status`（`fresh/stale/unknown`）、最后有效观测时间和到期时间。依赖清单读取失败会显示观测过期并保留已知状态，不直接判定设备离线；字段语义与当前结构初始化见[运维文档](docs/operations.md#摄像机状态与观测时效)。
 
 控制面和 MediaMTX 管理端口应只监听 loopback。生产入口由 HTTPS 反向代理提供；RTSPS 发布地址及证书必须能被所有 Client 验证。网络端口、反向代理和录像目录配置见[运维文档](docs/operations.md)。
 

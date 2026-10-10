@@ -19,15 +19,15 @@ pub(crate) use lease::{
 pub(crate) use paths::database_path;
 
 const APPLICATION: &str = "xcos";
-pub const CURRENT_SCHEMA_REVISION: i64 = 1;
+pub const CURRENT_SCHEMA_REVISION: i64 = 2;
 pub const CURRENT_SCHEMA_SHA256: &str =
-    "c648d0eb3dc04e3b32e774775072ba826c5a3f7b9945d306920f2f34f23223d0";
+    "4d20083821ff39d78792d0795b26206e851c2e6d0523109ee49cfc06666a1d4a";
 const CURRENT_SCHEMA: &str = include_str!("../../schema/generated/current_schema.sql");
 
 pub(crate) fn current_schema_identity() -> anyhow::Result<SchemaIdentity> {
     Ok(SchemaIdentity::new(
         APPLICATION,
-        "xcos-db-v1",
+        "xcos-db-v2",
         u64::try_from(CURRENT_SCHEMA_REVISION).context("current schema revision is negative")?,
         CURRENT_SCHEMA_SHA256,
     )?)
