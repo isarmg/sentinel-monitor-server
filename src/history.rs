@@ -38,12 +38,12 @@ pub(crate) async fn reserve_with(
 ) -> Result<()> {
     let (rows, own, outstanding, pending_commands): (i64, i64, i64, i64) = sqlx::query_as(
         "SELECT (SELECT count(*) FROM events)+(SELECT count(*) FROM audit_logs)+\
-         (SELECT count(*) FROM _xcss_operations)+(SELECT count(*) FROM _xcss_operation_audit_outbox),\
+         (SELECT count(*) FROM _common_operations)+(SELECT count(*) FROM _common_operation_audit_outbox),\
          (SELECT count(*) FROM events WHERE camera_id=?)+\
          (SELECT count(*) FROM audit_logs WHERE entity_type='camera' AND entity_id=?)+\
-         (SELECT count(*) FROM _xcss_operations WHERE target_key=?)+\
-         (SELECT count(*) FROM _xcss_operation_audit_outbox a JOIN _xcss_operations o ON o.operation_id=a.operation_id WHERE o.target_key=?),\
-         (SELECT count(*) FROM _xcss_operations WHERE state IN ('pending','running','unknown','dead_letter')),\
+         (SELECT count(*) FROM _common_operations WHERE target_key=?)+\
+         (SELECT count(*) FROM _common_operation_audit_outbox a JOIN _common_operations o ON o.operation_id=a.operation_id WHERE o.target_key=?),\
+         (SELECT count(*) FROM _common_operations WHERE state IN ('pending','running','unknown','dead_letter')),\
          (SELECT count(*) FROM device_commands WHERE status='pending')",
     )
     .bind(owner).bind(owner).bind(owner.map(|id| id.to_string())).bind(owner.map(|id| id.to_string())).fetch_one(&mut **tx).await?;
@@ -51,8 +51,8 @@ pub(crate) async fn reserve_with(
     // undelivered outbox fact still needs a separate audit row. Keep that
     // projection reserved until the audit insert and acknowledgement commit.
     let (pending_projections, own_pending_projections): (i64, i64) = sqlx::query_as(
-        "SELECT (SELECT count(*) FROM _xcss_operation_audit_outbox WHERE delivered_at_micros IS NULL),\
-         (SELECT count(*) FROM _xcss_operation_audit_outbox a JOIN _xcss_operations o ON o.operation_id=a.operation_id WHERE a.delivered_at_micros IS NULL AND o.target_key=?)",
+        "SELECT (SELECT count(*) FROM _common_operation_audit_outbox WHERE delivered_at_micros IS NULL),\
+         (SELECT count(*) FROM _common_operation_audit_outbox a JOIN _common_operations o ON o.operation_id=a.operation_id WHERE a.delivered_at_micros IS NULL AND o.target_key=?)",
     )
     .bind(owner.map(|id| id.to_string())).fetch_one(&mut **tx).await?;
     // Eight attempts, final/unknown reconciliation and their outbox projections
@@ -64,7 +64,7 @@ pub(crate) async fn reserve_with(
     // Creating an operation also creates its initial outbox fact and reserves
     // that fact's projection, besides the 64 future transition/projection rows.
     let added_rows = if new_operation { 67 } else { 1 };
-    let own_outstanding: i64 = sqlx::query_scalar("SELECT count(*) FROM _xcss_operations WHERE target_key=? AND state IN ('pending','running','unknown','dead_letter')")
+    let own_outstanding: i64 = sqlx::query_scalar("SELECT count(*) FROM _common_operations WHERE target_key=? AND state IN ('pending','running','unknown','dead_letter')")
         .bind(owner.map(|id| id.to_string())).fetch_one(&mut **tx).await?;
     if rows
         .saturating_add(reserved_rows)
@@ -83,8 +83,8 @@ pub(crate) async fn reserve_with(
         let own_payload: i64 = sqlx::query_scalar(
             "SELECT coalesce((SELECT sum(length(CAST(message AS BLOB))+length(CAST(details AS BLOB))) FROM events WHERE camera_id=?),0)+\
              coalesce((SELECT sum(length(CAST(details AS BLOB))) FROM audit_logs WHERE entity_type='camera' AND entity_id=?),0)+\
-             coalesce((SELECT sum(length(request_payload)+coalesce(length(result_payload),0)) FROM _xcss_operations WHERE target_key=?),0)+\
-             coalesce((SELECT sum(length(CAST(a.payload_json AS BLOB))) FROM _xcss_operation_audit_outbox a JOIN _xcss_operations o ON o.operation_id=a.operation_id WHERE o.target_key=?),0)")
+             coalesce((SELECT sum(length(request_payload)+coalesce(length(result_payload),0)) FROM _common_operations WHERE target_key=?),0)+\
+             coalesce((SELECT sum(length(CAST(a.payload_json AS BLOB))) FROM _common_operation_audit_outbox a JOIN _common_operations o ON o.operation_id=a.operation_id WHERE o.target_key=?),0)")
             .bind(owner).bind(owner).bind(owner.to_string()).bind(owner.to_string()).fetch_one(&mut **tx).await?;
         let own_reserve = (own_outstanding.max(0) as u64)
             .saturating_mul(1024 * 1024)
@@ -394,8 +394,8 @@ mod tests {
         ));
         let charged_payload: i64 = sqlx::query_scalar(
             "SELECT (SELECT coalesce(sum(length(CAST(details AS BLOB))),0) FROM audit_logs WHERE entity_type='camera' AND entity_id=?)+\
-             (SELECT length(request_payload)+coalesce(length(result_payload),0) FROM _xcss_operations WHERE operation_id=?)+\
-             (SELECT coalesce(sum(length(CAST(payload_json AS BLOB))),0) FROM _xcss_operation_audit_outbox WHERE operation_id=?)",
+             (SELECT length(request_payload)+coalesce(length(result_payload),0) FROM _common_operations WHERE operation_id=?)+\
+             (SELECT coalesce(sum(length(CAST(payload_json AS BLOB))),0) FROM _common_operation_audit_outbox WHERE operation_id=?)",
         ).bind(owner).bind(&id).bind(&id).fetch_one(&mut *tx).await.unwrap();
         let without_projection_bytes = (charged_payload as u64 + 7 * 2048 + 128 * 1024) * 2;
         assert!(matches!(
@@ -423,7 +423,7 @@ mod tests {
         assert_eq!(store.pending_audit_count().await.unwrap(), 0);
         let retained: i64 = sqlx::query_scalar(
             "SELECT (SELECT count(*) FROM events)+(SELECT count(*) FROM audit_logs)+\
-             (SELECT count(*) FROM _xcss_operations)+(SELECT count(*) FROM _xcss_operation_audit_outbox)",
+             (SELECT count(*) FROM _common_operations)+(SELECT count(*) FROM _common_operation_audit_outbox)",
         ).fetch_one(&pool).await.unwrap();
         assert_eq!(retained, terminal.rows);
         assert_eq!(
@@ -449,7 +449,7 @@ mod tests {
         ));
         let without_outbox_payload: i64 = sqlx::query_scalar(
             "SELECT (SELECT coalesce(sum(length(CAST(details AS BLOB))),0) FROM audit_logs WHERE entity_type='camera' AND entity_id=?)+\
-             (SELECT length(request_payload)+coalesce(length(result_payload),0) FROM _xcss_operations WHERE operation_id=?)",
+             (SELECT length(request_payload)+coalesce(length(result_payload),0) FROM _common_operations WHERE operation_id=?)",
         ).bind(owner).bind(&id).fetch_one(&mut *tx).await.unwrap();
         let owner_bytes = (without_outbox_payload as u64 + retained as u64 * 2048 + 128 * 1024) * 2;
         assert!(matches!(

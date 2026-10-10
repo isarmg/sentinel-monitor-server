@@ -29,7 +29,7 @@
 
 ### 1.3 身份边界
 
-Xcos 控制面只有 Administrator 一种身份。`_xcss_administrators` 表没有 `role` 列，登录成功的 wire response 固定
+Xcos 控制面只有 Administrator 一种身份。`_common_administrators` 表没有 `role` 列，登录成功的 wire response 固定
 `role:"admin"`，账户名称为 canonical `username`，业务外键引用不透明的 `administrator_id`。
 xcss 提供管理员创建、凭据管理与停用能力。摄像头 RTSP/ONVIF 凭据只保存在 Client；实例授权码和
 媒体 JWT `actions` 属于数据面授权，不代表控制面角色。相同 username 文本不会把摄像头身份与 Administrator 关联。
@@ -51,7 +51,7 @@ xcss 提供管理员创建、凭据管理与停用能力。摄像头 RTSP/ONVIF 
 | SEN-P-005 | 控制面和媒体面分离；Rust 不代理 RTSP 输入，也不转码视频 | `src/mediamtx.rs`、`deploy/Caddyfile` | 核心 | 高 | 把媒体搬入 Rust 会重写容量、协议和攻击面；删 companion 则无直播/录像 | Rust 路由不存在 RTSP 转发；MediaMTX path 实测 |
 | SEN-P-006 | 普通运行只接受当前合同并验证当前状态身份 | `src/main.rs` CLI、`src/sqlite/` | 保障 | 高 | 加入代际 reader 会长期扩大状态和测试矩阵 | init/run/config validate/status/help/version核心命令和只读state-contract；普通运行拒绝非当前库，不提供历史转换入口 |
 | SEN-P-007 | Server 端 React 19 + TypeScript strict + Vite 8 控制台位于 `web/` | `web/package.json`、`web/src/main.tsx` | 建议保留 | 高 | API 和媒体能力仍在，但没有内置可操作控制台 | typecheck、Vite build、发行静态树验证 |
-| SEN-P-008 | Server Rust与单个 @xcss/web 包候选以xcss 1.0.0完整revision、URL及真实tarball integrity受控；公共库已正式发布，产品本轮验收和发行状态单独记录 | Cargo、一个 `@xcss/web` 依赖、manifest/lock | 保障 | 高 | 平台行为分叉；独立构建通过不代表主分支改动已纳入产品 Release | [独立 CI 与消费者证据](https://github.com/isarmg/xcss/blob/main/consumers/axum-0.7.0-evidence.md)；后续更新仍须复验锁图和发行身份 |
+| SEN-P-008 | Server Rust与单个 @xcss/web 包候选以xcss 1.0.0完整revision、URL及真实tarball integrity受控；公共库已正式发布，产品本轮验收和发行状态单独记录 | Cargo、一个 `@xcss/web` 依赖、manifest/lock | 保障 | 高 | 平台行为分叉；独立构建通过不代表主分支改动已纳入产品 Release | [本项目 CI](https://github.com/isarmg/xcos/actions)及[正式发行资产](https://github.com/isarmg/xcos/releases)；后续更新仍须复验锁图和发行身份 |
 | SEN-P-009 | `config/` 只存可提交样例和受审 companion 合同；真实 Secret 不进仓库 | `config/xcos.env.example`、`.gitignore` | 开发运维 | 低 | Secret 容易误提交，或部署字段缺少审查入口 | Secret 扫描；样例字段与 parser 对照 |
 | SEN-P-010 | 原生发行树提供单一xcosctl生命周期入口，仓库另给完整systemd部署示例；两者不能同时管理相同进程和数据 | `deploy/xcosctl`、`deploy/.*-action.sh`、`deploy/*.service` | 开发运维 | 中 | 双重进程管理可能启动半套服务或竞争端口 | xcosctl临时根测试通过；systemd示例尚未在真实主机执行 |
 
@@ -86,10 +86,10 @@ xcss 提供管理员创建、凭据管理与停用能力。摄像头 RTSP/ONVIF 
 | SEN-A-006 | 未知账户使用当前 dummy hash，减少账户枚举时序差异 | xcss AdministratorService | 保障 | 中 | 未知 username 明显更快返回 | 已知错误密码与未知账户成本 |
 | SEN-A-007 | 登录按来源 IP 与 canonical username 分别限流，全局 bucket 有界 | xcss AdministratorService | 保障 | 高 | 暴力猜测或耗尽认证资源 | 规范化、窗口恢复、有界容量、429 |
 | SEN-A-008 | Argon2 计算使用共享 semaphore 和等待预算 | xcss AdministratorService | 保障 | 高 | blocking worker 耗尽 | 许可上限、超时、失败释放 |
-| SEN-A-009 | Session token 为 32 随机字节，平台库仅保存 SHA-256 digest | xcss _xcss_admin_sessions | 保障 | 高 | 明文库可转为活跃登录凭据 | token/digest 形状、无明文 |
+| SEN-A-009 | Session token 为 32 随机字节，平台库仅保存 SHA-256 digest | xcss _common_admin_sessions | 保障 | 高 | 明文库可转为活跃登录凭据 | token/digest 形状、无明文 |
 | SEN-A-010 | Session 具有固定 idle/absolute TTL，平台节流刷新 last_seen | xcss authenticate_session | 保障 | 高 | 会话永久存活或写入过密 | 过期、刷新预算、CSRF 比较更新、时间不倒退 |
 | SEN-A-011 | 改密/停用增加 session_version，并原子撤销该账户全部 Session | xcss manage_administrator | 保障 | 高 | 旧会话继续控制设备 | 改密、停用、审计回滚、失效 Cookie |
-| SEN-A-012 | 生产 Cookie 为 __Host-xcss-xcos-session，Secure/HttpOnly/SameSite=Strict/Path=/ | xcss admin-core/admin-axum | 保障 | 低 | 窃取与跨站风险扩大 | Set-Cookie 精确属性、开发 Cookie |
+| SEN-A-012 | 生产 Cookie 为 __Host-admin-xcos-session，Secure/HttpOnly/SameSite=Strict/Path=/ | xcss admin-core/admin-axum | 保障 | 低 | 窃取与跨站风险扩大 | Set-Cookie 精确属性、开发 Cookie |
 | SEN-A-013 | logout 撤销 Session、提交平台安全审计并过期 Cookie | xcss AdministratorService/admin-axum | 建议保留 | 低 | 无法主动结束会话 | 注销后 401、Cookie 清理 |
 | SEN-A-014 | 恢复 Session 以 CAS 轮换 CSRF 摘要，迟到的 restore/touch 不能恢复旧摘要 | xcss rotate_session_csrf | 保障 | 高 | CSRF 轮换可被并发请求撤销 | SQLite/Static CAS、旧/新摘要、错误映射 |
 | SEN-A-015 | unsafe 请求要求单个 `X-CSRF-Token` 且 constant-time 比较 digest | `enforce_browser_security`、xcss helper | 保障 | 高 | 已登录浏览器可能被跨站触发控制动作 | 缺失、重复、逗号合并、错误、正确 token |
@@ -206,7 +206,7 @@ xcss 提供管理员创建、凭据管理与停用能力。摄像头 RTSP/ONVIF 
 | SEN-R-017 | CI 同时门禁 Rust fmt/check/clippy/test、Web、native 生命周期与 Caddy 当前代理合同 | `.github/workflows/ci.yml` | 开发运维 | 高 | 任一语言或交付层可独立漂移进入 main；代理可能重新指向不存在的容器 | clean checkout 全 job；锁文件模式；根级 Caddyfile/容器上游负例；三个 loopback 上游精确一次 |
 | SEN-R-018 | Rust 固定 1.99.0，Cargo.lock 与 npm package-lock 都纳入提交 | `rust-toolchain.toml`、lockfiles | 开发运维 | 中 | 依赖解析随时间变化，构建结果不可复现 | `--locked`、`npm ci`、工具链版本 |
 | SEN-R-019 | 源配置统一为 `config/`，主机部署资产为 `deploy/`，客户端为 `web/`，生命周期为 `deploy/`，构建、检查、打包入口为 `scripts/`；根目录不放散落部署文件 | 仓库目录结构、CI proxy gate | 开发运维 | 低 | 配置、客户端和部署资产散落，开发者难以判断事实源；双份代理模板会漂移 | 目录清单；根级 `Caddyfile` 不存在；脚本/文档不引用已移除位置 |
-| SEN-R-020 | 当前Schema identity为application `xcos`、数据格式`xcos-db-v1`、revision1、SHA `89d3e59dab120939725a7e3b052cf3cf5887f051c024e0325c3e9494043909e3`；`_xcss_administrators` 使用 username，不保存 email/role | `schema/generated/current_schema.sql`、`src/sqlite/`、`scripts/lifecycle-test.sh` | 保障 | 高 | 发行物、运行库和运维文档可能各自接受不同管理身份 DDL | code-owned fingerprint 重算、metadata/现场 schema、列清单、lifecycle identity 一致 |
+| SEN-R-020 | 当前Schema identity为application `xcos`、数据格式`xcos-db-v1`、revision1、SHA `c648d0eb3dc04e3b32e774775072ba826c5a3f7b9945d306920f2f34f23223d0`；`_common_administrators` 使用 username，不保存 email/role | `schema/generated/current_schema.sql`、`src/sqlite/`、`scripts/lifecycle-test.sh` | 保障 | 高 | 发行物、运行库和运维文档可能各自接受不同管理身份 DDL | code-owned fingerprint 重算、metadata/现场 schema、列清单、lifecycle identity 一致 |
 
 ## 11. 可观测性、容量和故障边界
 

@@ -47,8 +47,8 @@ pub(crate) fn state_contract_bytes() -> Result<Vec<u8>> {
             sha256: crate::sqlite::CURRENT_SCHEMA_SHA256.into(),
         }),
         maintenance_locks: vec![
-            ".xcss-instance.lock".into(),
-            ".xcss-maintenance.lock".into(),
+            ".state-instance.lock".into(),
+            ".state-maintenance.lock".into(),
         ],
         resources: vec![
             StateResource {

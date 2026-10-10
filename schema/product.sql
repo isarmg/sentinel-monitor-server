@@ -8,7 +8,7 @@ CREATE TABLE xcocs (
     authorization_code_hash BLOB NOT NULL UNIQUE CHECK (length(authorization_code_hash) = 32),
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'online', 'offline', 'revoked')),
     last_seen_at TEXT,
-    created_by TEXT REFERENCES _xcss_administrators(administrator_id) ON DELETE SET NULL,
+    created_by TEXT REFERENCES _common_administrators(administrator_id) ON DELETE SET NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     revoked_at TEXT
@@ -42,7 +42,7 @@ CREATE TABLE cameras (
     storage_mode TEXT NOT NULL DEFAULT 'server' CHECK (storage_mode IN ('client', 'server')),
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'online', 'offline', 'disabled', 'error')),
     last_seen_at TEXT,
-    created_by TEXT REFERENCES _xcss_administrators(administrator_id) ON DELETE SET NULL,
+    created_by TEXT REFERENCES _common_administrators(administrator_id) ON DELETE SET NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     deleted_at TEXT,
@@ -81,7 +81,7 @@ CREATE TABLE events (
     message TEXT NOT NULL,
     details TEXT NOT NULL DEFAULT '{}',
     acknowledged_at TEXT,
-    acknowledged_by TEXT REFERENCES _xcss_administrators(administrator_id) ON DELETE SET NULL,
+    acknowledged_by TEXT REFERENCES _common_administrators(administrator_id) ON DELETE SET NULL,
     created_at TEXT NOT NULL
 );
 
@@ -91,7 +91,7 @@ CREATE INDEX events_unacknowledged_idx ON events (created_at DESC) WHERE acknowl
 
 CREATE TABLE audit_logs (
     id TEXT PRIMARY KEY,
-    user_id TEXT REFERENCES _xcss_administrators(administrator_id) ON DELETE SET NULL,
+    user_id TEXT REFERENCES _common_administrators(administrator_id) ON DELETE SET NULL,
     action TEXT NOT NULL,
     entity_type TEXT NOT NULL,
     entity_id TEXT,
@@ -123,7 +123,7 @@ CREATE TABLE media_actual_paths (
     source_on_demand INTEGER CHECK (source_on_demand IS NULL OR source_on_demand IN (0, 1)),
     record_configured INTEGER CHECK (record_configured IS NULL OR record_configured IN (0, 1)),
     applied_generation INTEGER,
-    last_operation_id TEXT REFERENCES _xcss_operations(operation_id) ON DELETE SET NULL,
+    last_operation_id TEXT REFERENCES _common_operations(operation_id) ON DELETE SET NULL,
     observed_at TEXT NOT NULL
 );
 

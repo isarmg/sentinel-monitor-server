@@ -879,7 +879,7 @@ mod tests {
             .encrypt_client_authorization(&camera_id.to_string(), &authorization_code)
             .unwrap();
         sqlx::query(
-            "INSERT INTO _xcss_administrators(
+            "INSERT INTO _common_administrators(
              administrator_id,username,password_hash,created_at_micros,updated_at_micros)
              VALUES (?, 'doctor-admin', ?, ?, ?)",
         )
@@ -1098,7 +1098,7 @@ async fn application_probe_requires_the_exact_bounded_current_readiness_contract
             let (mut stream, _) = listener.accept().await.unwrap();
             let mut request = [0_u8; 4096];
             let _ = stream.read(&mut request).await;
-            let response = format!("HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nx-xcss-service: {service}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+            let response = format!("HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nx-service: {service}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
             let _ = stream.write_all(response.as_bytes()).await;
         });
         assert_eq!(

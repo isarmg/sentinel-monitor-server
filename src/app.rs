@@ -157,7 +157,7 @@ pub(crate) async fn serve(
             xcss::server_runtime::ServerRuntime::builder(xcss::server_runtime::ProductDescriptor {
                 id: "xcos".into(),
                 version: env!("CARGO_PKG_VERSION").into(),
-                xcss_revision: env!("XCSS_REVISION").into(),
+                common_revision: env!("XCSS_REVISION").into(),
                 profile: "server-control-plane".into(),
                 capabilities: vec![
                     "embedded-web".into(),

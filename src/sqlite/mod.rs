@@ -21,7 +21,7 @@ pub(crate) use paths::database_path;
 const APPLICATION: &str = "xcos";
 pub const CURRENT_SCHEMA_REVISION: i64 = 1;
 pub const CURRENT_SCHEMA_SHA256: &str =
-    "89d3e59dab120939725a7e3b052cf3cf5887f051c024e0325c3e9494043909e3";
+    "c648d0eb3dc04e3b32e774775072ba826c5a3f7b9945d306920f2f34f23223d0";
 const CURRENT_SCHEMA: &str = include_str!("../../schema/generated/current_schema.sql");
 
 pub(crate) fn current_schema_identity() -> anyhow::Result<SchemaIdentity> {

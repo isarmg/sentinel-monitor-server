@@ -163,7 +163,7 @@ pub async fn list_operations(
     let boundary: Option<(i64, String)> = if let Some(id) = cursor {
         let id = id.to_string();
         let timestamp: Option<i64> = sqlx::query_scalar(
-            "SELECT created_at_micros FROM _xcss_operations WHERE operation_id = ? AND namespace = ?")
+            "SELECT created_at_micros FROM _common_operations WHERE operation_id = ? AND namespace = ?")
             .bind(&id).bind(OPERATION_NAMESPACE).fetch_optional(&mut *connection).await.map_err(sqlite::history_error)?;
         Some((
             timestamp
@@ -194,7 +194,7 @@ pub async fn list_operations(
         ("updated_at_micros", 32),
     ]);
     let mut builder = sqlx::QueryBuilder::<sqlx::Sqlite>::new(format!(
-        "SELECT {columns} FROM _xcss_operations WHERE namespace = "
+        "SELECT {columns} FROM _common_operations WHERE namespace = "
     ));
     builder
         .push_bind(OPERATION_NAMESPACE)
@@ -517,7 +517,7 @@ pub async fn flush_operation_audit(pool: &SqlitePool) -> Result<usize> {
         let operation = operation_view(operation)?;
         let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
         sqlx::query("INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, details, created_at) \
-            VALUES (?, (SELECT administrator_id FROM _xcss_administrators WHERE administrator_id = ?), \
+            VALUES (?, (SELECT administrator_id FROM _common_administrators WHERE administrator_id = ?), \
             'media.operation.transition', 'camera', ?, ?, ?) ON CONFLICT(id) DO NOTHING")
             .bind(Uuid::parse_str(&event.event_id).map_err(|_| AppError::Internal("审计事件 ID 无效".into()))?)
             .bind(operation.requested_by)
@@ -1453,7 +1453,7 @@ mod tests {
             main_digest: Some([42; 32]),
             sub_digest: None,
         };
-        sqlx::raw_sql("CREATE TRIGGER reject_operation_audit BEFORE INSERT ON _xcss_operation_audit_outbox BEGIN SELECT RAISE(FAIL, 'injected'); END;")
+        sqlx::raw_sql("CREATE TRIGGER reject_operation_audit BEFORE INSERT ON _common_operation_audit_outbox BEGIN SELECT RAISE(FAIL, 'injected'); END;")
             .execute(&pool).await.unwrap();
         assert!(
             finish_success(&pool, &operation, &claim, &desired, &applied)
@@ -1559,7 +1559,7 @@ mod tests {
     async fn operation_audit_delivery_is_atomic_and_idempotent() {
         let (_directory, pool, _, _) = lease_test_database().await;
         let store = SqliteOperationStore::new(pool.clone());
-        sqlx::raw_sql("CREATE TRIGGER reject_ack BEFORE UPDATE OF delivered_at_micros ON _xcss_operation_audit_outbox BEGIN SELECT RAISE(FAIL, 'injected'); END;")
+        sqlx::raw_sql("CREATE TRIGGER reject_ack BEFORE UPDATE OF delivered_at_micros ON _common_operation_audit_outbox BEGIN SELECT RAISE(FAIL, 'injected'); END;")
             .execute(&pool).await.unwrap();
         assert!(flush_operation_audit(&pool).await.is_err());
         assert_eq!(
@@ -1655,7 +1655,7 @@ mod tests {
             .await
             .is_err());
         let fenced_state: String =
-            sqlx::query_scalar("SELECT state FROM _xcss_operations WHERE operation_id = ?")
+            sqlx::query_scalar("SELECT state FROM _common_operations WHERE operation_id = ?")
                 .bind(&operation_id)
                 .fetch_one(&pool)
                 .await
@@ -1663,7 +1663,7 @@ mod tests {
         assert_eq!(fenced_state, "running");
 
         let expired = (Utc::now() - Duration::seconds(1)).timestamp_micros();
-        sqlx::query("UPDATE _xcss_operations SET lease_expiry_micros = ? WHERE operation_id = ?")
+        sqlx::query("UPDATE _common_operations SET lease_expiry_micros = ? WHERE operation_id = ?")
             .bind(expired)
             .bind(&operation_id)
             .execute(&pool)
@@ -1678,7 +1678,7 @@ mod tests {
             "Unknown operations are never automatically claimed"
         );
         let still_unknown: (String, Option<String>) = sqlx::query_as(
-            "SELECT state, lease_owner FROM _xcss_operations WHERE operation_id = ?",
+            "SELECT state, lease_owner FROM _common_operations WHERE operation_id = ?",
         )
         .bind(&operation_id)
         .fetch_one(&pool)
@@ -1735,7 +1735,7 @@ mod tests {
         .unwrap();
         assert_eq!(recover_interrupted_operations(&second).await.unwrap(), 1);
         let operation: (String, Option<String>) = sqlx::query_as(
-            "SELECT state, lease_owner FROM _xcss_operations WHERE operation_id = ?",
+            "SELECT state, lease_owner FROM _common_operations WHERE operation_id = ?",
         )
         .bind(&operation_id)
         .fetch_one(&first)

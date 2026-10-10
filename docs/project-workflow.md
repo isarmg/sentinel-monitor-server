@@ -57,7 +57,7 @@ Rust binary，生成完整 manifest，在同一文件系统暂存并验证后，
 1. 验证进程物理位置、revision、target、API、Schema、Web、credential epoch、MediaMTX 和 manifest 全树。
 2. 解析环境；生产 Cookie 必须 Secure，资源使用 executable 内嵌快照并拒绝开发目录覆盖。
 3. 取得数据库 instance 排他锁和 maintenance 共享锁。
-4. runtime目录复用公共`.xcss-maintenance.lock`/`.xcss-instance.lock`并维护PID；MediaMTX 由脚本持有 companion lock。
+4. runtime目录复用公共`.state-maintenance.lock`/`.state-instance.lock`并维护PID；MediaMTX 由脚本持有 companion lock。
 5. 私有复制并验证 SQLite generation、租约 singleton 与所有加密实例授权码。
 6. 启动后台 reconciler、HTTP 服务与 readiness；任何合同不能证明时 fail closed。
 
@@ -70,8 +70,8 @@ POST /api/v1/auth/login  {username,password}
   -> canonical 3..64 bytes、首尾字母数字、字符仅 [a-z0-9._-]
   -> 请求体/来源/账户/全局准入
   -> Argon2 校验
-  -> 写 _xcss_admin_sessions 的 Session/CSRF digest
-  -> Set-Cookie: __Host-xcss-xcos-session（Secure/HttpOnly/SameSite=Strict）
+  -> 写 _common_admin_sessions 的 Session/CSRF digest
+  -> Set-Cookie: __Host-admin-xcos-session（Secure/HttpOnly/SameSite=Strict）
   -> 返回严格 AdministratorSession
 
 GET /api/v1/auth/session
@@ -86,7 +86,7 @@ POST /api/v1/auth/logout + X-CSRF-Token
 
 `AdministratorSession` 的 wire 形状固定为
 `{authenticated:true,user_id,username,role:"admin",csrf_token}`。`role` 是跨项目 wire 常量，不是数据库字段；
-`_xcss_administrators` 表不保存身份等级，也不存在运行时身份切换。浏览器管理路由要求有效
+`_common_administrators` 表不保存身份等级，也不存在运行时身份切换。浏览器管理路由要求有效
 Administrator Session；unsafe method 还要求当前 CSRF、Origin/Host/URI authority 边界以及单值
 `Sec-Fetch-Site: same-origin`。`/api/v1/client/pair` 使用实例授权码，`/api/v1/client/snapshot` 使用
 Client Bearer token，二者均不使用浏览器 Session。
@@ -176,7 +176,7 @@ npm run build
 `build` 已把 `check:xcss` 设为硬前置，因此不能通过直接执行 Vite 跳过共享边界。构建产物完全自包含；
 浏览器运行时不解析 npm 包，也不访问 npm registry、xcss 仓库或远程 CSS。
 构建期单个 @xcss/web 包候选固定xcss `v1.0.0`官方URL和真实归档的lockfile integrity；xcss 1.0.0 已正式发布，产品输入使用官方归档与精确 SRI。
-Rust crate 由版本 `=1.0.0` 和 revision `9fb5b3f8f20762cb93050bc52ea81a36ac0dc914` 双重锁定。两者都不读取
+Rust crate 由版本 `=1.0.0` 和 revision `9637806055b7d7a18be206f0b83e9b22b73902db` 双重锁定。两者都不读取
 共同父目录或 sibling checkout，也不提供旧来源 fallback。
 
 ## 10. xcss 共享层与产品层调用树

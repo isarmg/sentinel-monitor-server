@@ -7,7 +7,7 @@ description = "Maintainable Rust control plane for browser-based camera monitori
 build = "build.rs"
 
 [dependencies]
-xcss = { git = "https://github.com/isarmg/xcss.git", rev = "9fb5b3f8f20762cb93050bc52ea81a36ac0dc914", version = "=1.0.0", features = ["tracing"] }
+xcss = { git = "https://github.com/isarmg/xcss.git", rev = "9637806055b7d7a18be206f0b83e9b22b73902db", version = "=1.0.0", features = ["tracing"] }
 anyhow = "1"
 async-trait = "0.1"
 async-stream = "0.3"
@@ -41,7 +41,7 @@ tower = { version = "0.5", features = ["util"] }
 
 [build-dependencies]
 serde_json = "1"
-xcss = { git = "https://github.com/isarmg/xcss.git", rev = "9fb5b3f8f20762cb93050bc52ea81a36ac0dc914", version = "=1.0.0" }
+xcss = { git = "https://github.com/isarmg/xcss.git", rev = "9637806055b7d7a18be206f0b83e9b22b73902db", version = "=1.0.0" }
 
 [lints.rust]
 unsafe_code = "forbid"

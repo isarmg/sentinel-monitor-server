@@ -27,7 +27,7 @@ Node `26.7.0`。
 
 /etc/isarmg/xcos.env
 /var/lib/isarmg/xcos/{db,recordings,logs}
-/run/isarmg/xcos/{operations.lock,.xcss-maintenance.lock,.xcss-instance.lock,app.pid,mediamtx.lock,mediamtx.pid}
+/run/isarmg/xcos/{operations.lock,.state-maintenance.lock,.state-instance.lock,app.pid,mediamtx.lock,mediamtx.pid}
 
 源码 `deploy/Caddyfile` -> 主机受管的 Caddy 配置
 ```
@@ -147,10 +147,10 @@ sudo systemctl reload caddy
 application=xcos
 application_version=xcos-db-v1
 schema_revision=1
-schema_sha256=89d3e59dab120939725a7e3b052cf3cf5887f051c024e0325c3e9494043909e3
+schema_sha256=c648d0eb3dc04e3b32e774775072ba826c5a3f7b9945d306920f2f34f23223d0
 ```
 
-xcss `_xcss_administrators` 表保存不透明 TEXT `administrator_id`、canonical `username`、密码摘要、启停状态、Session version 和微秒整数时间
+xcss `_common_administrators` 表保存不透明 TEXT `administrator_id`、canonical `username`、密码摘要、启停状态、Session version 和微秒整数时间
 字段，不保存 email 或 `role`。username 的 Schema CHECK 精确要求 3–64 bytes、ASCII 小写、首尾
 `[a-z0-9]`、其余字符仅 `[a-z0-9._-]`；唯一索引直接作用于 canonical 值。登录 candidate 可包含首尾
 ASCII whitespace/大写，但 xcss 规范化后才查询；`@`、Unicode、内部空白、控制字符和首尾分隔符
@@ -183,7 +183,7 @@ binary/version/SHA/config。在线模式再检查两个 loopback readiness，并
 ## 6. 锁顺序
 
 应用全生命周期持有数据库 instance 排他、maintenance 共享和 runtime app lock；MediaMTX 由
-正常运行持数据库父目录`.xcss-maintenance.lock`共享与`.xcss-instance.lock`独占；runtime目录使用同一公共协议并维护PID。`flock --no-fork`持companion lock。维护工具必须按database maintenance -> runtime -> MediaMTX
+正常运行持数据库父目录`.state-maintenance.lock`共享与`.state-instance.lock`独占；runtime目录使用同一公共协议并维护PID。`flock --no-fork`持companion lock。维护工具必须按database maintenance -> runtime -> MediaMTX
 取得排他锁。不要用不同 runtime 指向同一数据库；database identity lock 仍会拒绝第二实例。
 
 ## 8. 发布测试
@@ -256,7 +256,7 @@ auth body、媒体 JWT、WHEP/HLS 播放与录像状态不使用 Administrator u
 当前 Web 使用 xcss 的 admin-web、admin-shell、admin-ui、contracts、design-tokens、http-client、
 web-fonts、web-toolchain 八个内部模块，作为一个 @xcss/web 构建期包发布，不是生产运行服务。Node 固定为 `.node-version` 的 `26.7.0`。
 
-- 候选Rust输入固定 xcss `=1.0.0` / `9fb5b3f8f20762cb93050bc52ea81a36ac0dc914`，一个 @xcss/web 包使用对应新tag URL与真实tarball的lock integrity。xcss 1.0.0 已正式发布，官方单包已逐字节验证；产品仍须完成自身正式构建和发行验收。
+- 候选Rust输入固定 xcss `=1.0.0` / `9637806055b7d7a18be206f0b83e9b22b73902db`，一个 @xcss/web 包使用对应新tag URL与真实tarball的lock integrity。xcss 1.0.0 已正式发布，官方单包已逐字节验证；产品仍须完成自身正式构建和发行验收。
 - 旧消费者CI证明只属于其记录的旧revision；本次新源码和真实发行物必须分别验收。统一manifest、lockfile和发布身份，不改写旧tag/资产。
 
 ```bash
@@ -321,3 +321,11 @@ web/node_modules/.bin/xcss-build-server --config "$PWD/xcss-web-build.json" --mo
 在 `web` 运行 Vite，保持已有 `/api/v1` 和媒体代理。只有未绑定开发 binary 接受此选择，生产
 `APP_ENV=production` 与正式 `run --release-root` 都拒绝目录覆盖。未知资源返回 404，HTML 不缓存，其他
 资源通过 SHA-256 ETag 校验缓存。
+
+## 当前中立接口与旧版数据处理
+
+当前版本只使用 `.state-instance.lock`、`.state-maintenance.lock`、`.state-maintenance-pending.json` 和 `.state-atomic-` 临时文件前缀；离线升级工具采用 `.release-upgrade` 工作目录。服务身份头为 `x-service`，健康状态中的公共源码修订字段为 `common_revision`。管理会话采用 `__Host-admin-xcos-session`，显式开发模式采用 `admin-xcos-session`；生产 Cookie 的 Secure、HttpOnly、SameSite、Path 和 CSRF 约束继续生效。资源清单格式为 `web-assets-v1`，公共数据库内部表及索引采用 `_common_` 前缀。
+
+这些接口没有旧名称别名或旧版兼容分支。旧版升级前，先按本文的停服步骤停止服务、配套客户端及全部维护工具；确认全部进程退出后，完整备份配置、SQLite 数据库及其 WAL/SHM、业务文件和必要的私有凭据。备份包含敏感数据，应保留原有访问权限并离线保存。
+
+保留旧数据目录，按当前安装步骤配置新的私有数据目录，执行显式 `init` 初始化，随后运行 `config validate`，再启动服务、登录管理页面并重新配对客户端。旧配置应人工审阅后填写当前字段，不能整体覆盖新目录。旧业务数据需要另行处理；当前版本不提供自动迁移。不得让旧、新版本同时写同一目录，不得通过删锁文件或修改数据库 metadata 强制启动；当前结构指纹包含实际表名、索引名和 SQL，仅改名称不能证明数据符合当前合同。

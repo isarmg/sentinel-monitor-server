@@ -239,7 +239,7 @@ async fn server_date_media_operations_return_every_row_across_bounded_pages() {
         let mut digest = [0_u8; 32];
         digest[..2].copy_from_slice(&index.to_le_bytes());
         sqlx::query(
-            "INSERT INTO _xcss_operations (operation_id, namespace, target_key, action, \
+            "INSERT INTO _common_operations (operation_id, namespace, target_key, action, \
              idempotency_digest, request_fingerprint, request_payload, state, attempt, \
              max_attempts, not_before_micros, created_at_micros, updated_at_micros) \
              VALUES (?, ?, ?, 'reconcile_camera', ?, ?, ?, 'succeeded', 1, 3, ?, ?, ?)",
@@ -1174,7 +1174,7 @@ async fn revoked_paired_instance_is_deleted_only_after_media_removal_succeeds() 
 
     let now = Utc::now().timestamp_micros();
     sqlx::query(
-        "INSERT INTO _xcss_operations (operation_id, namespace, target_key, action, \
+        "INSERT INTO _common_operations (operation_id, namespace, target_key, action, \
          idempotency_digest, request_fingerprint, request_payload, state, attempt, \
          max_attempts, not_before_micros, created_at_micros, updated_at_micros) \
          VALUES (?, ?, ?, 'reconcile_camera', ?, ?, ?, 'succeeded', 1, 8, ?, ?, ?)",

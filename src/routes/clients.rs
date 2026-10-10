@@ -423,7 +423,7 @@ pub(super) async fn purge_revoked_client_in(
             ));
         };
         let operation = sqlx::query_as::<_, (String, Option<String>, Vec<u8>)>(
-            "SELECT state, resolution_code, request_payload FROM _xcss_operations \
+            "SELECT state, resolution_code, request_payload FROM _common_operations \
              WHERE namespace = ? AND target_key = ? ORDER BY created_at_micros DESC LIMIT 1",
         )
         .bind(reconciliation::OPERATION_NAMESPACE)

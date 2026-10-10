@@ -76,7 +76,7 @@ APP_LOG="$TEST_ROOT/app.log"
     echo "Run initialized missing data without explicit init" >&2
     exit 1
   fi
-  [[ ! -e "$STATE_ROOT/db/app.db" && -z "$(find "$RUNTIME_ROOT" -mindepth 1 -maxdepth 1 ! -name .xcss-instance.lock ! -name .xcss-maintenance.lock -print -quit)" ]] || {
+  [[ ! -e "$STATE_ROOT/db/app.db" && -z "$(find "$RUNTIME_ROOT" -mindepth 1 -maxdepth 1 ! -name .state-instance.lock ! -name .state-maintenance.lock -print -quit)" ]] || {
     cat "$TEST_ROOT/before-init.json" "$TEST_ROOT/before-init.log" >&2
     echo "Missing-data rejection left a database or unexpected runtime state" >&2
     exit 1
@@ -111,7 +111,7 @@ fi
 python3 - "$STATIC_MANIFEST" "http://127.0.0.1:$PORT" <<'HTTP'
 import hashlib,json,sys,urllib.error,urllib.request
 manifest=json.load(open(sys.argv[1]))
-assert manifest['format']=='xcss-web-assets-v1'
+assert manifest['format']=='web-assets-v1'
 for asset in manifest['files']:
     url=sys.argv[2]+'/'+asset['path']
     with urllib.request.urlopen(url) as response:

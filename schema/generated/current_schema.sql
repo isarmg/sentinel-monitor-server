@@ -13,7 +13,7 @@ CREATE TABLE product_metadata (
 
 
 -- platform metadata
-CREATE TABLE _xcss_platform_metadata (
+CREATE TABLE _common_platform_metadata (
     singleton                INTEGER PRIMARY KEY
                                       CHECK (singleton = 1),
     platform_generation      INTEGER NOT NULL
@@ -27,7 +27,7 @@ CREATE TABLE _xcss_platform_metadata (
 
 
 -- capability: admin-persistent
-CREATE TABLE _xcss_administrators (
+CREATE TABLE _common_administrators (
     administrator_id TEXT PRIMARY KEY
                           CHECK (length(administrator_id) BETWEEN 1 AND 64),
     username TEXT NOT NULL UNIQUE
@@ -51,11 +51,11 @@ CREATE TABLE _xcss_administrators (
     last_login_at_micros INTEGER
 );
 
-CREATE TABLE _xcss_admin_sessions (
+CREATE TABLE _common_admin_sessions (
     session_id TEXT PRIMARY KEY
                     CHECK (length(session_id) BETWEEN 1 AND 64),
     administrator_id TEXT NOT NULL
-                          REFERENCES _xcss_administrators(administrator_id)
+                          REFERENCES _common_administrators(administrator_id)
                           ON DELETE RESTRICT,
     token_hash BLOB NOT NULL UNIQUE
                     CHECK (length(token_hash) = 32),
@@ -77,7 +77,7 @@ CREATE TABLE _xcss_admin_sessions (
     )
 );
 
-CREATE TABLE _xcss_security_audit_events (
+CREATE TABLE _common_security_audit_events (
     event_id TEXT PRIMARY KEY,
     action TEXT NOT NULL,
     outcome TEXT NOT NULL
@@ -91,7 +91,7 @@ CREATE TABLE _xcss_security_audit_events (
 
 
 -- capability: durable-operations
-CREATE TABLE _xcss_operations (
+CREATE TABLE _common_operations (
     operation_id TEXT PRIMARY KEY NOT NULL,
     namespace TEXT NOT NULL,
     target_key TEXT NOT NULL,
@@ -118,9 +118,9 @@ CREATE TABLE _xcss_operations (
     CHECK (updated_at_micros >= created_at_micros)
 );
 
-CREATE TABLE _xcss_operation_audit_outbox (
+CREATE TABLE _common_operation_audit_outbox (
     event_id TEXT PRIMARY KEY NOT NULL,
-    operation_id TEXT NOT NULL REFERENCES _xcss_operations(operation_id) ON DELETE RESTRICT,
+    operation_id TEXT NOT NULL REFERENCES _common_operations(operation_id) ON DELETE RESTRICT,
     from_state TEXT NOT NULL,
     to_state TEXT NOT NULL,
     payload_json TEXT NOT NULL,
@@ -140,7 +140,7 @@ CREATE TABLE xcocs (
     authorization_code_hash BLOB NOT NULL UNIQUE CHECK (length(authorization_code_hash) = 32),
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'online', 'offline', 'revoked')),
     last_seen_at TEXT,
-    created_by TEXT REFERENCES _xcss_administrators(administrator_id) ON DELETE SET NULL,
+    created_by TEXT REFERENCES _common_administrators(administrator_id) ON DELETE SET NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     revoked_at TEXT
@@ -172,7 +172,7 @@ CREATE TABLE cameras (
     storage_mode TEXT NOT NULL DEFAULT 'server' CHECK (storage_mode IN ('client', 'server')),
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'online', 'offline', 'disabled', 'error')),
     last_seen_at TEXT,
-    created_by TEXT REFERENCES _xcss_administrators(administrator_id) ON DELETE SET NULL,
+    created_by TEXT REFERENCES _common_administrators(administrator_id) ON DELETE SET NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     deleted_at TEXT,
@@ -202,13 +202,13 @@ CREATE TABLE events (
     message TEXT NOT NULL,
     details TEXT NOT NULL DEFAULT '{}',
     acknowledged_at TEXT,
-    acknowledged_by TEXT REFERENCES _xcss_administrators(administrator_id) ON DELETE SET NULL,
+    acknowledged_by TEXT REFERENCES _common_administrators(administrator_id) ON DELETE SET NULL,
     created_at TEXT NOT NULL
 );
 
 CREATE TABLE audit_logs (
     id TEXT PRIMARY KEY,
-    user_id TEXT REFERENCES _xcss_administrators(administrator_id) ON DELETE SET NULL,
+    user_id TEXT REFERENCES _common_administrators(administrator_id) ON DELETE SET NULL,
     action TEXT NOT NULL,
     entity_type TEXT NOT NULL,
     entity_id TEXT,
@@ -238,7 +238,7 @@ CREATE TABLE media_actual_paths (
     source_on_demand INTEGER CHECK (source_on_demand IS NULL OR source_on_demand IN (0, 1)),
     record_configured INTEGER CHECK (record_configured IS NULL OR record_configured IN (0, 1)),
     applied_generation INTEGER,
-    last_operation_id TEXT REFERENCES _xcss_operations(operation_id) ON DELETE SET NULL,
+    last_operation_id TEXT REFERENCES _common_operations(operation_id) ON DELETE SET NULL,
     observed_at TEXT NOT NULL
 );
 
@@ -273,14 +273,14 @@ CREATE TABLE media_reconciler_leases (
 
 
 -- capability: admin-persistent
-CREATE INDEX _xcss_admin_sessions_administrator_idx
-    ON _xcss_admin_sessions(
+CREATE INDEX _common_admin_sessions_administrator_idx
+    ON _common_admin_sessions(
         administrator_id,
         revoked_at_micros
     );
 
-CREATE INDEX _xcss_admin_sessions_expiry_idx
-    ON _xcss_admin_sessions(
+CREATE INDEX _common_admin_sessions_expiry_idx
+    ON _common_admin_sessions(
         idle_expires_at_micros,
         absolute_expires_at_micros
     )
@@ -288,16 +288,16 @@ CREATE INDEX _xcss_admin_sessions_expiry_idx
 
 
 -- capability: durable-operations
-CREATE INDEX _xcss_operations_claimable
-    ON _xcss_operations(namespace, not_before_micros, created_at_micros, operation_id)
+CREATE INDEX _common_operations_claimable
+    ON _common_operations(namespace, not_before_micros, created_at_micros, operation_id)
     WHERE state = 'pending';
 
-CREATE UNIQUE INDEX _xcss_operations_active_target
-    ON _xcss_operations(namespace, target_key)
+CREATE UNIQUE INDEX _common_operations_active_target
+    ON _common_operations(namespace, target_key)
     WHERE state IN ('running', 'unknown');
 
-CREATE INDEX _xcss_operation_audit_outbox_pending
-    ON _xcss_operation_audit_outbox(created_at_micros, event_id)
+CREATE INDEX _common_operation_audit_outbox_pending
+    ON _common_operation_audit_outbox(created_at_micros, event_id)
     WHERE delivered_at_micros IS NULL;
 
 
