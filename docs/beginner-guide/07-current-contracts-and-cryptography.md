@@ -12,7 +12,7 @@
 `4d20083821ff39d78792d0795b26206e851c2e6d0523109ee49cfc06666a1d4a`；管理员表只有 canonical
 `username`，没有 email/role。空文件、非当前库和漂移库都只读拒绝。
 
-共享 xcss `xcss::schema_identity 1.0.0` 定义 fingerprint v1 的字节 framing、metadata 五列 DDL/
+共享 xcss `xcss::schema_identity 1.0.1` 定义 fingerprint v1 的字节 framing、metadata 五列 DDL/
 shape 和 exact identity 比较；Xcos 在私有 SQLx 校验代际上复用共享
 `ProductMetadataRow` 后执行验证。SQLite当前WAL/journal代的只读临时副本由xcss公共snapshot捕获；产品验证精确业务Schema、路径身份和lease。普通运行只接受当前revision2。非当前格式只读拒绝，不改写输入。
 

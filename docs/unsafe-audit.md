@@ -36,3 +36,8 @@ Server 只消费 Client 上报的身份、三态能力和健康状态。模拟�
 此前分模块发布的 xcss 1.0.0 Web 制品曾从真实 npm 缓存逐字节复核（历史验收；当前已改为一个 @xcss/web 单体，须重新验收）：SHA-512 与新 npm 锁一致，SHA-256 与官方 GitHub release 资产 digest 一致，包内版本均为 1.0.0；axe 浏览器验收依赖锁为 4.13.0。
 
 最终正式 Web 输入的 xcss/fonts 检查、strict TypeScript、Vite 构建与 7 项前端单测已通过；Linux AMD64 目标全部 targets/features 的 Clippy `-D warnings` 再次通过。Linux 生命周期、重定位及最终包仍由原生 CI 和发行流水线验收。
+
+
+## 2026-10-10 xcss 1.0.1 输入更新
+
+当前 Rust/Web 共享输入已同步更新为正式 `xcss 1.0.1`：Rust 固定 Git 修订 `fd90ca39b8f03359a0ba92e182f7d84bc7c1a315`，Web 固定同版官方 `xcss-web-1.0.1.tgz` URL 和真实归档 SHA-512 integrity。上文 xcss 旧版制品与验收描述保留为历史记录，不代表新输入已经完成相同的原生或浏览器验收。当前已完成新修订的 manifest/source/schema/web 一致性校验、锁定 npm 安装和内嵌 Web 重建；最终产品 CI 与发行资产另行核验。
