@@ -252,24 +252,26 @@ struct OperationListRow {
 impl OperationListRow {
     fn into_stored(self) -> Result<StoredOperation> {
         let attempt = u32::try_from(self.attempt)
-            .map_err(|_| AppError::Internal("媒体操作尝试次数无效".into()))?;
-        let max_attempts = u32::try_from(self.max_attempts)
-            .map_err(|_| AppError::Internal("媒体操作最大尝试次数无效".into()))?;
+            .map_err(|_| AppError::Internal("invalid media operation attempt count".into()))?;
+        let max_attempts = u32::try_from(self.max_attempts).map_err(|_| {
+            AppError::Internal("invalid media operation maximum attempt count".into())
+        })?;
         if max_attempts == 0 || attempt > max_attempts {
-            return Err(AppError::Internal("媒体操作尝试次数无效".into()));
+            return Err(AppError::Internal(
+                "invalid media operation attempt count".into(),
+            ));
         }
         let operation = Operation {
             operation_id: self.operation_id,
             namespace: self.namespace,
             target_key: self.target_key,
-            idempotency_digest: self
-                .idempotency_digest
-                .try_into()
-                .map_err(|_| AppError::Internal("媒体操作幂等摘要无效".into()))?,
+            idempotency_digest: self.idempotency_digest.try_into().map_err(|_| {
+                AppError::Internal("invalid media operation idempotency digest".into())
+            })?,
             request_fingerprint: self
                 .request_fingerprint
                 .try_into()
-                .map_err(|_| AppError::Internal("媒体操作请求摘要无效".into()))?,
+                .map_err(|_| AppError::Internal("invalid media operation request digest".into()))?,
             state: OperationState::parse(&self.state).map_err(operation_error)?,
             attempt,
             max_attempts,
@@ -513,13 +515,13 @@ pub async fn flush_operation_audit(pool: &SqlitePool) -> Result<usize> {
             .get(&event.operation_id)
             .await
             .map_err(operation_error)?
-            .ok_or_else(|| AppError::Internal("审计操作不存在".into()))?;
+            .ok_or_else(|| AppError::Internal("audit operation does not exist".into()))?;
         let operation = operation_view(operation)?;
         let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
         sqlx::query("INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, details, created_at) \
             VALUES (?, (SELECT administrator_id FROM _common_administrators WHERE administrator_id = ?), \
             'media.operation.transition', 'camera', ?, ?, ?) ON CONFLICT(id) DO NOTHING")
-            .bind(Uuid::parse_str(&event.event_id).map_err(|_| AppError::Internal("审计事件 ID 无效".into()))?)
+            .bind(Uuid::parse_str(&event.event_id).map_err(|_| AppError::Internal("invalid audit event ID".into()))?)
             .bind(operation.requested_by)
             .bind(operation.camera_id)
             .bind(json!({ "operation_id": event.operation_id, "generation": operation.generation,
@@ -642,7 +644,7 @@ fn operation_error(error: xcss::operations::Error) -> AppError {
         return AppError::Conflict("媒体操作租约已由其他执行器接管".into());
     }
     tracing::error!(error = %error, "xcss rejected media operation state transition");
-    AppError::Internal("媒体操作状态不符合当前 xcss 合同".into())
+    AppError::Internal("media operation state violates the current xcss contract".into())
 }
 
 async fn enqueue_operation_in(
@@ -652,7 +654,7 @@ async fn enqueue_operation_in(
 ) -> Result<MediaOperationView> {
     crate::history::reserve_in(transaction, Some(request.camera_id), true).await?;
     let request_payload = serde_json::to_vec(&request)
-        .map_err(|_| AppError::Internal("媒体操作请求无法编码".into()))?;
+        .map_err(|_| AppError::Internal("media operation request cannot be encoded".into()))?;
     let request_fingerprint: [u8; 32] = Sha256::digest(&request_payload).into();
     let mut idempotency = Sha256::new();
     for value in [
@@ -689,14 +691,16 @@ async fn enqueue_operation_in(
 
 fn operation_view(stored: StoredOperation) -> Result<MediaOperationView> {
     Uuid::parse_str(&stored.operation.operation_id)
-        .map_err(|_| AppError::Internal("媒体操作标识损坏".into()))?;
+        .map_err(|_| AppError::Internal("corrupt media operation identifier".into()))?;
     if stored.operation.namespace != OPERATION_NAMESPACE || stored.action != "reconcile_camera" {
         return Err(AppError::NotFound("媒体操作不存在".into()));
     }
     let request: MediaOperationRequest = serde_json::from_slice(&stored.request_payload)
-        .map_err(|_| AppError::Internal("媒体操作请求损坏".into()))?;
+        .map_err(|_| AppError::Internal("corrupt media operation request".into()))?;
     if stored.operation.target_key != request.camera_id.hyphenated().to_string() {
-        return Err(AppError::Internal("媒体操作目标与请求不一致".into()));
+        return Err(AppError::Internal(
+            "media operation target does not match the request".into(),
+        ));
     }
     let created_at = timestamp(stored.created_at_micros)?;
     let updated_at = timestamp(stored.updated_at_micros)?;
@@ -740,7 +744,7 @@ fn operation_view(stored: StoredOperation) -> Result<MediaOperationView> {
 
 fn timestamp(micros: i64) -> Result<DateTime<Utc>> {
     DateTime::from_timestamp_micros(micros)
-        .ok_or_else(|| AppError::Internal("媒体操作时间戳无效".into()))
+        .ok_or_else(|| AppError::Internal("invalid media operation timestamp".into()))
 }
 
 async fn complete_owned(
@@ -776,7 +780,7 @@ async fn complete_owned_in(
     let payload = result
         .map(|value| serde_json::to_vec(&value))
         .transpose()
-        .map_err(|_| AppError::Internal("媒体操作结果无法编码".into()))?;
+        .map_err(|_| AppError::Internal("media operation result cannot be encoded".into()))?;
     SqliteOperationStore::apply_transition_owned_in(
         transaction,
         claim,
@@ -1291,7 +1295,7 @@ async fn ensure_drift_operation(
         .map_err(operation_error)?
     {
         let request: MediaOperationRequest = serde_json::from_slice(&latest.request_payload)
-            .map_err(|_| AppError::Internal("媒体操作请求损坏".into()))?;
+            .map_err(|_| AppError::Internal("corrupt media operation request".into()))?;
         let blocks_new = request.generation == desired.generation
             && (matches!(
                 latest.operation.state,

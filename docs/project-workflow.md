@@ -176,7 +176,7 @@ npm run build
 `build` 已把 `check:xcss` 设为硬前置，因此不能通过直接执行 Vite 跳过共享边界。构建产物完全自包含；
 浏览器运行时不解析 npm 包，也不访问 npm registry、xcss 仓库或远程 CSS。
 构建期单个 @xcss/web 包候选固定xcss `v1.0.0`官方URL和真实归档的lockfile integrity；xcss 1.0.0 已正式发布，产品输入使用官方归档与精确 SRI。
-Rust crate 由版本 `=1.0.0` 和 revision `9637806055b7d7a18be206f0b83e9b22b73902db` 双重锁定。两者都不读取
+Rust crate 由版本 `=1.0.0` 和 revision `627d988a4ed471469ed4fdce8af0ea6b5c131ce6` 双重锁定。两者都不读取
 共同父目录或 sibling checkout，也不提供旧来源 fallback。
 
 ## 10. xcss 共享层与产品层调用树

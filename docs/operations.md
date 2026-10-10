@@ -256,7 +256,7 @@ auth body、媒体 JWT、WHEP/HLS 播放与录像状态不使用 Administrator u
 当前 Web 使用 xcss 的 admin-web、admin-shell、admin-ui、contracts、design-tokens、http-client、
 web-fonts、web-toolchain 八个内部模块，作为一个 @xcss/web 构建期包发布，不是生产运行服务。Node 固定为 `.node-version` 的 `26.7.0`。
 
-- 候选Rust输入固定 xcss `=1.0.0` / `9637806055b7d7a18be206f0b83e9b22b73902db`，一个 @xcss/web 包使用对应新tag URL与真实tarball的lock integrity。xcss 1.0.0 已正式发布，官方单包已逐字节验证；产品仍须完成自身正式构建和发行验收。
+- 候选Rust输入固定 xcss `=1.0.0` / `627d988a4ed471469ed4fdce8af0ea6b5c131ce6`，一个 @xcss/web 包使用对应新tag URL与真实tarball的lock integrity。xcss 1.0.0 已正式发布，官方单包已逐字节验证；产品仍须完成自身正式构建和发行验收。
 - 旧消费者CI证明只属于其记录的旧revision；本次新源码和真实发行物必须分别验收。统一manifest、lockfile和发布身份，不改写旧tag/资产。
 
 ```bash

@@ -6,11 +6,11 @@ import protocolContract from "./protocol-contract.json";
 
 const LOGIN_SUFFIX = "/auth/login";
 if (!ADMIN_AUTH_PATHS.login.endsWith(LOGIN_SUFFIX)) {
-  throw new Error("xcss 管理登录路径不符合当前合同");
+  throw new Error("The xcss administrator login path does not match the current contract");
 }
 const xcssApiPrefix = ADMIN_AUTH_PATHS.login.slice(0, -LOGIN_SUFFIX.length);
 if (protocolContract.api_prefix !== xcssApiPrefix) {
-  throw new Error("Xcos 产品协议必须与 xcss 管理 API 使用同一前缀");
+  throw new Error("The xcos product protocol and xcss administration API must use the same prefix");
 }
 
 export const administratorApi = createAdministratorApiClient();
@@ -140,7 +140,7 @@ export type XcosClient = {
 
 export function apiPath(path: string): string {
   if (!path.startsWith("/") || path.startsWith("//")) {
-    throw new TypeError("业务 API 路径必须是单斜杠开头的绝对应用路径");
+    throw new TypeError("A product API path must be an absolute application path beginning with a single slash");
   }
   return `${protocolContract.api_prefix}${path}`;
 }

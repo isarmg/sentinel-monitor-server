@@ -79,7 +79,7 @@ pub(super) async fn resolve_media_operation(
         | xcss::operations::Error::ConcurrentModification => {
             AppError::Conflict("媒体操作当前状态不允许此人工处理".into())
         }
-        _ => AppError::Internal("媒体操作人工处理写入失败".into()),
+        _ => AppError::Internal("manual media operation handling could not be persisted".into()),
     })?;
     write_audit_in(
         &mut transaction,

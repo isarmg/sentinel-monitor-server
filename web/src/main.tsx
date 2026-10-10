@@ -650,7 +650,7 @@ const Root = createXcssAdminApplication({
   routes: <Console />,
 });
 const root = document.getElementById("root");
-if (root === null) throw new Error("缺少React根节点");
+if (root === null) throw new Error("The React root element is missing");
 void startAfterFonts(() => {
   createRoot(root).render(<StrictMode><Root /></StrictMode>);
 });

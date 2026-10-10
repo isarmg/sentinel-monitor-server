@@ -123,17 +123,18 @@ pub(crate) async fn reserve_with(
                     metadata.len()
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
-                _ => return Err(AppError::Internal("数据库日志文件状态无效".into())),
+                _ => return Err(AppError::Internal("invalid database log-file state".into())),
             };
             let parent = std::path::Path::new(&path)
                 .parent()
-                .ok_or_else(|| AppError::Internal("数据库路径无效".into()))?;
-            let stats = rustix::fs::statvfs(parent)
-                .map_err(|_| AppError::Internal("无法检查数据库可用空间".into()))?;
+                .ok_or_else(|| AppError::Internal("invalid database path".into()))?;
+            let stats = rustix::fs::statvfs(parent).map_err(|_| {
+                AppError::Internal("cannot inspect available database space".into())
+            })?;
             Ok((wal_bytes, stats.f_bavail.saturating_mul(stats.f_frsize)))
         })
         .await
-        .map_err(|_| AppError::Internal("数据库容量检查失败".into()))??
+        .map_err(|_| AppError::Internal("database capacity check failed".into()))??
     };
     // Reserve bounded result/audit updates for every outstanding operation and
     // pending PTZ. Charge both main and WAL copies; do not call quota exhaustion

@@ -68,8 +68,9 @@ where
         .try_spawn(async move {
             let result = query.await?;
             let mut writer = HistoryJsonWriter(Vec::with_capacity(16 * 1024));
-            serde_json::to_writer(&mut writer, &result)
-                .map_err(|_| AppError::Internal("日志页无法在响应预算内编码".into()))?;
+            serde_json::to_writer(&mut writer, &result).map_err(|_| {
+                AppError::Internal("log page cannot be encoded within the response budget".into())
+            })?;
             let bytes = writer.0;
             let body = stream! {
                 let _permit = permit;
@@ -86,7 +87,7 @@ where
         .map_err(|_| AppError::HistoryCapacity)?;
     match tokio::time::timeout(Duration::from_secs(5), task).await {
         Ok(Ok(result)) => result,
-        Ok(Err(_)) => Err(AppError::Internal("日志查询任务失败".into())),
+        Ok(Err(_)) => Err(AppError::Internal("log query task failed".into())),
         Err(_) => Err(AppError::HistoryCapacity),
     }
 }
@@ -170,7 +171,7 @@ pub(super) async fn dated_cursor(
         .map_err(crate::sqlite::history_error)?;
     let timestamp = timestamp
         .ok_or_else(|| AppError::Validation("日志页游标已失效，请重新加载第一页".into()))?
-        .ok_or_else(|| AppError::Internal("日志记录时间超出读取预算".into()))?;
+        .ok_or_else(|| AppError::Internal("log-record timestamp exceeds the read budget".into()))?;
     Ok(Some((timestamp, id)))
 }
 

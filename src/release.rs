@@ -28,7 +28,7 @@ pub(crate) const PRODUCTION_RELEASE_ROOT: &str =
     concat!("/opt/isarmg/xcos/releases/", env!("CARGO_PKG_VERSION"));
 const RELOCATABLE_RELEASE_SUFFIX: &str =
     concat!("opt/isarmg/xcos/releases/", env!("CARGO_PKG_VERSION"));
-// config/ 是仓库内受审配置的唯一位置；发布包仍按运行时契约写入 config/。
+// Reviewed repository configuration lives in config/; release packages use the same runtime location.
 const MEDIAMTX_LOCK: &[u8] = include_bytes!("../config/mediamtx.lock");
 const MEDIAMTX_CONFIG: &[u8] = include_bytes!("../config/mediamtx.yml");
 

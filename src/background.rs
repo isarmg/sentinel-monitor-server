@@ -95,7 +95,7 @@ async fn emit_event_in(
 ) -> Result<EventRecord> {
     if message.len() > 8192
         || serde_json::to_vec(&details)
-            .map_err(|_| crate::error::AppError::Internal("事件编码失败".into()))?
+            .map_err(|_| crate::error::AppError::Internal("event encoding failed".into()))?
             .len()
             > 65536
     {

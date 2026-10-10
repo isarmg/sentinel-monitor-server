@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use std::sync::LazyLock;
 
-// 浏览器客户端与 Rust 服务端读取同一份协议常量，避免各自手写 API 路径。
+// The browser client and Rust server share these protocol constants instead of duplicating API paths.
 const CONTRACT_SOURCE: &str = include_str!("../web/src/protocol-contract.json");
 
 #[derive(Debug, Deserialize)]

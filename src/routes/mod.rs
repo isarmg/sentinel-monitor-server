@@ -194,7 +194,7 @@ async fn write_audit_in(
         crate::history::reserve_in(transaction, entity_id, false).await?;
     }
     if serde_json::to_vec(&details)
-        .map_err(|_| AppError::Internal("审计记录编码失败".into()))?
+        .map_err(|_| AppError::Internal("audit record encoding failed".into()))?
         .len()
         > 65536
     {
