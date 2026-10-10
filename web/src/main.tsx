@@ -149,8 +149,21 @@ function Console() {
       if (generation === calendarRequestId.current) setLogFailure({ requestId: errorRequestId(error) });
     }
   }, []);
+  const clientRequestId = useRef(0);
+  const clientsMounted = useRef(true);
+  useEffect(() => {
+    clientsMounted.current = true;
+    return () => { clientsMounted.current = false; clientRequestId.current++; };
+  }, []);
   const loadClients = useCallback(async () => {
-    setClients(await request("/clients", isXcosClients));
+    if (!clientsMounted.current) return;
+    const generation = ++clientRequestId.current;
+    try {
+      const next = await request("/clients", isXcosClients);
+      if (generation === clientRequestId.current) setClients(next);
+    } catch (error) {
+      if (generation === clientRequestId.current) throw error;
+    }
   }, []);
   const loadSystemStatus = useCallback(async () => {
     setSystemStatus(await request("/system/status", isSystemStatus));
