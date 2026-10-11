@@ -28,11 +28,11 @@ sudo /opt/isarmg/xcos/releases/1.0.0/deploy/xcosctl start
 sudo /opt/isarmg/xcos/releases/1.0.0/deploy/xcosctl status
 ```
 
-确认配置前，填写管理员密码、独立密钥、公开 RTSPS 地址和证书路径，并配置 HTTPS 网关。`bootstrap --confirm-config` 显式初始化；普通启动不建库。Xcos、MediaMTX 和数据部署在同一台机器；网关可在另一台机器，通过显式配置的回源地址访问，MediaMTX 管理端口仍只供本机使用。远端网关配置见[配置参考](docs/configuration.md)。
+确认配置前，填写管理员密码、独立密钥、公开 RTSPS 地址和证书路径，并配置 HTTPS 网关。`bootstrap --confirm-config` 显式初始化；普通启动不建库。Xcos、MediaMTX 和数据部署在同一台机器；网关可在另一台机器，通过显式配置的回源地址访问，MediaMTX 管理端口仍只供本机使用。远端网关配置见详细文档中的配置参考。
 
 ## 如何编译部署
 
-在 Linux AMD64 上准备 Rust 1.99.0、Node.js 26.7.0、C 编译工具、Python 3、curl、OpenSSL 和 GNU 工具。正式打包要求干净源码，且同版本 annotated tag 精确指向 HEAD；不能把未发布源码当成已有标签的制品。
+在 Linux AMD64 上准备 Rust 1.99.0、Node.js 26.7.0、C 编译工具、Python 3.11+、curl、OpenSSL 和 GNU 工具。正式打包要求干净源码，且同版本 annotated tag 精确指向 HEAD；不能把未发布源码当成已有标签的制品。
 
 ```sh
 rustup target add --toolchain 1.99.0 x86_64-unknown-linux-gnu

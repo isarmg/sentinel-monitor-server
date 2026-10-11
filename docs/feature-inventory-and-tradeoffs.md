@@ -107,7 +107,7 @@ xcss 提供管理员创建、凭据管理与停用能力。摄像头 RTSP/ONVIF 
 | SEN-K-003 | 多品牌差异由 Client 的适配器归一为统一 identity、capabilities、streams 与状态快照 | xcoc `device`/`onvif`、`ClientCameraSnapshot` | 核心 | 高 | Server 会重新耦合厂商协议 | RTSP/ONVIF 输出同一严格 DTO，拒绝厂商私有字段 |
 | SEN-K-004 | 永久授权码使用认证加密保存并绑定授权实例 ID；Server 可查看和更换，更换立即撤销旧 Token | `SecretBox`、`authorization_code_enc`、`update_client_authorization` | 保障 | 高 | 数据库泄漏可直接暴露配对权限，或旧客户端继续连接 | 错实例/错 key/篡改失败，更换后旧凭据失败 |
 | SEN-K-005 | 摄像机 RTSP/ONVIF 地址和设备账号只保留在 Client；Server Schema 不存在这些列 | `cameras`、Client LocalState | 保障 | 高 | Server 数据库会暴露摄像机内网和设备 Secret | Schema 列清单、管理 JSON 均无 URL/密码 |
-| SEN-K-006 | Client 快照必须恰好一台摄像机且摄像机 ID 等于授权实例 ID | `client_snapshot`、edge v1 | 保障 | 高 | 一个授权码可越权覆盖其他摄像机 | 0/2 台、错 ID、重复 ID 均拒绝 |
+| SEN-K-006 | Client 快照最多一台摄像机，非空时摄像机 ID 等于授权实例 ID；空快照移除该实例原有摄像机 | `client_snapshot`、edge v1 | 保障 | 高 | 一个授权码可越权覆盖其他摄像机 | 0 台移除正例；2 台、错 ID、重复 ID 拒绝 |
 | SEN-K-007 | 启动与 doctor 认证全部持久授权码 envelope | `doctor::verify_credentials`、`SecretBox` | 保障 | 高 | 错 key 或坏密文直到配对管理时才暴露 | 任一授权码篡改使检查失败且不改库 |
 | SEN-K-008 | 撤销实例会停用并隐藏摄像机、排队清理 MediaMTX；清理确认后可永久删除摄像机和授权实例 | `revoke_client`、media reconciliation | 保障 | 高 | 外键使已撤销实例永久无法删除，或媒体路径残留 | 未清理时冲突；成功清理后二次删除成功 |
 | SEN-K-009 | PTZ 只接受 move/stop，pan/tilt/zoom 各在 `[-1,1]`，并作为短时命令发送到拥有该摄像机的 Client | `PtzRequest`、`device_commands`、`routes::ptz` | 可选 | 中 | 删除后仍可监看但不能从控制台云台控制 | 边界值、离线、无能力、命令到期 |
@@ -148,7 +148,7 @@ xcss 提供管理员创建、凭据管理与停用能力。摄像头 RTSP/ONVIF 
 | SEN-M-009 | 播放代理只转发 Content-Type/Length/Range/Disposition 白名单响应头并流式正文 | `play_recording` | 保障 | 高 | 全量透传上游头可能改变安全策略；整段缓冲会耗内存 | 200/206、Range、上游错误、大正文 |
 | SEN-M-010 | MediaMTX 录制 fMP4、15 分钟 segment、默认保留 168 小时 | `config/mediamtx.yml` | 建议保留 | 中 | 删除 record 失去历史回放；改保留期直接改变容量需求 | config lock、record path、过期清理实测 |
 | SEN-M-011 | start 通过环境把录像根固定到 `/var/lib/isarmg/xcos/recordings` | `MTX_PATHDEFAULTS_RECORDPATH`、`deploy/.start-action.sh` | 保障 | 中 | inert 样例路径或 cwd 可能成为真实写入位置 | 进程环境、路径权限、release relocation |
-| SEN-M-012 | Caddy 将 `/media-webrtc/*`、`/media-hls/*` 与应用汇聚到一个浏览器 origin；三个上游精确为本机 `127.0.0.1:8889/8888/8080`，不支持容器 DNS 别名 | `deploy/Caddyfile`、CI proxy gate | 保障 | 中 | 跨 origin 会复杂化 Cookie、CORS 和媒体授权；容器名在当前原生部署中无法解析 | 根级副本缺失；WHEP/HLS/API 同源；管理端口不公网暴露；拒绝 `app:`/`mediamtx:`；生产设置真实 `SITE_ADDRESS` |
+| SEN-M-012 | Caddy 将 `/media-webrtc/*`、`/media-hls/*` 与应用汇聚到一个浏览器 origin；三个上游默认使用本机 `127.0.0.1:8889/8888/8080`；路由系统上的 Caddy 可通过现有变量回源同一项目服务器的内网地址及对应端口 | `deploy/Caddyfile`、CI proxy gate | 保障 | 中 | 跨 origin 会复杂化 Cookie、CORS 和媒体授权；容器名在当前原生部署中无法解析 | 根级副本缺失；WHEP/HLS/API 同源；管理端口不公网暴露；拒绝 `app:`/`mediamtx:`；生产设置真实 `SITE_ADDRESS` |
 | SEN-M-013 | MediaMTX API、metrics、playback 固定 loopback；生产启动器强制受信证书的 RTSPS 8322，HLS 8888、WebRTC HTTP 8889 与 UDP 8189 绑定主机网卡。防火墙分别限制 Client 发布、Caddy 上游和浏览器 UDP | `src/config.rs`、`deploy/xcosctl`、内部 bootstrap/start 动作 | 保障 | 高 | 明文发布可能暴露媒体 Token；错把媒体 listener 当成 loopback 会令远程 Client 无法发布 | rtsps-only、证书/私钥检查、loopback 拒绝、listener 与 NAT 验收 |
 
 ## 8. 事件、状态与审计
@@ -226,7 +226,7 @@ xcss 提供管理员创建、凭据管理与停用能力。摄像头 RTSP/ONVIF 
 | ID | 当前决定 | 实现/边界锚点 | 分类 | 复杂度 | 若改变会发生什么 | 实施前最低证据 |
 |---|---|---|---|---|---|---|
 | SEN-X-001 | 不提供 observer/operator/viewer 或任何 RBAC 开关 | 无 role 列；所有业务 route 解析 `CurrentUser` | 核心 | 高 | 需重做权限矩阵、Session contract、Web 条件展示、审计与持久结构 | 独立授权设计、逐路由测试、Schema 与 xcss 决策 |
-| SEN-X-002 | 不提供内置 TLS 或应用层 HTTPS 强制；由 `deploy/Caddyfile` 所示同源网关终止 HTTPS，后端默认 loopback 并必须由防火墙隔离 | `deploy/Caddyfile`、`src/config.rs`、正式环境样例 | 保障 | 高 | 后端直连会让登录密码/Session 经过明文；内置 TLS 则需承担证书、续期和监听安全 | 生产 `SITE_ADDRESS`、真实证书、三个本机上游、后端不可公网直连；默认 `:80` 仅是模板占位 |
+| SEN-X-002 | 不提供内置 TLS 或应用层 HTTPS 强制；由 `deploy/Caddyfile` 所示同源网关终止 HTTPS，后端默认 loopback 并必须由防火墙隔离 | `deploy/Caddyfile`、`src/config.rs`、正式环境样例 | 保障 | 高 | 后端直连会让登录密码/Session 经过明文；内置 TLS 则需承担证书、续期和监听安全 | 生产 `SITE_ADDRESS`、真实证书、三个默认本机或显式配置的同项目服务器内网上游、后端不可公网直连；默认 `:80` 仅是模板占位 |
 | SEN-X-003 | 不提供视频转码、AI、人脸识别或语义搜索 | 无相关 worker/model/schema | 核心 | 高 | 增加 GPU/CPU、模型供应链、生物特征隐私和派生物状态 | 独立 RFC、资源预算、隐私删除和失败恢复 |
 | SEN-X-004 | 不提供云多租户或组织隔离；一个部署是一套 Administrator 与摄像头 | 数据模型无 tenant | 核心 | 高 | 所有查询、JWT、录像路径和审计都要加入租户边界 | 威胁模型、逐查询隔离、计费/配额设计 |
 | SEN-X-005 | 不提供运行时 Schema migration、双读或非当前密文 keyring | `src/sqlite/`、`src/crypto.rs` | 保障 | 高 | 产品复杂度会随代数增长，并在启动期写未知数据 | 产品保留单一当前格式；非当前格式明确拒绝 |

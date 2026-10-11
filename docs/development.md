@@ -32,7 +32,7 @@ cargo +1.99.0 test --locked --all-features
 
 ## 构建正式归档
 
-Linux AMD64 GNU 构建机准备 Rust 1.99.0、Node.js 26.7.0、C 工具链、Python 3、curl、OpenSSL 和 GNU 工具。正式打包要求干净源码，且对应 annotated tag 精确指向 HEAD；同名旧标签不代表当前源码已发布。
+Linux AMD64 GNU 构建机准备 Rust 1.99.0、Node.js 26.7.0、C 工具链、Python 3.11+、curl、OpenSSL 和 GNU 工具。正式打包要求干净源码，且对应 annotated tag 精确指向 HEAD；同名旧标签不代表当前源码已发布。
 
 ```bash
 rustup target add --toolchain 1.99.0 x86_64-unknown-linux-gnu
@@ -61,7 +61,7 @@ lifecycle test 仅使用临时根，覆盖 no-clobber、合同外环境拒绝、
 当前 Web 使用 xcss 的 admin-web、admin-shell、admin-ui、contracts、design-tokens、http-client、
 web-fonts、web-toolchain 八个内部模块，作为一个 @xcss/web 构建期包发布，不是生产运行服务。Node 固定为 `.node-version` 的 `26.7.0`。
 
-- 候选Rust输入固定 xcss `=1.0.0` / `b0524c4fb018b5ba4f27ad71bf32b74c8ef0a972`，一个 @xcss/web 包使用对应新tag URL与真实tarball的lock integrity。xcss 1.0.0 已正式发布，官方单包已逐字节验证；产品仍须完成自身正式构建和发行验收。
+- 候选Rust输入固定 xcss `=1.0.2` / `3f751196615edd9f7fda2d76a5aa90f9f42586dc`，一个 @xcss/web 包使用对应新tag URL与真实tarball的lock integrity。xcss 1.0.2 已正式发布，官方单包已逐字节验证；产品仍须完成自身正式构建和发行验收。
 - 针对本次最终源码和最终发行物分别保存验证结果，统一 manifest、lockfile 和发布身份。
 
 ```bash

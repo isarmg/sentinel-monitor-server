@@ -19,8 +19,8 @@ xcos 1.0.0
 │  ├─ 取得 database/runtime/MediaMTX 锁
 │  ├─ 验证当前 SQLite、Schema 与全部实例授权密文
 │  ├─ 启动 Rust API、reconciler 与 MediaMTX
-│  ├─ 控制/API/playback 保持 loopback；生产 RTSPS/HLS/WebRTC 媒体 listener 按合同绑定主机网卡
-│  └─ Caddy 将浏览器 TLS 同源入口转发到三个明确的 127.0.0.1 上游
+│  ├─ 控制面默认 loopback；生产可显式配置内网回源地址，本机回调与 MediaMTX API/playback 仍保留 loopback
+│  └─ Caddy 默认转发到本机上游；位于路由系统时，转发到同一项目服务器已配置的内网地址及对应端口
 ├─ Administrator 控制面
 │  ├─ login/session/logout -> Session + CSRF
 │  ├─ 授权实例/Client 设备快照 -> 摄像机期望态
@@ -48,9 +48,10 @@ Rust binary，生成完整 manifest，在同一文件系统暂存并验证后，
 编辑密码、配置 Client 可达且证书受信的 `rtsps://` 发布 origin 与证书/私钥并运行
 `xcosctl bootstrap --confirm-config` 后，`xcosctl start` 才按锁顺序启动 companion 和应用；运行机同样必须是 Linux x86_64。
 
-主机代理源资产固定为 `deploy/Caddyfile`，不进入应用生命周期脚本。它只允许
-`127.0.0.1:8080/8888/8889` 三个原生进程上游；根目录不存在第二份 Caddyfile，仓库也没有容器 DNS
-兼容。CI 会拒绝根级副本、缺失模板、端口漂移和 `app:`/`mediamtx:` 上游重新出现。
+主机代理源资产固定为 `deploy/Caddyfile`，不进入应用生命周期脚本。三个上游默认使用
+`127.0.0.1:8080/8888/8889`；Caddy 位于路由系统时，通过 `XCOS_HTTP_UPSTREAM`、
+`XCOS_HLS_UPSTREAM` 和 `XCOS_WEBRTC_UPSTREAM` 指向同一项目服务器已配置的内网地址及对应端口。
+单个项目仍部署在同一台机器。根目录不存在第二份 Caddyfile；CI 核对模板及默认上游，拒绝容器 DNS 上游。
 
 ## 3. 正式进程启动顺序
 
@@ -101,7 +102,7 @@ Client Bearer token，二者均不使用浏览器 Session。
 
 ```text
 Administrator 创建授权实例 -> 加密保存授权码
-  -> Client 以该码配对，上报且仅上报一台摄像机快照
+  -> Client 以该码配对，快照最多包含一台摄像机；空快照移除原有摄像机
   -> SQLite transaction: camera snapshot + desired media state + operation
   -> reconciler 领取 global lease + operation lease
   -> transaction 外调用 MediaMTX
